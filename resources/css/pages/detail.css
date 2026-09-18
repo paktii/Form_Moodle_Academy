@@ -1,0 +1,135 @@
+@layer components {
+    .detail-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+
+    .detail-heading h2 {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--portal-navy);
+    }
+
+    .detail-heading p {
+        font-size: 12px;
+        margin-top: 6px;
+        color: #6b7280;
+    }
+
+    .detail-section+.detail-section {
+        margin-top: 24px;
+    }
+
+    .detail-section h3,
+    .attachment-card h3,
+    .review-card h3,
+    .course-result h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px 24px;
+    }
+
+    .detail-grid--four {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .detail-field--wide {
+        grid-column: 1 / -1;
+    }
+
+    .detail-field dt {
+        font-size: 14px;
+        margin-bottom: 8px;
+    }
+
+    .detail-field dd {
+        min-height: 44px;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+    }
+
+    .attachment-card,
+    .review-card,
+    .course-result {
+        margin-top: 28px;
+    }
+
+    .attachment-card .document-row {
+        background: #eceff3;
+    }
+
+    .attachment-card a {
+        color: var(--portal-navy);
+        font-size: 12px;
+    }
+
+    .review-card>.portal-button {
+        display: flex;
+        width: 100%;
+        margin-top: 12px;
+        min-height: 44px;
+    }
+
+    .review-passed {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .detail-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-top: 28px;
+        background: #fff;
+        padding: 12px;
+        border-radius: 4px;
+    }
+
+    .reason-banner {
+        background: #fff1f2;
+        border: 1px solid #f0b4b8;
+        color: #9f2530;
+        padding: 20px;
+        margin-bottom: 24px;
+        border-radius: 6px;
+    }
+
+    .reason-banner h3 {
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    @media (max-width: 900px) {
+        .detail-grid--four {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 600px) {
+
+        .detail-grid,
+        .detail-grid--four {
+            grid-template-columns: 1fr;
+        }
+
+        .detail-heading {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+    }
+}

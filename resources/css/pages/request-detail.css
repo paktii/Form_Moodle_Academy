@@ -1,0 +1,247 @@
+@layer components {
+    .requester-detail__navigation {
+        margin: 0 0 20px;
+        padding: 0;
+        background: transparent;
+    }
+
+    .requester-detail__navigation>.muted {
+        min-width: 260px;
+        padding: 12px;
+        text-align: right;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+    }
+
+    .request-progress {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-bottom: 24px;
+        padding: 24px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+    }
+
+    .request-progress__step {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        gap: 6px;
+        text-align: center;
+    }
+
+    .request-progress__step::after {
+        content: '';
+        position: absolute;
+        top: 32px;
+        left: calc(50% + 40px);
+        width: calc(100% - 80px);
+        height: 1px;
+        background: #d1d5db;
+    }
+
+    .request-progress__step:last-child::after {
+        display: none;
+    }
+
+    .request-progress__step--complete::after {
+        background: #9ed9c6;
+    }
+
+    .request-progress__icon {
+        display: grid;
+        place-items: center;
+        width: 64px;
+        height: 64px;
+        margin-bottom: 4px;
+        border: 1px solid #d1d5db;
+        border-radius: 50%;
+        background: #f3f4f6;
+    }
+
+    .request-progress__icon .portal-icon {
+        width: 28px;
+        height: 28px;
+    }
+
+    .request-progress__step>strong {
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .request-progress__step>span:last-child {
+        color: #8b95a5;
+        font-size: 12px;
+    }
+
+    .request-progress__step--complete .request-progress__icon {
+        background: #d6faed;
+        border-color: #27a78c;
+    }
+
+    .request-progress__step--current .request-progress__icon {
+        background: #fff6ce;
+        border-color: #e8c15a;
+    }
+
+    .request-progress__step--returned .request-progress__icon {
+        background: #fff1f2;
+        border-color: #dc6c76;
+    }
+
+    .request-progress__step--pending .portal-icon {
+        filter: grayscale(1);
+        opacity: .55;
+    }
+
+    .requester-detail__card {
+        padding: 32px;
+    }
+
+    .requester-detail__heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+
+    .requester-detail__heading h2 {
+        font-size: 22px;
+        font-weight: 600;
+    }
+
+    .requester-detail__card .detail-section h3 {
+        color: var(--portal-navy);
+        font-size: 18px;
+        margin-bottom: 20px;
+    }
+
+    .requester-detail__card .detail-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 28px 24px;
+    }
+
+    .requester-detail__card .detail-field dt {
+        color: #939aa5;
+        font-size: 12px;
+        margin-bottom: 6px;
+    }
+
+    .requester-detail__card .detail-field dd {
+        border: 0;
+        padding: 0;
+        min-height: 24px;
+        color: #111827;
+        line-height: 1.6;
+    }
+
+    .requester-detail__card .detail-section+.detail-section {
+        margin-top: 36px;
+        padding-top: 28px;
+        border-top: 1px solid #f3f4f6;
+    }
+
+    .requester-detail__card .detail-section:first-of-type .detail-field:nth-child(2),
+    .requester-detail__card .detail-section:first-of-type .detail-field:nth-child(3) {
+        grid-column: span 2;
+    }
+
+    .requester-detail__card .detail-section:nth-of-type(2) .detail-field {
+        grid-column: span 2;
+    }
+
+    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(3),
+    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(4),
+    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(5) {
+        grid-column: span 1;
+    }
+
+    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(6) {
+        grid-column: 1 / -1;
+    }
+
+    .requester-attachments {
+        border: 1px solid #e5e7eb;
+        padding: 20px;
+        margin-top: 40px;
+        border-radius: 4px;
+    }
+
+    .requester-attachments__heading,
+    .requester-attachments__heading h3 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .requester-attachments__heading {
+        justify-content: space-between;
+    }
+
+    .requester-attachments__heading h3 {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .requester-edit {
+        margin-top: 24px;
+        text-align: right;
+    }
+
+    @media (max-width: 760px) {
+        .requester-detail__navigation>.muted {
+            min-width: 0;
+        }
+
+        .requester-detail__card {
+            padding: 20px;
+        }
+
+        .request-progress {
+            padding: 20px 12px;
+            gap: 12px;
+        }
+
+        .request-progress__icon {
+            width: 44px;
+            height: 44px;
+        }
+
+        .request-progress__step::after {
+            top: 22px;
+            left: calc(50% + 28px);
+            width: calc(100% - 44px);
+        }
+
+        .request-progress__step>strong {
+            font-size: 12px;
+        }
+
+        .request-progress__step>span:last-child {
+            display: none;
+        }
+
+        .requester-detail__heading {
+            flex-direction: column;
+        }
+
+        .requester-detail__heading h2 {
+            font-size: 20px;
+        }
+
+        .requester-detail__card .detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .requester-detail__card .detail-section .detail-field {
+            grid-column: 1 / -1 !important;
+        }
+
+        .requester-attachments {
+            padding: 12px;
+        }
+    }
+}

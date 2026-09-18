@@ -1,4 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
 @import 'tailwindcss';
+@import './pages/portal.css';
+@import './pages/login.css';
+@import './pages/forms.css';
+@import './pages/requests.css';
+@import './pages/detail.css';
+@import './pages/request-detail.css';
+@import './pages/document.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -6,6 +14,37 @@
 @source '../**/*.js';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Sarabun', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+
+    html,
+    body {
+        font-family: 'Sarabun', ui-sans-serif, system-ui, sans-serif;
+    }
+
+    :root {
+        --portal-navy: #0e2b5c;
+        --portal-red: #df1423;
+        --portal-background: #eceff3;
+        --portal-text: #1f2937;
+        --portal-border: #d1d5db;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+        font: inherit;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--portal-navy);
+        outline-offset: 3px;
+    }
+
+    [hidden] {
+        display: none !important;
+    }
 }

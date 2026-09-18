@@ -114,6 +114,20 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        'course133' => [
+            'driver' => 'sqlsrv',
+            'host' => env('DB_133_HOST', '10.1.105.133'),
+            'port' => env('DB_133_PORT', '1433'),
+            'database' => env('DB_133_DATABASE', 'academy_db1447'),
+            'username' => env('DB_133_USERNAME'),
+            'password' => env('DB_133_PASSWORD'),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'encrypt' => env('DB_133_ENCRYPT', 'no'),
+            'trust_server_certificate' => env('DB_133_TRUST_SERVER_CERTIFICATE', 'true'),
+        ],
+
     ],
 
     /*
