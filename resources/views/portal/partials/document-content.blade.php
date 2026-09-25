@@ -1,12 +1,25 @@
 @php
 $text = fn (string $key, string $fallback = '') => filled($record[$key] ?? null) ? $record[$key] : $fallback;
-$projectType = trim(($record['project_type_label'] ?? $record['project_type'] ?? '').' '.($record['project_other'] ?? ''));
-$category = $record['category_label'] ?? $record['category'] ?? '';
+$projectType = ($record['project_type'] ?? '') === 'OTHER'
+    ? trim($record['project_other'] ?? '')
+    : trim(($record['project_type_label'] ?? $record['project_type'] ?? '').' '.($record['project_other'] ?? ''));
+$category = ($record['category'] ?? '') === 'OTHER'
+    ? trim($record['category_other'] ?? '')
+    : ($record['category_label'] ?? $record['category'] ?? '');
 $coordinatorName = trim($text('coordinator_first').' '.$text('coordinator_last'));
-$learningPeriod = ($record['learning'] ?? '') === 'แบบเรียนรู้ตามอัธยาศัยตลอดเวลา'
-? 'ไม่มีช่วงเวลาเปิด-ปิด'
-: trim($text('starts_at').' ถึง '.$text('ends_at'));
-$enrollment = trim($text('enrollment').' '.$text('enrollment_other'));
+$thaiDate = function ($date): string {
+    if (blank($date)) {
+        return '';
+    }
+
+    $parsed = \Carbon\Carbon::parse($date)->locale('th');
+
+    return $parsed->translatedFormat('j F').' '.($parsed->year + 543);
+};
+$learningPeriod = trim($thaiDate($record['starts_at'] ?? null).' ถึง '.$thaiDate($record['ends_at'] ?? null));
+$enrollment = ($record['enrollment'] ?? '') === 'อื่น ๆ (ระบุ)'
+    ? trim($record['enrollment_other'] ?? '')
+    : trim($record['enrollment'] ?? '');
 $officerPassed = ($record['officer_decision'] ?? null) === 'PASSED';
 $approved = ($record['approval_decision'] ?? null) === 'APPROVED';
 $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNED'], true);
@@ -75,10 +88,6 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                     <dd>{{ $text('course_en') }}</dd>
                 </div>
                 <div class="document-field document-field--wide">
-                    <dt>รหัสวิชา (ถ้ามี)</dt>
-                    <dd>{{ $text('subject_code') }}</dd>
-                </div>
-                <div class="document-field document-field--wide">
                     <dt>หมวดหมู่</dt>
                     <dd>{{ $category }}</dd>
                 </div>
@@ -88,7 +97,7 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                 </div>
                 @forelse($record['instructors'] ?? [] as $instructor)
                 <div class="document-field document-field--left">
-                    <dt>ชื่อ-นามสกุลอาจารย์ผู้สอนหลัก {{ $loop->iteration }}</dt>
+                    <dt>ชื่อ-นามสกุลอาจารย์ผู้สอน {{ $loop->iteration }}</dt>
                     <dd>{{ trim($instructor['first'].' '.$instructor['last']) }}</dd>
                 </div>
                 <div class="document-field document-field--right">
@@ -97,7 +106,7 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                 </div>
                 @empty
                 <div class="document-field document-field--left">
-                    <dt>ชื่อ-นามสกุลอาจารย์ผู้สอนหลัก</dt>
+                    <dt>ชื่อ-นามสกุลอาจารย์ผู้สอน</dt>
                     <dd></dd>
                 </div>
                 <div class="document-field document-field--right">
@@ -109,14 +118,24 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
         </section>
 
         <section class="document-section">
-            <h2>ส่วนที่ 3 : ระยะเวลาเปิด-ปิด และรูปแบบการเรียนการสอน</h2>
+            <h2>ส่วนที่ 3 : ระยะเวลาเปิด-ปิด และลักษณะการดำเนินกิจกรรม</h2>
             <dl class="document-fields">
                 <div class="document-field document-field--wide">
-                    <dt>รูปแบบการเปิดสอน</dt>
+                    <dt>ลักษณะการดำเนินกิจกรรม</dt>
                     <dd>{{ $text('learning') }}</dd>
                 </div>
+                @if(($record['learning'] ?? '') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)')
+                <div class="document-field document-field--left">
+                    <dt>วงรอบ/รุ่นที่</dt>
+                    <dd>{{ $text('activity_round') }}</dd>
+                </div>
+                <div class="document-field document-field--right">
+                    <dt>เฟส</dt>
+                    <dd>{{ $text('activity_phase') }}</dd>
+                </div>
+                @endif
                 <div class="document-field document-field--wide">
-                    <dt>ระยะเวลาเปิด-ปิดรายวิชา</dt>
+                    <dt>ระยะเวลาดำเนินกิจกรรม</dt>
                     <dd>{{ $learningPeriod }}</dd>
                 </div>
                 <div class="document-field document-field--left">

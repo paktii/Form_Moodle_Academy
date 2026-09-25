@@ -169,24 +169,41 @@
     }
 
     .instructor-row {
-        position: relative;
         margin-bottom: 16px;
-        padding-right: 30px;
+    }
+
+    .instructor-row + .instructor-row {
+        border-top: 1px solid #e5e7eb;
+        padding-top: 16px;
     }
 
     .instructor-row:last-child {
         margin-bottom: 0;
     }
 
-    .instructor-remove {
-        position: absolute;
-        right: -4px;
-        bottom: 5px;
+    .instructor-row__heading {
+        display: flex;
+        min-height: 30px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+    }
+
+    .instructor-row__heading h4 {
+        font-size: 13px;
+        font-weight: 600;
     }
 
     .instructors-section .portal-button {
         min-height: 28px;
         padding: 3px 8px;
+    }
+
+    .category-fieldset .radio-options {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px 24px;
     }
 
     .stepper {
@@ -220,20 +237,18 @@
         min-height: 60px;
         font-weight: 600;
         flex: 1;
+        background-image: linear-gradient(#d1d5db, #d1d5db);
+        background-position: 19px 48px;
+        background-size: 2px calc(100% - 56px);
+        background-repeat: no-repeat;
     }
 
-    .stepper__item:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        width: 2px;
-        background: #d1d5db;
-        left: 19px;
-        top: 48px;
-        bottom: 8px;
+    .stepper__item:last-child {
+        background-image: none;
     }
 
-    .stepper__item.is-complete::after {
-        background: #27a78c;
+    .stepper__item.is-complete {
+        background-image: linear-gradient(#27a78c, #27a78c);
     }
 
     .stepper__number {
@@ -380,6 +395,17 @@
         display: none;
     }
 
+    .enrollment-import-note {
+        margin: 8px 0 0;
+        color: var(--portal-red);
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .enrollment-import-note__mobile-break {
+        display: none;
+    }
+
     .expected-students {
         display: flex;
         align-items: flex-end;
@@ -398,7 +424,7 @@
     }
 
     .expected-students>span {
-        padding-bottom: 12px;
+        padding-bottom: 32px;
     }
 
     .signed-upload {
@@ -435,6 +461,16 @@
     }
 
     @media (max-width: 760px) {
+        .radio-options input[type="radio"] {
+            flex: 0 0 18px;
+            min-width: 18px;
+            min-height: 18px;
+        }
+
+        .enrollment-import-note__mobile-break {
+            display: block;
+        }
+
         .form-layout {
             grid-template-columns: 1fr;
             padding: 24px 16px;
@@ -459,6 +495,15 @@
 
         .form-section__header {
             flex-wrap: wrap;
+        }
+
+        .category-fieldset .radio-options {
+            grid-template-columns: 1fr;
+        }
+
+        .learning-label-sub {
+            display: block;
+            margin-top: 2px;
         }
 
         .multi-upload__trigger {

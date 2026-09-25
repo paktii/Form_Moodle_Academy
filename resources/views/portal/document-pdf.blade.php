@@ -5,7 +5,7 @@
     $pdfCss = str_replace(
         ['../../fonts/Sarabun-Regular.ttf', '../../fonts/Sarabun-Bold.ttf'],
         [$regularFont, $boldFont],
-        $pdfCss,
+        $pdfCss
     );
     $documentLogo = 'data:image/jpeg;base64,'.base64_encode(file_get_contents(public_path('img/logo-pdf.jpg')));
 @endphp
@@ -13,8 +13,8 @@
 <html lang="th">
 <head>
     <meta charset="utf-8">
-    <title>แบบฟอร์มขอสร้างรายวิชาในระบบ SWU Moodle Academy</title>
-    <style>{!! $pdfCss !!}</style>
+    <title>{{ $record['project_name'] ?? 'แบบฟอร์มขอสร้างรายวิชาในระบบ SWU Moodle Academy' }}</title>
+    {!! '<style>' . $pdfCss . '</style>' !!}
 </head>
 <body>
     @include('portal.partials.document-content', [

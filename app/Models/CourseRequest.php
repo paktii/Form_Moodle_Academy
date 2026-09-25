@@ -15,6 +15,8 @@ class CourseRequest extends Course133Model
 
     protected $casts = [
         'submitted_at' => 'datetime',
+        'unsigned_pdf_downloaded_at' => 'datetime',
+        'approved_pdf_downloaded_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'starts_on' => 'date',

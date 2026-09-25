@@ -6,8 +6,7 @@
     $selectedLabel = $options[$selectedValue] ?? '';
     $searchValue = old($name.'_search', $selectedLabel);
 @endphp
-<div data-searchable-select>
-    <label class="form-label" for="{{ $inputId }}">{{ $label }}</label>
+<label class="form-label" for="{{ $inputId }}" data-searchable-select>{{ $label }}@if($required)<span class="required-indicator" aria-hidden="true">*</span>@endif
     <div class="searchable-select">
         <input
             id="{{ $inputId }}"
@@ -48,4 +47,4 @@
             <p class="searchable-select__empty" role="status" hidden data-searchable-select-empty>ไม่พบหน่วยงานที่ค้นหา</p>
         </div>
     </div>
-</div>
+</label>

@@ -15,19 +15,35 @@
     @unless($login)
     <x-portal-header :role="$role" />
     @endunless
-    @if($errors->any())
+    @php
+        $globalErrors = $errors->has('form') ? $errors->get('form') : [];
+    @endphp
+    @if(count($globalErrors) > 0 && !$login)
     <div class="error-summary" role="alert" tabindex="-1">
         <strong>กรุณาตรวจสอบข้อมูล</strong>
-        <ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
+        <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
     </div>
     @endif
     {{ $slot }}
+    <x-portal-footer />
+    @unless($login)
+    <x-portal-modal id="logout-dialog" title="ยืนยันการออกจากระบบ">
+        <p class="confirmation-message">คุณต้องการออกจากระบบใช่หรือไม่?</p>
+        <form method="post" action="{{ route('logout') }}">
+            @csrf
+            <div class="modal-actions">
+                <x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button>
+                <x-portal-button type="submit">ยืนยันออกจากระบบ</x-portal-button>
+            </div>
+        </form>
+    </x-portal-modal>
+    @endunless
     @if(session('success'))
     <x-portal-modal id="success-dialog" title="ดำเนินการสำเร็จ" :auto-open="true" class="portal-modal--success">
         <div class="success-message"><span class="success-icon"><x-portal-icon name="check" /></span>
-            <p>{{ session('success') }}</p>
+            <p>{!! session('success') !!}</p>
         </div>
-        <div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>กลับหน้าหลัก</x-portal-button></div>
+        <div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>เสร็จสิ้น</x-portal-button></div>
     </x-portal-modal>
     @endif
 </body>

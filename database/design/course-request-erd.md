@@ -137,10 +137,12 @@ erDiagram
         varchar coordinator_position
         varchar coordinator_phone
         varchar coordinator_email
-        varchar subject_code
         varchar category_code FK
+        varchar category_other
         text course_description
         varchar learning_mode
+        varchar activity_round
+        varchar activity_phase
         date starts_on
         date ends_on
         varchar enrollment_method

@@ -128,10 +128,12 @@ erDiagram
         varchar coordinator_position
         varchar coordinator_phone
         varchar coordinator_email
-        varchar subject_code
         varchar category_code FK
+        varchar category_other
         text course_description
         varchar learning_mode
+        varchar activity_round
+        varchar activity_phase
         date starts_on
         date ends_on
         varchar enrollment_method
@@ -268,8 +270,8 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `course_name_en` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาอังกฤษ |
 | `status` | varchar(40) | NOT NULL | `DRAFT` | สถานะ workflow ปัจจุบัน |
 | `submitted_at` | datetime2 | NULL | `NULL` | เวลาที่ผู้ยื่นส่งคำร้อง |
-| `created_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาสร้าง |
-| `updated_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาแก้ไขล่าสุด โดย Laravel เป็นผู้ปรับค่า |
+| `created_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาสร้างตามเวลา Asia/Bangkok |
+| `updated_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาแก้ไขล่าสุดตามเวลา Asia/Bangkok โดย Laravel เป็นผู้ปรับค่า |
 | `project_name` | varchar(500) | NOT NULL | — | ชื่อโครงการ |
 | `project_type_code` | varchar(30) | FK, NOT NULL | — | อ้าง `project_type.project_type_code` |
 | `project_other` | varchar(500) | Conditional | `NULL` | ต้องมีเมื่อ `project_type_code = 'OTHER'` |
@@ -278,12 +280,14 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `coordinator_position` | varchar(200) | NOT NULL | — | ตำแหน่งของผู้ประสานงานในโครงการ |
 | `coordinator_phone` | varchar(50) | NOT NULL | — | เบอร์โทรศัพท์ติดต่อหรือเบอร์ภายใน |
 | `coordinator_email` | varchar(254) | NOT NULL | — | อีเมลมหาวิทยาลัยของผู้ประสานงาน |
-| `subject_code` | varchar(100) | NULL | `NULL` | รหัสวิชาที่ระบุในคำร้อง |
 | `category_code` | varchar(30) | FK, NOT NULL | — | อ้าง `course_category.category_code` |
+| `category_other` | varchar(500) | Conditional | `NULL` | ต้องมีเมื่อ `category_code = 'OTHER'` |
 | `course_description` | text | NOT NULL | — | รายละเอียดรายวิชา |
-| `learning_mode` | varchar(100) | NOT NULL | — | รูปแบบการเรียนการสอน |
-| `starts_on` | date | Conditional | `NULL` | ไม่เก็บเมื่อเรียนตามอัธยาศัย; บังคับเมื่อกำหนดช่วงเวลา |
-| `ends_on` | date | Conditional | `NULL` | ไม่เก็บเมื่อเรียนตามอัธยาศัย; เมื่อมีค่าต้องไม่น้อยกว่า `starts_on` |
+| `learning_mode` | varchar(100) | NOT NULL | — | ลักษณะการดำเนินกิจกรรม: เปิดตามวงรอบ หรือเปิดตามกรอบระยะเวลาของโครงการ |
+| `activity_round` | varchar(500) | Conditional | `NULL` | วงรอบ/รุ่น เช่น `รุ่นที่ 1`; บังคับเมื่อเปิดแบบตามวงรอบ |
+| `activity_phase` | varchar(250) | Conditional | `NULL` | เฟส เช่น `เฟส 1/2569`; บังคับเมื่อเปิดแบบตามวงรอบ |
+| `starts_on` | date | Conditional | `NULL` | วันที่เริ่มดำเนินกิจกรรม; บังคับสำหรับค่าลักษณะกิจกรรมแบบใหม่ |
+| `ends_on` | date | Conditional | `NULL` | วันที่สิ้นสุดกิจกรรม; บังคับสำหรับค่าลักษณะกิจกรรมแบบใหม่และต้องไม่น้อยกว่า `starts_on` |
 | `enrollment_method` | varchar(100) | NOT NULL | — | วิธีสมัครหรือเข้าเรียน |
 | `enrollment_other` | varchar(500) | Conditional | `NULL` | ต้องมีเมื่อ `enrollment_method = 'อื่น ๆ (ระบุ)'` |
 | `expected_students` | integer | NOT NULL | — | จำนวนผู้เรียนที่คาดการณ์ ต้องมากกว่า 0 |
@@ -316,7 +320,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `mime_type` | varchar(100) | NOT NULL | — | MIME type; `SIGNED_FORM` ต้องเป็น `application/pdf` |
 | `file_size_bytes` | bigint | NOT NULL | — | ขนาดไฟล์ ต้องมากกว่า 0 |
 | `uploaded_by_pers_id` | int | LR, NOT NULL | — | ผู้สร้างหรืออัปโหลดจากฐาน 199 |
-| `uploaded_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาอัปโหลด |
+| `uploaded_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาอัปโหลดตามเวลา Asia/Bangkok |
 
 เมื่ออัปโหลดเอกสารใหม่ ระบบเพิ่มแถวใหม่และใช้ `uploaded_at` เรียงจากใหม่ไปเก่า โดยเอกสารประเภท `ADDITIONAL_DOCUMENT` จำกัดไม่เกิน 5 ไฟล์ต่อคำร้องที่ระดับ Laravel
 
@@ -331,7 +335,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `officer_pers_id` | int | LR, NOT NULL | — | Officer จากฐาน 199 |
 | `decision` | varchar(20) | NOT NULL | — | `PASSED` หรือ `RETURNED` |
 | `return_reason` | text | NULL | `NULL` | เหตุผลส่งกลับ ต้องมีเมื่อเป็น `RETURNED` และส่งให้ Requester |
-| `reviewed_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาตรวจ |
+| `reviewed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาตรวจตามเวลา Asia/Bangkok |
 
 ## `course133.course_approval`
 
@@ -344,7 +348,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `approver_pers_id` | int | LR, NOT NULL | — | ผู้พิจารณาจากฐาน 199 |
 | `decision` | varchar(20) | NOT NULL | — | `APPROVED`, `REJECTED`, `RETURNED` |
 | `comment` | text | NULL | `NULL` | เหตุผลที่ส่งให้ Requester; บังคับเมื่อไม่ใช่ `APPROVED` |
-| `decided_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาพิจารณา |
+| `decided_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาพิจารณาตามเวลา Asia/Bangkok |
 
 ## `course133.request_status_history`
 
@@ -357,7 +361,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `status` | varchar(40) | NOT NULL | — | สถานะของคำร้อง ณ เหตุการณ์นี้ |
 | `changed_by_pers_id` | int | LR, NULL | `NULL` | ผู้เปลี่ยนจากฐาน 199; ว่างเมื่อระบบเปลี่ยนเอง |
 | `change_source` | varchar(30) | NOT NULL | — | `REQUESTER`, `OFFICER`, `APPROVER`, `SYSTEM` |
-| `changed_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาเปลี่ยนสถานะ |
+| `changed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาเปลี่ยนสถานะตามเวลา Asia/Bangkok |
 
 ## `course133.notification_outbox`
 
@@ -374,7 +378,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `attempt_count` | integer | NOT NULL | `0` | จำนวนครั้งที่พยายามส่ง ต้องไม่ติดลบ |
 | `sent_at` | datetime2 | NULL | `NULL` | เวลาที่ส่งสำเร็จ |
 | `last_error` | text | NULL | `NULL` | error ล่าสุด |
-| `created_at` | datetime2 | NOT NULL | SYSUTCDATETIME() | เวลาสร้างคิว |
+| `created_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาสร้างคิวตามเวลา Asia/Bangkok |
 
 ## สถานะคำร้อง
 
@@ -430,9 +434,9 @@ SSO/LDAP ยืนยัน Buasri ID
 - `officer_review.return_reason` ต้องมีข้อความเมื่อ Officer ส่งกลับ
 - `course_approval.comment` ต้องมีข้อความเมื่อ Approver ปฏิเสธหรือส่งกลับ
 - อาจารย์หลายคนเก็บใน `course_instructor` คนละแถว Laravel บังคับอย่างน้อย 1 คนต่อคำร้อง และใช้ `instructor_id` เรียงเมื่อจำเป็น
-- คอลัมน์ที่เป็นข้อมูลบังคับบนฟอร์ม รวมถึงข้อมูลผู้ประสานงาน ใช้ `NOT NULL`; `subject_code` ยังว่างได้เพราะระบุว่า “ถ้ามี”
-- `project_other` และ `enrollment_other` ว่างได้ตามปกติ แต่ต้องมีค่าเมื่อเลือก “อื่น ๆ (ระบุ)”
-- แบบเรียนรู้ตามอัธยาศัยตลอดเวลาเก็บ `starts_on` และ `ends_on` เป็น `NULL`; แบบกำหนดช่วงเวลาบังคับมีทั้งสองวัน
+- คอลัมน์ที่เป็นข้อมูลบังคับบนฟอร์ม รวมถึงข้อมูลผู้ประสานงาน ใช้ `NOT NULL`
+- `project_other`, `category_other` และ `enrollment_other` ว่างได้ตามปกติ แต่ต้องมีค่าเมื่อเลือก “อื่น ๆ (ระบุ)”
+- ลักษณะการดำเนินกิจกรรมทั้งแบบตามวงรอบและแบบตามกรอบระยะเวลาของโครงการต้องมี `starts_on` และ `ends_on`; แบบตามวงรอบต้องมี `activity_round` และ `activity_phase`
 - ไม่มีตาราง `course_result`; `course_id` และผู้บันทึกอยู่ใน `course_request`
 - `request_status_history.status` เก็บสถานะหลังเหตุการณ์แต่ละรอบ โดยเรียง `changed_at` เพื่อดูสถานะก่อนหน้าได้
 - `notification_outbox` เก็บชนิดการแจ้งเตือนและผู้รับ ส่วนหัวข้อกับเนื้อหาให้ backend สร้างจาก template ตอนส่ง

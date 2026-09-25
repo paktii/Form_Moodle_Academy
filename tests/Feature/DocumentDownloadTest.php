@@ -16,7 +16,7 @@ class DocumentDownloadTest extends TestCase
             'portal.draft' => [
                 'number' => 'ACA-TEST-001',
                 'unit' => 'สำนักคอมพิวเตอร์',
-                'project_name' => 'โครงการทดสอบ',
+                'project_name' => 'test-project',
                 'project_type' => 'OTHER',
                 'project_other' => 'โครงการภายใน',
                 'coordinator_first' => 'สมชาย',
@@ -33,7 +33,9 @@ class DocumentDownloadTest extends TestCase
                     'last' => 'รักการสอน',
                     'email' => 'teacher@g.swu.ac.th',
                 ]],
-                'learning' => 'แบบกำหนดช่วงเวลาเรียน',
+                'learning' => 'เปิดแบบตามวงรอบ (Phase/Batch-based)',
+                'activity_round' => 'รุ่นที่ 1',
+                'activity_phase' => 'เฟส 1/2569',
                 'starts_at' => '2026-10-01',
                 'ends_at' => '2026-12-31',
                 'enrollment' => 'สมัครด้วยตนเอง',
@@ -43,7 +45,8 @@ class DocumentDownloadTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('content-type', 'application/pdf');
-        $response->assertDownload('course-request-aca-test-001.pdf');
+        $response->assertDownload('test-project.pdf');
         $this->assertStringStartsWith('%PDF-', $response->getContent());
+        $this->assertNotNull(session('portal.draft.unsigned_pdf_downloaded_at'));
     }
 }

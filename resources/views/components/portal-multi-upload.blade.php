@@ -1,4 +1,4 @@
-@props(['name', 'id', 'accept' => '.pdf,.doc,.docx', 'form' => null, 'files' => [], 'maxFiles' => 5])
+@props(['name', 'id', 'accept' => '.pdf,.doc,.docx,.xls,.xlsx,.csv', 'form' => null, 'files' => [], 'maxFiles' => 5])
 <div class="multi-upload" data-multi-upload data-max-files="{{ $maxFiles }}">
     <input
         type="file"

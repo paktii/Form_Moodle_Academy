@@ -8,5 +8,8 @@ class CourseDocument extends Course133Model
 
     protected $primaryKey = 'document_id';
 
-    protected $casts = ['uploaded_at' => 'datetime'];
+    protected $casts = [
+        'uploaded_at' => 'datetime',
+        'roster_acknowledged_at' => 'datetime',
+    ];
 }

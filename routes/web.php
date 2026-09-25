@@ -18,6 +18,7 @@ Route::controller(PortalController::class)->group(function () {
         Route::post('/request/{id}/edit', 'edit')->whereNumber('id')->name('requests.edit');
         Route::get('/request/{id}', 'detail')->defaults('role', 'user')->whereNumber('id')->name('requests.show');
         Route::post('/request/{id}/upload', 'upload')->whereNumber('id')->name('requests.upload');
+        Route::post('/request/{id}/student-roster', 'uploadStudentRoster')->whereNumber('id')->name('requests.student-roster.upload');
     });
 
     Route::middleware('portal.role:officer')->group(function () {
@@ -25,6 +26,8 @@ Route::controller(PortalController::class)->group(function () {
         Route::get('/officer/reviews/{id}', 'detail')->defaults('role', 'officer')->whereNumber('id')->name('officer.show');
         Route::post('/officer/reviews/{id}', 'review')->whereNumber('id')->name('officer.review');
         Route::post('/officer/reviews/{id}/course-id', 'courseId')->whereNumber('id')->name('officer.course-id');
+        Route::post('/officer/reviews/{id}/student-roster/acknowledge', 'acknowledgeStudentRoster')->whereNumber('id')->name('officer.student-roster.acknowledge');
+        Route::post('/officer/reviews/{id}/student-roster/reopen', 'reopenStudentRoster')->whereNumber('id')->name('officer.student-roster.reopen');
     });
 
     Route::middleware('portal.role:approver')->group(function () {

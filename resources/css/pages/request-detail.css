@@ -3,14 +3,16 @@
         margin: 0 0 20px;
         padding: 0;
         background: transparent;
+        align-items: stretch;
     }
 
     .requester-detail__navigation>.muted {
-        min-width: 260px;
-        padding: 12px;
-        text-align: right;
+        display: flex;
+        align-items: center;
+        padding: 6px 16px;
         background: #fff;
         border: 1px solid #e5e7eb;
+        border-radius: 4px;
     }
 
     .request-progress {
@@ -109,8 +111,13 @@
     }
 
     .requester-detail__heading h2 {
-        font-size: 22px;
-        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--portal-navy);
+        line-height: 1.4;
+        overflow-wrap: anywhere;
     }
 
     .requester-detail__card .detail-section h3 {
@@ -119,8 +126,12 @@
         margin-bottom: 20px;
     }
 
+    .requester-detail__mobile-heading-break {
+        display: none;
+    }
+
     .requester-detail__card .detail-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 28px 24px;
     }
 
@@ -142,25 +153,6 @@
         margin-top: 36px;
         padding-top: 28px;
         border-top: 1px solid #f3f4f6;
-    }
-
-    .requester-detail__card .detail-section:first-of-type .detail-field:nth-child(2),
-    .requester-detail__card .detail-section:first-of-type .detail-field:nth-child(3) {
-        grid-column: span 2;
-    }
-
-    .requester-detail__card .detail-section:nth-of-type(2) .detail-field {
-        grid-column: span 2;
-    }
-
-    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(3),
-    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(4),
-    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(5) {
-        grid-column: span 1;
-    }
-
-    .requester-detail__card .detail-section:nth-of-type(2) .detail-field:nth-child(6) {
-        grid-column: 1 / -1;
     }
 
     .requester-attachments {
@@ -186,12 +178,113 @@
         font-weight: 600;
     }
 
-    .requester-edit {
+    .pending-signed-document,
+    .student-roster,
+    .course-result {
+        scroll-margin-top: 24px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
         margin-top: 24px;
-        text-align: right;
+        padding: 20px;
+    }
+
+    .pending-signed-document__heading,
+    .student-roster__heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .pending-signed-document__heading h3,
+    .student-roster__heading h3 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 4px;
+        color: inherit;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .course-result h3 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 16px;
+        color: inherit;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .pending-signed-document__heading p,
+    .student-roster__heading p {
+        margin: 0;
+        color: #667085;
+        font-size: 13px;
+    }
+
+    .pending-signed-document__heading .roster-status,
+    .student-roster__heading .roster-status {
+        flex: none;
+        margin-top: 0;
+        text-decoration: none;
+    }
+
+    .pending-signed-document__form,
+    .student-roster__form {
+        margin-top: 16px;
+    }
+
+    .pending-signed-document__form [id^="upload-step1-"]>.portal-button,
+    .student-roster__form .portal-button {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 12px;
+    }
+
+    .roster-file-meta {
+        display: block;
+        margin-top: 4px;
+        color: #667085;
+        font-size: 11px;
     }
 
     @media (max-width: 760px) {
+        .pending-signed-document__heading,
+        .student-roster__heading {
+            display: grid;
+            grid-template-columns: 1fr;
+        }
+
+        .student-roster__heading {
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            column-gap: 16px;
+            row-gap: 4px;
+        }
+
+        .student-roster__heading > div {
+            display: contents;
+        }
+
+        .student-roster__heading h3 {
+            grid-column: 1;
+            grid-row: 1;
+            margin-bottom: 0;
+        }
+
+        .student-roster__heading p {
+            grid-column: 1 / -1;
+            grid-row: 2;
+        }
+
+        .student-roster__heading .roster-status {
+            grid-column: 2;
+            grid-row: 1;
+            justify-self: end;
+        }
+
         .requester-detail__navigation>.muted {
             min-width: 0;
         }
@@ -224,12 +317,12 @@
             display: none;
         }
 
-        .requester-detail__heading {
-            flex-direction: column;
+        .requester-detail__heading h2 {
+            font-size: 20px !important;
         }
 
-        .requester-detail__heading h2 {
-            font-size: 20px;
+        .requester-detail__mobile-heading-break {
+            display: block;
         }
 
         .requester-detail__card .detail-grid {
@@ -242,6 +335,32 @@
 
         .requester-attachments {
             padding: 12px;
+        }
+
+        .requester-attachments .document-row,
+        .student-roster .document-row {
+            flex-wrap: nowrap;
+        }
+
+        .requester-attachments .document-row__name,
+        .student-roster .document-row__name {
+            flex-basis: auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .requester-attachments .document-row__download,
+        .student-roster .document-row__download {
+            width: 32px;
+            min-height: 32px;
+            margin-left: auto;
+            padding: 6px;
+        }
+
+        .requester-attachments .document-row__download-label,
+        .student-roster .document-row__download-label {
+            display: none;
         }
     }
 }

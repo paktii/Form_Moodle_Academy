@@ -1,8 +1,9 @@
-@props(['status'])
+@props(['status', 'returnedBy' => null])
 @php
     $stage = match ($status) {
-        'DRAFT', 'PENDING_SIGNED_DOCUMENT' => 0,
-        'UNDER_OFFICER_REVIEW', 'RETURNED_FOR_REVISION' => 1,
+        'PENDING_SIGNED_DOCUMENT' => 0,
+        'UNDER_OFFICER_REVIEW' => 1,
+        'RETURNED_FOR_REVISION' => $returnedBy === 'APPROVER' ? 2 : 1,
         default => 2,
     };
     $finished = in_array($status, ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED']);
@@ -10,7 +11,7 @@
     $steps = [
         ['ยื่นคำร้องสำเร็จ', 'กรอกข้อมูลและอัปโหลดเอกสารเรียบร้อย', 'check'],
         ['ตรวจสอบเอกสาร', 'เจ้าหน้าที่ตรวจสอบคำขอ', 'file-text'],
-        ['อนุมัติสร้างรายวิชา', 'ผู้มีอำนาจพิจารณาคำร้อง', 'file-code'],
+        ['อนุมัติสร้างรายวิชา', 'ผู้มีอำนาจพิจารณาคำร้อง', 'file-check'],
     ];
 @endphp
 <ol class="request-progress" aria-label="ขั้นตอนดำเนินการคำร้อง">

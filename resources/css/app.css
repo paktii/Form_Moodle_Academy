@@ -24,6 +24,12 @@
         font-family: 'Sarabun', ui-sans-serif, system-ui, sans-serif;
     }
 
+    html {
+        max-width: 100%;
+        overflow-x: hidden;
+        overflow-x: clip;
+    }
+
     :root {
         --portal-navy: #0e2b5c;
         --portal-red: #df1423;

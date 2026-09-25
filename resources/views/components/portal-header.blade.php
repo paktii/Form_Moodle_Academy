@@ -15,7 +15,7 @@
                 <span><span class="portal-user__name">{{ $name }} ({{ $roleLabel }})</span><span class="portal-user__id">{{ $buasriId }}</span></span>
                 <span class="portal-avatar"><x-portal-icon name="user" /></span>
             </summary>
-            <div class="account-menu"><form method="post" action="{{ route('logout') }}">@csrf<button type="submit">ออกจากระบบ</button></form></div>
+            <div class="account-menu"><button type="button" data-open-dialog="logout-dialog">ออกจากระบบ</button></div>
         </details>
     </div>
 </header>

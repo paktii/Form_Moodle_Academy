@@ -1,17 +1,19 @@
 <?php
 
 return [
+    'moodle_url' => env('COURSE133_MOODLE_URL', 'https://academy.swu.ac.th'),
+
     'steps' => [
         1 => 'ข้อมูลส่วนงานและโครงการ',
         2 => 'รายละเอียดรายวิชาที่ต้องการสร้างในระบบ',
-        3 => 'ระยะเวลาเปิด-ปิด และรูปแบบการเรียนการสอน',
+        3 => 'ระยะเวลาเปิด-ปิด และลักษณะการดำเนินกิจกรรม',
         4 => 'ดาวน์โหลดเอกสารเพื่อลงนาม',
     ],
 
     'statuses' => [
-        'DRAFT' => 'แบบร่าง',
+
         'PENDING_SIGNED_DOCUMENT' => 'เอกสารไม่ครบ',
-        'UNDER_OFFICER_REVIEW' => 'รอตรวจสอบ',
+        'UNDER_OFFICER_REVIEW' => 'รออนุมัติ',
         'RETURNED_FOR_REVISION' => 'ส่งกลับแก้ไข',
         'PENDING_APPROVAL' => 'รออนุมัติ',
         'REJECTED' => 'ไม่อนุมัติ',

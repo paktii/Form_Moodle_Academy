@@ -87,7 +87,7 @@ class SendCourseNotifications extends Command
     private function messageFor(string $type, CourseRequest $request): array
     {
         $requestUrl = match ($type) {
-            'OFFICER_REVIEW_REQUIRED', 'COURSE_ID_REQUIRED' => route('officer.show', $request->request_id),
+            'OFFICER_REVIEW_REQUIRED', 'COURSE_ID_REQUIRED', 'STUDENT_ROSTER_SUBMITTED', 'STUDENT_ROSTER_UPDATED' => route('officer.show', $request->request_id),
             'APPROVAL_REQUIRED' => route('approver.show', $request->request_id),
             default => route('requests.show', $request->request_id),
         };
@@ -99,6 +99,10 @@ class SendCourseNotifications extends Command
             'REQUEST_REJECTED' => 'คำร้องไม่ผ่านการอนุมัติ',
             'COURSE_ID_REQUIRED' => 'คำร้องได้รับอนุมัติและรอบันทึก Course ID',
             'COURSE_ID_RECORDED' => 'บันทึก Course ID เรียบร้อยแล้ว',
+            'STUDENT_ROSTER_SUBMITTED' => 'ผู้ยื่นคำร้องแนบรายชื่อผู้เรียนแล้ว',
+            'STUDENT_ROSTER_UPDATED' => 'ผู้ยื่นคำร้องอัปเดตรายชื่อผู้เรียน',
+            'STUDENT_ROSTER_ACKNOWLEDGED' => 'เจ้าหน้าที่รับทราบรายชื่อผู้เรียนแล้ว',
+            'STUDENT_ROSTER_REOPENED' => 'เจ้าหน้าที่เปิดให้แก้ไขรายชื่อผู้เรียน',
             default => 'สถานะคำร้องมีการเปลี่ยนแปลง',
         };
 
