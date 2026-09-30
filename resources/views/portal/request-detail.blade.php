@@ -1,4 +1,4 @@
-<x-portal-layout title="รายละเอียดเอกสาร">
+<x-portal-layout title="รายละเอียดเอกสาร" tab-title="Request Details">
     <main class="portal-main requester-detail">
         <div class="detail-actions requester-detail__navigation"><x-portal-button :href="route('requests.index')" variant="secondary">ย้อนกลับ</x-portal-button><span class="muted">เลขที่คำร้อง: {{ $record['number'] }}</span></div>
         @if($record['reason'] ?? null)<section class="reason-banner">
@@ -49,8 +49,8 @@
             @if($record['requires_student_roster'])
             <section class="student-roster" id="student-roster">
                 <div class="student-roster__heading">
-                    <div><h3><x-portal-icon name="user-plus" />รายชื่อผู้เรียน</h3><p>@if($record['student_roster_acknowledged'])เจ้าหน้าที่รับทราบรายชื่อแล้ว หากต้องการแก้ไขกรุณาติดต่อเจ้าหน้าที่เพื่อเปิดสิทธิ์@elseif($record['has_student_roster'])แนบรายชื่อแล้วและรอเจ้าหน้าที่รับทราบ สามารถอัปโหลดไฟล์ใหม่ได้ในระหว่างนี้@elseยังไม่แนบรายชื่อผู้เรียน กรุณาอัปโหลดเมื่อมีรายชื่อพร้อมแล้ว@endif</p></div>
-                    <span class="roster-status {{ $record['student_roster_acknowledged'] ? 'roster-status--complete' : ($record['has_student_roster'] ? 'roster-status--pending' : 'roster-status--missing') }}">{{ $record['student_roster_acknowledged'] ? 'รับทราบแล้ว' : ($record['has_student_roster'] ? 'รอรับทราบ' : 'ยังไม่แนบ') }}</span>
+                    <div><h3><x-portal-icon name="user-plus" />รายชื่อผู้เรียน</h3><p>@if($record['student_roster_reopen_requested'])ส่งคำขอแก้ไขรายชื่อแล้ว กรุณารอเจ้าหน้าที่เปิดสิทธิ์@elseif($record['student_roster_acknowledged'])เจ้าหน้าที่รับทราบรายชื่อแล้ว หากต้องการแก้ไขสามารถส่งคำขอไปยังเจ้าหน้าที่ได้@elseif($record['has_student_roster'])แนบรายชื่อแล้วและรอเจ้าหน้าที่รับทราบ สามารถอัปโหลดไฟล์ใหม่ได้ในระหว่างนี้@elseยังไม่แนบรายชื่อผู้เรียน กรุณาอัปโหลดเมื่อมีรายชื่อพร้อมแล้ว@endif</p></div>
+                    <span class="roster-status {{ $record['student_roster_reopen_requested'] ? 'roster-status--pending' : ($record['student_roster_acknowledged'] ? 'roster-status--complete' : ($record['has_student_roster'] ? 'roster-status--pending' : 'roster-status--missing')) }}">{{ $record['student_roster_reopen_requested'] ? 'รอเปิดสิทธิ์' : ($record['student_roster_acknowledged'] ? 'รับทราบแล้ว' : ($record['has_student_roster'] ? 'รอรับทราบ' : 'ยังไม่แนบ')) }}</span>
                 </div>
                 @if($record['has_student_roster'])
                 <div class="document-row"><x-portal-icon name="file-text" /><span class="document-row__name">{{ $record['student_roster_name'] }}<small class="roster-file-meta">เวอร์ชัน {{ $record['student_roster_version_count'] }} • อัปโหลด {{ $record['student_roster_uploaded_at'] }}</small></span><x-portal-button :href="route('requests.attachment', [$record['id'], 'roster'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์รายชื่อผู้เรียน '.$record['student_roster_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button></div>
@@ -61,6 +61,10 @@
                     <x-portal-upload name="student_roster" :id="'student-roster-file-'.$record['id']" accept=".xls,.xlsx,.csv" :compact="true" :compact-label="$record['has_student_roster'] ? 'เลือกไฟล์รายชื่อใหม่' : 'อัปโหลดรายชื่อผู้เรียน'" :required="true" />
                     <x-portal-button type="button" data-roster-confirm="{{ $record['id'] }}" :data-confirm-dialog="'student-roster-confirm-'.$record['id']">{{ $record['has_student_roster'] ? 'บันทึกไฟล์ใหม่' : 'บันทึกรายชื่อ' }}</x-portal-button>
                 </form>
+                @else
+                <div class="student-roster__form">
+                    <x-portal-button type="button" variant="secondary" data-open-dialog="student-roster-reopen-request" :disabled="$record['student_roster_reopen_requested']">{{ $record['student_roster_reopen_requested'] ? 'ส่งคำขอแก้ไขแล้ว' : 'ขอแก้ไขรายชื่อ' }}</x-portal-button>
+                </div>
                 @endunless
             </section>
             @unless($record['student_roster_acknowledged'])
@@ -72,6 +76,18 @@
                 </div>
             </x-portal-modal>
             @endunless
+            @if($record['student_roster_acknowledged'] && ! $record['student_roster_reopen_requested'])
+            <x-portal-modal id="student-roster-reopen-request" title="ยืนยันการขอแก้ไขรายชื่อ">
+                <p class="upload-confirmation__message">ระบบจะส่งคำขอไปยังเจ้าหน้าที่เพื่อเปิดสิทธิ์แก้ไขรายชื่อ<br>คุณต้องการดำเนินการต่อใช่หรือไม่?</p>
+                <form method="post" action="{{ route('requests.student-roster.reopen-request', $record['id']) }}">
+                    @csrf
+                    <div class="modal-actions upload-confirmation__actions">
+                        <x-portal-button type="button" variant="plain" data-close-dialog>ยกเลิก</x-portal-button>
+                        <x-portal-button type="submit">ยืนยันส่งคำขอ</x-portal-button>
+                    </div>
+                </form>
+            </x-portal-modal>
+            @endif
             @endif
             @if($record['course_id'] ?? null)<section class="course-result">
                 <h3>ผลการสร้างรายวิชา</h3>

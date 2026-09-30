@@ -2,10 +2,11 @@
 $isUser = $role === 'user';
 $home = $isUser ? 'requests.index' : ($role === 'officer' ? 'officer.reviews' : 'approver.reviews');
 $title = $isUser ? 'รายละเอียดเอกสาร' : ($role === 'officer' ? 'ตรวจสอบรายละเอียดคำขอและเอกสาร' : 'ตรวจสอบรายละเอียดคำขออนุมัติสร้างรายวิชา');
+$tabTitle = $role === 'officer' ? 'Officer Review' : ($role === 'approver' ? 'Approval Review' : 'Request Details');
 $canReview = $role === 'officer' && $record['status'] === 'UNDER_OFFICER_REVIEW';
 $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
 @endphp
-<x-portal-layout :title="$title" :role="$role">
+<x-portal-layout :title="$title" :tab-title="$tabTitle" :role="$role">
     <main class="portal-main detail-page detail-page--{{ $role }}">
         <div class="detail-actions requester-detail__navigation"><x-portal-button :href="route($home)" variant="secondary">ย้อนกลับ</x-portal-button>
             @if($isUser && in_array($record['status'], ['RETURNED_FOR_REVISION', 'PENDING_SIGNED_DOCUMENT']))<x-portal-button data-open-dialog="edit-request-dialog">แก้ไขคำร้อง</x-portal-button>@else<span class="muted">เลขที่คำร้อง: {{ $record['number'] }}</span>@endif
@@ -34,7 +35,9 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
             <div class="document-row roster-document-row">
                 <x-portal-icon name="file-text" />
                 <span class="document-row__name">{{ $record['student_roster_name'] }}</span>
-                @if($record['student_roster_needs_officer_attention'])
+                @if($record['student_roster_reopen_requested'])
+                <span class="roster-status roster-status--pending">ขอแก้ไข</span>
+                @elseif($record['student_roster_needs_officer_attention'])
                 <span class="roster-status roster-status--pending">{{ $record['student_roster_is_update'] ? 'อัปเดตใหม่' : 'ไฟล์ใหม่' }}</span>
                 @elseif($record['student_roster_acknowledged'])
                 <span class="roster-status roster-status--complete">รับทราบแล้ว</span>
@@ -48,7 +51,7 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
             @if($role === 'officer')
             <div class="roster-review-actions">
                 @if($record['student_roster_needs_officer_attention'])<x-portal-button data-open-dialog="acknowledge-roster-dialog">รับทราบรายชื่อแล้ว</x-portal-button>
-                @elseif($record['student_roster_acknowledged'])<x-portal-button variant="secondary" data-open-dialog="reopen-roster-dialog">เปิดให้แก้ไขรายชื่อ</x-portal-button>@endif
+                @elseif($record['student_roster_acknowledged'])<x-portal-button :variant="$record['student_roster_reopen_requested'] ? 'primary' : 'secondary'" data-open-dialog="reopen-roster-dialog">เปิดให้แก้ไขรายชื่อ</x-portal-button>@endif
             </div>
             @endif
             @if($record['student_roster_version_count'] > 1)

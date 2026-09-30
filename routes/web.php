@@ -19,6 +19,7 @@ Route::controller(PortalController::class)->group(function () {
         Route::get('/request/{id}', 'detail')->defaults('role', 'user')->whereNumber('id')->name('requests.show');
         Route::post('/request/{id}/upload', 'upload')->whereNumber('id')->name('requests.upload');
         Route::post('/request/{id}/student-roster', 'uploadStudentRoster')->whereNumber('id')->name('requests.student-roster.upload');
+        Route::post('/request/{id}/student-roster/reopen-request', 'requestStudentRosterReopen')->whereNumber('id')->name('requests.student-roster.reopen-request');
     });
 
     Route::middleware('portal.role:officer')->group(function () {

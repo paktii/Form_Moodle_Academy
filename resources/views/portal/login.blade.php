@@ -1,4 +1,4 @@
-<x-portal-layout title="เข้าสู่ระบบ SWU Academy" :login="true">
+<x-portal-layout title="เข้าสู่ระบบ SWU Academy" tab-title="Sign In" :login="true">
     <main class="login-card">
         <section class="login-visual">
             <img src="{{ asset('img/SWU_Logo_TH_Color.png') }}" alt="มหาวิทยาลัยศรีนครินทรวิโรฒ" class="login-visual__logo">

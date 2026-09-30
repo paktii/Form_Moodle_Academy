@@ -1,4 +1,4 @@
-@props(['title' => 'SWU Moodle Academy', 'role' => 'user', 'login' => false])
+@props(['title' => 'SWU Moodle Academy', 'tabTitle' => null, 'role' => 'user', 'login' => false])
 <!doctype html>
 <html lang="th">
 
@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" type="image/png" href="{{ asset('img/logo.png') }}">
-    <title>{{ $title }}</title>
+    <title>{{ $tabTitle ?? $title }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 

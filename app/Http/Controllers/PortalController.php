@@ -99,7 +99,8 @@ class PortalController extends Controller
         $records = $query->get()->map(fn(CourseRequest $courseRequest) => $this->toRecord($courseRequest));
         if ($role === 'officer') {
             $records = $records->filter(fn(array $record) => $record['status'] !== 'PENDING_APPROVAL'
-                || $record['student_roster_needs_officer_attention'])->values();
+                || $record['student_roster_needs_officer_attention']
+                || $record['student_roster_reopen_requested'])->values();
         }
         $statuses = config('course-workflow.statuses');
 
@@ -487,6 +488,46 @@ class PortalController extends Controller
 
         return $redirect
             ->with('success', 'รับทราบรายชื่อผู้เรียนแล้ว<br>ระบบล็อกการแก้ไขไฟล์ของผู้ยื่นคำร้อง');
+    }
+
+    public function requestStudentRosterReopen(Request $request, int $id)
+    {
+        $alreadyRequested = false;
+
+        DB::connection('course133')->transaction(function () use ($request, $id, &$alreadyRequested) {
+            $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
+            $actor = $this->actor($request);
+            abort_unless((int) $courseRequest->requester_pers_id === (int) $actor['pers_id'], 403);
+            abort_unless($courseRequest->enrollment_method === 'ผู้ดูแลระบบนำเข้ารายชื่อ', 409);
+
+            $studentRoster = $courseRequest->documents()
+                ->where('document_type', 'STUDENT_ROSTER')
+                ->latest('uploaded_at')
+                ->latest('document_id')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_if($studentRoster->roster_acknowledged_at === null, 409, 'รายชื่อผู้เรียนเปิดให้แก้ไขอยู่แล้ว');
+
+            $alreadyRequested = NotificationOutbox::query()
+                ->where('request_id', $courseRequest->request_id)
+                ->where('notification_type', 'STUDENT_ROSTER_REOPEN_REQUESTED')
+                ->where('created_at', '>=', $studentRoster->roster_acknowledged_at)
+                ->exists();
+
+            if (! $alreadyRequested) {
+                $this->queueNotification(
+                    $courseRequest,
+                    'STUDENT_ROSTER_REOPEN_REQUESTED',
+                    config('course-workflow.actors.officer')
+                );
+            }
+        });
+
+        return redirect()->to(route('requests.show', $id) . '#student-roster')
+            ->with('success', $alreadyRequested
+                ? 'ส่งคำขอแก้ไขรายชื่อไปยังเจ้าหน้าที่แล้ว กรุณารอเจ้าหน้าที่เปิดสิทธิ์'
+                : 'ส่งคำขอแก้ไขรายชื่อไปยังเจ้าหน้าที่เรียบร้อยแล้ว');
     }
 
     public function reopenStudentRoster(Request $request, int $id)
@@ -940,7 +981,11 @@ class PortalController extends Controller
                 ->first();
             $canReviewLateRoster = $courseRequest->status === 'PENDING_APPROVAL'
                 && $latestRoster !== null
-                && $latestRoster->roster_acknowledged_at === null;
+                && ($latestRoster->roster_acknowledged_at === null
+                    || $courseRequest->notifications->contains(fn ($notification) =>
+                        $notification->notification_type === 'STUDENT_ROSTER_REOPEN_REQUESTED'
+                        && $notification->created_at?->greaterThanOrEqualTo($latestRoster->roster_acknowledged_at)
+                    ));
 
             abort_unless(in_array($courseRequest->status, ['UNDER_OFFICER_REVIEW', 'PENDING_COURSE_ID', 'COURSE_ID_RECORDED', 'REJECTED'], true) || $canReviewLateRoster, 404);
         } else {
@@ -1020,6 +1065,11 @@ class PortalController extends Controller
         ])->values()->all();
         $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
         $latestApproval = $courseRequest->approvals->sortByDesc('decided_at')->first();
+        $studentRosterReopenRequested = $studentRoster?->roster_acknowledged_at !== null
+            && $courseRequest->notifications->contains(fn ($notification) =>
+                $notification->notification_type === 'STUDENT_ROSTER_REOPEN_REQUESTED'
+                && $notification->created_at?->greaterThanOrEqualTo($studentRoster->roster_acknowledged_at)
+            );
         $returnedByApprover = $courseRequest->status === 'RETURNED_FOR_REVISION'
             && $latestApproval?->decision === 'RETURNED'
             && ($latestReview?->reviewed_at === null || $latestApproval->decided_at->greaterThanOrEqualTo($latestReview->reviewed_at));
@@ -1073,6 +1123,7 @@ class PortalController extends Controller
             'student_roster_uploaded_at' => $studentRoster?->uploaded_at?->locale('th')->translatedFormat('j M Y'),
             'student_roster_acknowledged' => $studentRoster?->roster_acknowledged_at !== null,
             'student_roster_acknowledged_at' => $studentRoster?->roster_acknowledged_at?->locale('th')->translatedFormat('j M Y H:i น.'),
+            'student_roster_reopen_requested' => $studentRosterReopenRequested,
             'student_roster_needs_officer_attention' => $studentRoster !== null && $studentRoster->roster_acknowledged_at === null,
             'student_roster_is_update' => $studentRosterVersionCount > 1,
             'expected_students' => $courseRequest->expected_students,
@@ -1243,6 +1294,6 @@ class PortalController extends Controller
 
     private function recordRelations(): array
     {
-        return ['projectType', 'category', 'instructors', 'documents', 'officerReviews', 'approvals'];
+        return ['projectType', 'category', 'instructors', 'documents', 'officerReviews', 'approvals', 'notifications'];
     }
 }

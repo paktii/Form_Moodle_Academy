@@ -1,4 +1,4 @@
-<x-portal-layout title="เอกสารขออนุมัติสร้างรายวิชา">
+<x-portal-layout title="เอกสารขออนุมัติสร้างรายวิชา" tab-title="Request PDF">
     <nav class="print-toolbar">
         <x-portal-button :href="$downloadUrl"><x-portal-icon name="download" />ดาวน์โหลด PDF</x-portal-button>
         <x-portal-button :href="url()->previous()" variant="secondary">ย้อนกลับ</x-portal-button>

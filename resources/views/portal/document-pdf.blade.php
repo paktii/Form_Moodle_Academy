@@ -14,7 +14,7 @@
 <html lang="th">
 <head>
     <meta charset="utf-8">
-    <title>{{ $record['project_name'] ?? 'แบบฟอร์มขอสร้างรายวิชาในระบบ SWU Moodle Academy' }}</title>
+    <title>Request PDF</title>
     {!! $styleTag !!}
 </head>
 <body>

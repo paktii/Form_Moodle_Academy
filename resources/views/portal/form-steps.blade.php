@@ -1,7 +1,7 @@
 @php
 $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
 @endphp
-<x-portal-layout title="สร้างคำร้อง">
+<x-portal-layout title="สร้างคำร้อง" :tab-title="'New Request · Step '.$step">
     <main class="form-layout">
         <form id="course-form" action="{{ route('requests.save-step', $step) }}" method="post" enctype="multipart/form-data">
             @csrf

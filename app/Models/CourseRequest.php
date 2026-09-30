@@ -52,4 +52,9 @@ class CourseRequest extends Course133Model
     {
         return $this->hasMany(CourseApproval::class, 'request_id');
     }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(NotificationOutbox::class, 'request_id');
+    }
 }

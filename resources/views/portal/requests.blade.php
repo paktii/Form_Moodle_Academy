@@ -1,6 +1,7 @@
 @php
 $isUser = $role === 'user';
 $title = $isUser ? 'สถานะเอกสาร' : ($role === 'officer' ? 'เอกสารรอการตรวจสอบและลงนาม' : 'ขั้นตอนการลงนามอนุมัติ');
+$tabTitle = $isUser ? 'My Requests' : ($role === 'officer' ? 'Officer Queue' : 'Approval Queue');
 $detailRoute = $isUser ? 'requests.show' : ($role === 'officer' ? 'officer.show' : 'approver.show');
 $pending = $records->where('status', 'PENDING_SIGNED_DOCUMENT')->count();
 $missingRosters = $records->filter(fn ($record) => ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false))->count();
@@ -21,7 +22,7 @@ $filterStatuses = match ($role) {
 default => $statuses,
 };
 @endphp
-<x-portal-layout :title="$title" :role="$role">
+<x-portal-layout :title="$title" :tab-title="$tabTitle" :role="$role">
     <main class="portal-main list-page {{ $isUser ? 'list-page--user' : '' }}" data-request-list>
         <div class="page-heading">
             <div>
@@ -115,6 +116,8 @@ default => $statuses,
                                     :data-open-dialog="'upload-'.$record['id']"
                                     data-request-upload
                                     :hidden="! $record['unsigned_pdf_downloaded']">อัปโหลดไฟล์</x-portal-button>
+                                @elseif($role === 'officer' && ($record['student_roster_reopen_requested'] ?? false))
+                                <x-portal-button :href="route($detailRoute, $record['id'])">เปิดให้แก้ไข</x-portal-button>
                                 @elseif($role === 'officer' && ($record['student_roster_needs_officer_attention'] ?? false))
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจรายชื่อ</x-portal-button>
                                 @elseif($role === 'officer' && $record['status'] === 'PENDING_COURSE_ID')
