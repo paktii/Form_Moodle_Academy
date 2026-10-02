@@ -1,12 +1,14 @@
-@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null])
+@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null, 'optionParents' => [], 'dependsOn' => null, 'parentValue' => null, 'dependencyPlaceholder' => 'กรุณาเลือกหน่วยงานหลักก่อน'])
 @php
     $inputId = $id ?? 'field-'.str_replace(['[', ']'], ['-', ''], $name);
     $listId = $inputId.'-options';
     $selectedValue = old($name, $value);
     $selectedLabel = $options[$selectedValue] ?? '';
     $searchValue = old($name.'_search', $selectedLabel);
+    $selectedParentValue = old($dependsOn, $parentValue);
+    $dependencyDisabled = filled($dependsOn) && blank($selectedParentValue);
 @endphp
-<label class="form-label" for="{{ $inputId }}" data-searchable-select>{{ $label }}@if($required)<span class="required-indicator" aria-hidden="true">*</span>@endif
+<label class="form-label" for="{{ $inputId }}" data-searchable-select @if($dependsOn) data-searchable-select-depends-on="{{ $dependsOn }}" @endif>{{ $label }}@if($required)<span class="required-indicator" aria-hidden="true">*</span>@endif
     <div class="searchable-select">
         <input
             id="{{ $inputId }}"
@@ -14,20 +16,23 @@
             type="search"
             class="form-field searchable-select__input"
             value="{{ $searchValue }}"
-            placeholder="{{ $placeholder }}"
+            placeholder="{{ $dependencyDisabled ? $dependencyPlaceholder : $placeholder }}"
+            data-default-placeholder="{{ $placeholder }}"
+            data-dependency-placeholder="{{ $dependencyPlaceholder }}"
             autocomplete="off"
             role="combobox"
             aria-autocomplete="list"
             aria-controls="{{ $listId }}"
             aria-expanded="false"
             data-searchable-select-input
+            @disabled($dependencyDisabled)
             @required($required)
         >
         <span class="searchable-select__arrow" aria-hidden="true" @if(filled($searchValue)) hidden @endif data-searchable-select-arrow></span>
         <button
             type="button"
             class="searchable-select__clear"
-            aria-label="ล้างหน่วยงานเป้าหมาย"
+            aria-label="ล้าง{{ $label }}"
             @if(blank($searchValue)) hidden @endif
             data-searchable-select-clear
         >×</button>
@@ -42,6 +47,7 @@
                     aria-selected="{{ (string) $selectedValue === (string) $optionValue ? 'true' : 'false' }}"
                     data-searchable-select-option
                     data-value="{{ $optionValue }}"
+                    @if(isset($optionParents[$optionValue])) data-parent-value="{{ $optionParents[$optionValue] }}" @endif
                 >{{ $optionLabel }}</button>
             @endforeach
             <p class="searchable-select__empty" role="status" hidden data-searchable-select-empty>ไม่พบหน่วยงานที่ค้นหา</p>

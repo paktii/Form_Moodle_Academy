@@ -10,4 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('course-notifications:send')
     ->everySecond()
-    ->withoutOverlapping();
+    ->withoutOverlapping(config('course-workflow.notifications.schedule_lock_minutes'));

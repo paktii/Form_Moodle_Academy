@@ -3,6 +3,22 @@
 return [
     'moodle_url' => env('COURSE133_MOODLE_URL', 'https://academy.swu.ac.th'),
 
+    'dev_role_switcher' => (bool) env('PORTAL_DEV_ROLE_SWITCHER', false),
+
+    'notifications' => [
+        'schedule_lock_minutes' => max(1, (int) env('COURSE133_NOTIFICATION_LOCK_MINUTES', 5)),
+        'stale_after_minutes' => max(1, (int) env('COURSE133_NOTIFICATION_STALE_MINUTES', 5)),
+        'retry_delay_seconds' => max(1, (int) env('COURSE133_NOTIFICATION_RETRY_SECONDS', 30)),
+        'max_retry_delay_seconds' => max(1, (int) env('COURSE133_NOTIFICATION_MAX_RETRY_SECONDS', 900)),
+    ],
+
+    'ldap' => [
+        'url' => env('LDAP_URL', 'ldap://ldap.swu.ac.th'),
+        'port' => (int) env('LDAP_PORT', 389),
+        'user_dn' => env('LDAP_USER_DN', 'uid=%s,dc=swu,dc=ac,dc=th'),
+        'timeout' => (int) env('LDAP_TIMEOUT', 5),
+    ],
+
     'steps' => [
         1 => 'ข้อมูลส่วนงานและโครงการ',
         2 => 'รายละเอียดรายวิชาที่ต้องการสร้างในระบบ',
@@ -19,35 +35,6 @@ return [
         'REJECTED' => 'ไม่อนุมัติ',
         'PENDING_COURSE_ID' => 'อนุมัติแล้ว',
         'COURSE_ID_RECORDED' => 'เสร็จสมบูรณ์',
-    ],
-
-    // Temporary identities until Server 199 / university SSO is connected.
-    'actors' => [
-        'user' => [
-            'pers_id' => (int) env('COURSE133_USER_PERS_ID', 100010),
-            'dept_id' => (int) env('COURSE133_USER_DEPT_ID', 200),
-            'buasri_id' => env('COURSE133_USER_BUASRI_ID', 'requester'),
-            'password' => env('COURSE133_USER_PASSWORD'),
-            'name' => env('COURSE133_USER_NAME', 'ผู้ยื่นคำร้อง'),
-            'email' => env('COURSE133_USER_EMAIL', 'requester@example.test'),
-            'label' => 'บุคลากร',
-        ],
-        'officer' => [
-            'pers_id' => (int) env('COURSE133_OFFICER_PERS_ID', 100015),
-            'buasri_id' => env('COURSE133_OFFICER_BUASRI_ID', 'officer'),
-            'password' => env('COURSE133_OFFICER_PASSWORD'),
-            'name' => env('COURSE133_OFFICER_NAME', 'เจ้าหน้าที่ตรวจสอบ'),
-            'email' => env('COURSE133_OFFICER_EMAIL', 'officer@example.test'),
-            'label' => 'เจ้าหน้าที่',
-        ],
-        'approver' => [
-            'pers_id' => (int) env('COURSE133_APPROVER_PERS_ID', 100017),
-            'buasri_id' => env('COURSE133_APPROVER_BUASRI_ID', 'approver'),
-            'password' => env('COURSE133_APPROVER_PASSWORD'),
-            'name' => env('COURSE133_APPROVER_NAME', 'ผู้มีอำนาจอนุมัติ'),
-            'email' => env('COURSE133_APPROVER_EMAIL', 'approver@example.test'),
-            'label' => 'ผู้อนุมัติ',
-        ],
     ],
 
 ];

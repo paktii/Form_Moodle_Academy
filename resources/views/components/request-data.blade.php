@@ -19,10 +19,13 @@
     $enrollment = ($record['enrollment'] ?? '') === 'อื่น ๆ (ระบุ)'
         ? trim($record['enrollment_other'] ?? '')
         : trim($record['enrollment'] ?? '');
+    $targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])
+        ->filter(fn ($value) => filled($value))
+        ->implode(', ');
     $groups = [
         'ข้อมูลส่วนงานและโครงการ' => [
             ['ส่วนงาน/คณะ/สำนักของผู้ยื่น', $record['requester_unit'] ?? ''],
-            ['ส่วนงาน/คณะ/สำนักเป้าหมาย', $record['unit'] ?? ''],
+            ['ส่วนงาน/คณะ/สำนักเป้าหมาย', $targetUnit],
             ['ชื่อโครงการ', $record['project_name'] ?? ''],
             ['ประเภทโครงการ', $projectType],
             ['ชื่อผู้ประสานงาน', trim(($record['coordinator_first'] ?? '').' '.($record['coordinator_last'] ?? ''))],

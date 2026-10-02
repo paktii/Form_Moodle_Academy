@@ -59,7 +59,7 @@
                 <form class="student-roster__form" id="student-roster-form-{{ $record['id'] }}" method="post" action="{{ route('requests.student-roster.upload', $record['id']) }}" enctype="multipart/form-data">
                     @csrf
                     <x-portal-upload name="student_roster" :id="'student-roster-file-'.$record['id']" accept=".xls,.xlsx,.csv" :compact="true" :compact-label="$record['has_student_roster'] ? 'เลือกไฟล์รายชื่อใหม่' : 'อัปโหลดรายชื่อผู้เรียน'" :required="true" />
-                    <x-portal-button type="button" data-roster-confirm="{{ $record['id'] }}" :data-confirm-dialog="'student-roster-confirm-'.$record['id']">{{ $record['has_student_roster'] ? 'บันทึกไฟล์ใหม่' : 'บันทึกรายชื่อ' }}</x-portal-button>
+                    <x-portal-button type="submit" data-roster-confirm="{{ $record['id'] }}" :data-confirm-dialog="'student-roster-confirm-'.$record['id']">{{ $record['has_student_roster'] ? 'บันทึกไฟล์ใหม่' : 'บันทึกรายชื่อ' }}</x-portal-button>
                 </form>
                 @else
                 <div class="student-roster__form">

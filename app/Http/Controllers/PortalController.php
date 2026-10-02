@@ -11,6 +11,8 @@ use App\Models\OfficerReview;
 use App\Models\ProjectType;
 use App\Models\RequestStatusHistory;
 use App\Services\DepartmentDirectory;
+use App\Services\PersonnelDirectory;
+use App\Services\PortalIdentityService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\Request;
@@ -25,8 +27,11 @@ use setasign\Fpdi\Fpdi;
 
 class PortalController extends Controller
 {
-    public function __construct(private readonly DepartmentDirectory $departmentDirectory)
-    {
+    public function __construct(
+        private readonly DepartmentDirectory $departmentDirectory,
+        private readonly PersonnelDirectory $personnelDirectory,
+        private readonly PortalIdentityService $portalIdentityService,
+    ) {
     }
 
     public function login(Request $request)
@@ -43,25 +48,45 @@ class PortalController extends Controller
         $credentials = $request->validate([
             'buasri_id' => 'required|string|max:100',
             'password'  => 'required|string|max:255',
+            'login_role' => ['nullable', Rule::in(['officer', 'approver'])],
         ]);
 
-        $matched = null;
-        foreach (config('course-workflow.actors') as $role => $configured) {
-            if (
-                is_array($configured)
-                && ! blank($configured['password'] ?? null)
-                && hash_equals((string) $configured['buasri_id'], $credentials['buasri_id'])
-                && hash_equals((string) $configured['password'], $credentials['password'])
-            ) {
-                $matched = array_merge($configured, ['role' => $role]);
-                break;
-            }
+        $buasriId = Str::lower(Str::before(trim($credentials['buasri_id']), '@'));
+
+        if (! preg_match('/^[a-z0-9._-]+$/', $buasriId)) {
+            return back()->withInput($request->only('buasri_id'))
+                ->withErrors(['buasri_id' => 'รูปแบบ Buasri ID ไม่ถูกต้อง']);
+        }
+
+        try {
+            $matched = $this->portalIdentityService->authenticate($buasriId, $credentials['password']);
+        } catch (Throwable $exception) {
+            logger()->error('Portal authentication dependency failed.', [
+                'exception_class' => $exception::class,
+            ]);
+
+            return back()->withInput($request->only('buasri_id'))
+                ->withErrors(['buasri_id' => 'ระบบยืนยันตัวตนหรือฐานข้อมูลบุคลากรไม่พร้อมใช้งาน']);
         }
 
         if (! $matched) {
             return back()->withInput($request->only('buasri_id'))
                 ->withErrors(['buasri_id' => 'Buasri ID หรือรหัสผ่านไม่ถูกต้อง']);
         }
+
+        $requestedRole = config('course-workflow.dev_role_switcher')
+            ? ($credentials['login_role'] ?? null)
+            : null;
+        if ($requestedRole !== null) {
+            if (! in_array($requestedRole, $matched['available_roles'] ?? [], true)) {
+                return back()->withInput($request->only('buasri_id', 'login_role'))
+                    ->withErrors(['login_role' => 'บัญชีนี้ไม่มีสิทธิ์สำหรับบทบาทที่เลือก']);
+            }
+
+            $matched['role'] = $requestedRole;
+            $matched['label'] = $requestedRole === 'officer' ? 'เจ้าหน้าที่' : 'ผู้อนุมัติ';
+        }
+        unset($matched['available_roles']);
 
         $request->session()->regenerate();
         $request->session()->put('portal.actor', $matched);
@@ -111,8 +136,13 @@ class PortalController extends Controller
     {
         abort_unless(in_array($step, [1, 2, 3, 4], true), 404);
 
+        $personId = (int) $this->actor($request)['pers_id'];
         $data = $request->session()->get('portal.draft', []);
-        $data['requester_unit'] = $this->personDepartmentName((int) $this->actor($request)['pers_id']);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            $data = array_replace($this->personnelDirectory->coordinatorDefaults($person), $data);
+        }
+        $data['requester_unit'] = $this->personDepartmentName($personId);
 
         return view('portal.form-steps', [
             'step' => $step,
@@ -121,6 +151,8 @@ class PortalController extends Controller
             'projectTypes' => ProjectType::query()->where('is_active', true)->orderByRaw("CASE WHEN project_type_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('project_type_code')->pluck('project_type_name_th', 'project_type_code'),
             'categories' => CourseCategory::query()->where('is_active', true)->orderByRaw("CASE WHEN category_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('category_code')->pluck('category_name_th', 'category_code'),
             'departments' => $this->departmentDirectory->options(),
+            'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
+            'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
         ]);
     }
 
@@ -132,6 +164,7 @@ class PortalController extends Controller
         $rules = match ($step) {
             1 => [
                 'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
+                'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
                 'project_name' => "$required|string|max:500",
                 'project_type' => [$required, Rule::in(ProjectType::query()->where('is_active', true)->pluck('project_type_code')->all())],
                 'project_other' => ($required === 'required' ? 'required_if:project_type,OTHER|' : '') . 'nullable|string|max:500',
@@ -139,7 +172,7 @@ class PortalController extends Controller
                 'coordinator_last' => "$required|string|max:100",
                 'coordinator_position' => "$required|string|max:200",
                 'coordinator_phone' => "$required|string|max:50",
-                'coordinator_email' => "$required|email|max:254",
+                'coordinator_email' => "$required|string|max:254",
             ],
             2 => [
                 'course_th' => "$required|string|max:500",
@@ -147,7 +180,7 @@ class PortalController extends Controller
                 'instructors' => "$required|array|min:1|max:20",
                 'instructors.*.first' => "$required|string|max:100",
                 'instructors.*.last' => "$required|string|max:100",
-                'instructors.*.email' => "$required|email|max:254",
+                'instructors.*.email' => "$required|string|max:254",
                 'category' => [$required, Rule::in(CourseCategory::query()->where('is_active', true)->pluck('category_code')->all())],
                 'category_other' => ($required === 'required' ? 'required_if:category,OTHER|' : '') . 'nullable|string|max:500',
                 'description' => "$required|string|max:5000",
@@ -182,6 +215,15 @@ class PortalController extends Controller
         if (isset($validated['target_dept_id'])) {
             $validated['target_dept_id'] = (int) $validated['target_dept_id'];
             $validated['unit'] = $this->departmentDirectory->name($validated['target_dept_id']);
+        }
+        if ($step === 1) {
+            if (isset($validated['target_subdept_id'])) {
+                $validated['target_subdept_id'] = (int) $validated['target_subdept_id'];
+                $validated['subunit'] = $this->departmentDirectory->subdepartmentName($validated['target_subdept_id']);
+            } else {
+                $validated['target_subdept_id'] = null;
+                $validated['subunit'] = null;
+            }
         }
 
         if (isset($validated['learning']) && $validated['learning'] !== 'เปิดแบบตามวงรอบ (Phase/Batch-based)') {
@@ -314,7 +356,7 @@ class PortalController extends Controller
 
                 $this->addHistory($courseRequest, $status, $actor['pers_id'], 'REQUESTER');
                 if ($status === 'UNDER_OFFICER_REVIEW') {
-                    $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', config('course-workflow.actors.officer'));
+                    $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', $this->roleRecipient('OFFICER'), $actor);
                 }
 
                 return $courseRequest;
@@ -338,7 +380,7 @@ class PortalController extends Controller
     public function clearStep(Request $request, int $step)
     {
         $keys = match ($step) {
-            1 => ['target_dept_id', 'unit', 'project_name', 'project_type', 'project_other', 'coordinator_first', 'coordinator_last', 'coordinator_position', 'coordinator_phone', 'coordinator_email'],
+            1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'project_name', 'project_type', 'project_other', 'coordinator_first', 'coordinator_last', 'coordinator_position', 'coordinator_phone', 'coordinator_email'],
             2 => ['course_th', 'course_en', 'instructors', 'category', 'category_other', 'description'],
             3 => ['learning', 'activity_round', 'activity_phase', 'starts_at', 'ends_at', 'enrollment', 'enrollment_other', 'expected_students'],
             default => [],
@@ -402,7 +444,7 @@ class PortalController extends Controller
                 $this->createDocument($courseRequest, 'SIGNED_FORM', $stored, 'signed', $actor['pers_id']);
                 $courseRequest->update(['status' => 'UNDER_OFFICER_REVIEW', 'submitted_at' => now()]);
                 $this->addHistory($courseRequest, 'UNDER_OFFICER_REVIEW', $actor['pers_id'], 'REQUESTER');
-                $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', config('course-workflow.actors.officer'));
+                $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', $this->roleRecipient('OFFICER'), $actor);
             });
         } catch (Throwable $exception) {
             $this->deletePendingFiles($stored);
@@ -438,14 +480,15 @@ class PortalController extends Controller
                     ->latest('uploaded_at')
                     ->latest('document_id')
                     ->first();
-                abort_if($existing?->roster_acknowledged_at !== null, 409, 'เจ้าหน้าที่รับทราบรายชื่อแล้ว กรุณาติดต่อเจ้าหน้าที่เพื่อเปิดให้แก้ไข');
+                abort_if($existing?->roster_acknowledged_at !== null, 409, 'เจ้าหน้าที่รับทราบรายชื่อแล้ว กรุณาติดต่อเจ้าหน้าที่เพื่อขออัปโหลดรายชื่อใหม่');
 
                 $isUpdate = $existing !== null;
                 $this->createDocument($courseRequest, 'STUDENT_ROSTER', $stored, 'roster', $actor['pers_id']);
                 $this->queueNotification(
                     $courseRequest,
                     $isUpdate ? 'STUDENT_ROSTER_UPDATED' : 'STUDENT_ROSTER_SUBMITTED',
-                    config('course-workflow.actors.officer')
+                    $this->roleRecipient('OFFICER'),
+                    $actor
                 );
             });
         } catch (Throwable $exception) {
@@ -477,9 +520,7 @@ class PortalController extends Controller
                 'roster_acknowledged_by_pers_id' => $actor['pers_id'],
             ]);
 
-            $recipient = config('course-workflow.actors.user');
-            $recipient['pers_id'] = (int) $courseRequest->requester_pers_id;
-            $this->queueNotification($courseRequest, 'STUDENT_ROSTER_ACKNOWLEDGED', $recipient);
+            $this->queueNotification($courseRequest, 'STUDENT_ROSTER_ACKNOWLEDGED', $this->requesterRecipient($courseRequest), $actor);
         });
 
         $redirect = $returnToOfficerList
@@ -507,7 +548,7 @@ class PortalController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            abort_if($studentRoster->roster_acknowledged_at === null, 409, 'รายชื่อผู้เรียนเปิดให้แก้ไขอยู่แล้ว');
+            abort_if($studentRoster->roster_acknowledged_at === null, 409, 'ผู้ยื่นคำร้องสามารถอัปโหลดรายชื่อใหม่ได้อยู่แล้ว');
 
             $alreadyRequested = NotificationOutbox::query()
                 ->where('request_id', $courseRequest->request_id)
@@ -519,7 +560,8 @@ class PortalController extends Controller
                 $this->queueNotification(
                     $courseRequest,
                     'STUDENT_ROSTER_REOPEN_REQUESTED',
-                    config('course-workflow.actors.officer')
+                    $this->roleRecipient('OFFICER'),
+                    $actor
                 );
             }
         });
@@ -534,6 +576,7 @@ class PortalController extends Controller
     {
         DB::connection('course133')->transaction(function () use ($request, $id) {
             $courseRequest = $this->findAuthorized($request, $id, 'officer');
+            $actor = $this->actor($request);
             $studentRoster = $courseRequest->documents()
                 ->where('document_type', 'STUDENT_ROSTER')
                 ->latest('uploaded_at')
@@ -547,13 +590,11 @@ class PortalController extends Controller
                 'roster_acknowledged_by_pers_id' => null,
             ]);
 
-            $recipient = config('course-workflow.actors.user');
-            $recipient['pers_id'] = (int) $courseRequest->requester_pers_id;
-            $this->queueNotification($courseRequest, 'STUDENT_ROSTER_REOPENED', $recipient);
+            $this->queueNotification($courseRequest, 'STUDENT_ROSTER_REOPENED', $this->requesterRecipient($courseRequest), $actor);
         });
 
         return redirect()->route('officer.show', $id)
-            ->with('success', 'เปิดให้แก้ไขรายชื่อผู้เรียนแล้ว<br>แจ้งผู้ยื่นคำร้องเรียบร้อย');
+            ->with('success', 'อนุญาตให้อัปโหลดรายชื่อใหม่แล้ว<br>แจ้งผู้ยื่นคำร้องเรียบร้อย');
     }
 
     public function review(Request $request, int $id)
@@ -626,7 +667,7 @@ class PortalController extends Controller
                                 $pdf->AddFont('Sarabun', '', 'Sarabun-Regular.php');
                                 $pdf->SetFont('Sarabun', '', 9);
                                 $pdf->SetTextColor(0, 0, 0);
-                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', now()->locale('th')->translatedFormat('j F Y'));
+                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
                                 $pdf->Text(43 * $scaleX, 173.3 * $scaleY, $dateStr);
                             }
                         }
@@ -646,8 +687,8 @@ class PortalController extends Controller
             $courseRequest->update(['status' => $status]);
             $this->addHistory($courseRequest, $status, $actor['pers_id'], 'OFFICER');
             $this->queueNotification($courseRequest, $passed ? 'APPROVAL_REQUIRED' : 'REQUEST_RETURNED', $passed
-                ? config('course-workflow.actors.approver')
-                : config('course-workflow.actors.user'));
+                ? $this->roleRecipient('APPROVER')
+                : $this->requesterRecipient($courseRequest), $actor);
         });
 
         return redirect()->route('officer.reviews')->with('success', $data['decision'] === 'pass'
@@ -783,7 +824,7 @@ class PortalController extends Controller
                                     $pdf->SetFont('Sarabun', '', 9);
                                 }
 
-                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', now()->locale('th')->translatedFormat('j F Y'));
+                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
                                 $pdf->Text(127.5 * $scaleX, 183.3 * $scaleY, $dateStr);
                             }
                         }
@@ -863,9 +904,9 @@ class PortalController extends Controller
                 'reject' => 'REQUEST_REJECTED',
             };
             $recipient = $data['decision'] === 'approve'
-                ? config('course-workflow.actors.officer')
-                : config('course-workflow.actors.user');
-            $this->queueNotification($courseRequest, $notificationType, $recipient);
+                ? $this->roleRecipient('OFFICER')
+                : $this->requesterRecipient($courseRequest);
+            $this->queueNotification($courseRequest, $notificationType, $recipient, $actor);
         });
 
         $message = match ($data['decision']) {
@@ -879,7 +920,7 @@ class PortalController extends Controller
 
     public function courseId(Request $request, int $id)
     {
-        $data = $request->validate(['course_id' => 'required|string|max:100|regex:/^[a-zA-Z0-9_-]+$/']);
+        $data = $request->validate(['course_id' => 'required|string|max:100']);
 
         DB::connection('course133')->transaction(function () use ($request, $id, $data) {
             $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
@@ -893,7 +934,7 @@ class PortalController extends Controller
                 'status' => 'COURSE_ID_RECORDED',
             ]);
             $this->addHistory($courseRequest, 'COURSE_ID_RECORDED', $actor['pers_id'], 'OFFICER');
-            $this->queueNotification($courseRequest, 'COURSE_ID_RECORDED', config('course-workflow.actors.user'));
+            $this->queueNotification($courseRequest, 'COURSE_ID_RECORDED', $this->requesterRecipient($courseRequest), $actor);
         });
 
         return redirect()->route('officer.reviews')->with('success', 'บันทึก Course ID สำเร็จ ผู้ยื่นคำร้องสามารถดูรหัสรายวิชาได้แล้ว');
@@ -1007,6 +1048,7 @@ class PortalController extends Controller
         return [
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
+            'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
             'course_name_th' => $data['course_th'],
             'course_name_en' => $data['course_en'],
             'status' => $status,
@@ -1070,6 +1112,12 @@ class PortalController extends Controller
                 $notification->notification_type === 'STUDENT_ROSTER_REOPEN_REQUESTED'
                 && $notification->created_at?->greaterThanOrEqualTo($studentRoster->roster_acknowledged_at)
             );
+        $studentRosterIsOldFile = $studentRoster !== null
+            && $studentRoster->roster_acknowledged_at === null
+            && $courseRequest->notifications->contains(fn ($notification) =>
+                $notification->notification_type === 'STUDENT_ROSTER_REOPENED'
+                && $notification->created_at?->greaterThanOrEqualTo($studentRoster->uploaded_at)
+            );
         $returnedByApprover = $courseRequest->status === 'RETURNED_FOR_REVISION'
             && $latestApproval?->decision === 'RETURNED'
             && ($latestReview?->reviewed_at === null || $latestApproval->decided_at->greaterThanOrEqualTo($latestReview->reviewed_at));
@@ -1088,6 +1136,10 @@ class PortalController extends Controller
             'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
             'target_dept_id' => $courseRequest->target_dept_id,
             'unit' => $this->departmentName($courseRequest->target_dept_id),
+            'target_subdept_id' => $courseRequest->target_subdept_id,
+            'subunit' => $courseRequest->target_subdept_id
+                ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id)
+                : null,
             'project_name' => $courseRequest->project_name,
             'project_type' => $courseRequest->project_type_code,
             'project_type_label' => $courseRequest->projectType?->project_type_name_th,
@@ -1125,6 +1177,7 @@ class PortalController extends Controller
             'student_roster_acknowledged_at' => $studentRoster?->roster_acknowledged_at?->locale('th')->translatedFormat('j M Y H:i น.'),
             'student_roster_reopen_requested' => $studentRosterReopenRequested,
             'student_roster_needs_officer_attention' => $studentRoster !== null && $studentRoster->roster_acknowledged_at === null,
+            'student_roster_is_old_file' => $studentRosterIsOldFile,
             'student_roster_is_update' => $studentRosterVersionCount > 1,
             'expected_students' => $courseRequest->expected_students,
             'status' => $courseRequest->status,
@@ -1138,11 +1191,11 @@ class PortalController extends Controller
                 : null,
             'officer_decision' => $latestReview?->decision,
             'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
-            'officer_reviewed_at' => $latestReview?->reviewed_at?->locale('th')->translatedFormat('j F Y'),
+            'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
             'approval_decision' => $latestApproval?->decision,
             'approver_name' => $latestApproval ? $this->personName((int) $latestApproval->approver_pers_id) : null,
             'approval_comment' => $latestApproval?->comment,
-            'approval_decided_at' => $latestApproval?->decided_at?->format('d/m/Y'),
+            'approval_decided_at' => $this->thaiBuddhistDate($latestApproval?->decided_at),
             'signed_path' => $signed?->storage_key,
             'signed_name' => $signed?->original_filename,
             'additional_files' => $additionalFiles,
@@ -1175,16 +1228,57 @@ class PortalController extends Controller
         ]);
     }
 
-    private function queueNotification(CourseRequest $courseRequest, string $type, array $recipient): void
+    private function queueNotification(CourseRequest $courseRequest, string $type, array $recipient, array $actor): void
     {
         NotificationOutbox::create([
             'request_id' => $courseRequest->request_id,
             'notification_type' => $type,
             'recipient_pers_id' => $recipient['pers_id'],
             'recipient_email' => $recipient['email'],
+            'reply_to_email' => $actor['email'],
+            'reply_to_name' => $actor['name'],
             'delivery_status' => 'PENDING',
             'attempt_count' => 0,
             'created_at' => now(),
+        ]);
+    }
+
+    private function requesterRecipient(CourseRequest $courseRequest): array
+    {
+        $personId = (int) $courseRequest->requester_pers_id;
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        $email = $person ? $this->personnelDirectory->email($person) : null;
+
+        if ($email !== null) {
+            return ['pers_id' => $personId, 'email' => $email];
+        }
+
+        throw ValidationException::withMessages([
+            'email' => 'ไม่พบอีเมล Google Workspace ของผู้ยื่นคำร้องใน Server 199',
+        ]);
+    }
+
+    private function roleRecipient(string $roleCode): array
+    {
+        $personId = DB::connection('course133')
+            ->table('course133.user_role_assignment as assignments')
+            ->join('course133.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
+            ->where('roles.role_code', $roleCode)
+            ->where('assignments.is_active', true)
+            ->orderBy('assignments.role_assignment_id')
+            ->value('assignments.pers_id');
+
+        $person = $personId !== null
+            ? $this->personnelDirectory->findByPersonId((int) $personId)
+            : null;
+        $email = $person ? $this->personnelDirectory->email($person) : null;
+
+        if ($personId !== null && $email !== null) {
+            return ['pers_id' => (int) $personId, 'email' => $email];
+        }
+
+        throw ValidationException::withMessages([
+            'role' => "ยังไม่ได้กำหนดบุคลากรจริงสำหรับสิทธิ $roleCode",
         ]);
     }
 
@@ -1239,6 +1333,17 @@ class PortalController extends Controller
         }
     }
 
+    private function thaiBuddhistDate(?\DateTimeInterface $date): ?string
+    {
+        if ($date === null) {
+            return null;
+        }
+
+        $localizedDate = \Carbon\Carbon::instance($date)->locale('th');
+
+        return $localizedDate->translatedFormat('j F').' '.($localizedDate->year + 543);
+    }
+
     private function nextRequestNumber(): string
     {
         do {
@@ -1267,10 +1372,9 @@ class PortalController extends Controller
 
     private function personName(int $personId): string
     {
-        foreach (config('course-workflow.actors') as $actor) {
-            if ((int) $actor['pers_id'] === $personId) {
-                return $actor['name'];
-            }
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null && ($name = $this->personnelDirectory->name($person)) !== '') {
+            return $name;
         }
 
         return "บุคลากร #$personId";
@@ -1283,9 +1387,15 @@ class PortalController extends Controller
 
     private function personDepartmentName(int $personId): string
     {
-        foreach (config('course-workflow.actors') as $actor) {
-            if ((int) ($actor['pers_id'] ?? 0) === $personId && isset($actor['dept_id'])) {
-                return $this->departmentName((int) $actor['dept_id']);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            if (! blank($person->division)) {
+                return trim((string) $person->division);
+            }
+
+            $departmentId = (int) ($person->dept_cd ?: $person->in_dept_cd);
+            if ($departmentId > 0) {
+                return $this->departmentName($departmentId);
             }
         }
 

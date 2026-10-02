@@ -10,7 +10,12 @@ class DocumentDownloadTest extends TestCase
     {
         $response = $this->withSession([
             'portal.actor' => [
-                ...config('course-workflow.actors.user'),
+                'pers_id' => 100,
+                'dept_id' => 200,
+                'buasri_id' => 'someone',
+                'name' => 'ผู้ใช้งานทดสอบ',
+                'email' => 'someone@g.swu.ac.th',
+                'label' => 'บุคลากร',
                 'role' => 'user',
             ],
             'portal.draft' => [

@@ -20,11 +20,12 @@ class SendCourseNotifications extends Command
     {
         $limit = max(1, (int) $this->option('limit'));
         $maxAttempts = max(1, (int) $this->option('attempts'));
+        $staleAfterMinutes = max(1, (int) config('course-workflow.notifications.stale_after_minutes', 5));
         $processed = 0;
         $failed = 0;
 
         while ($processed < $limit) {
-            $notification = $this->claimNext($maxAttempts);
+            $notification = $this->claimNext($maxAttempts, $staleAfterMinutes);
 
             if ($notification === null) {
                 break;
@@ -36,17 +37,25 @@ class SendCourseNotifications extends Command
 
                 Mail::raw($body, function ($message) use ($notification, $subject): void {
                     $message->to($notification->recipient_email)->subject($subject);
+
+                    if (filter_var($notification->reply_to_email, FILTER_VALIDATE_EMAIL)) {
+                        $message->replyTo($notification->reply_to_email, $notification->reply_to_name ?: null);
+                    }
                 });
 
                 $notification->update([
                     'delivery_status' => 'SENT',
                     'sent_at' => now(),
+                    'processing_started_at' => null,
+                    'next_attempt_at' => null,
                     'last_error' => null,
                 ]);
             } catch (Throwable $exception) {
                 $failed++;
                 $notification->update([
                     'delivery_status' => 'FAILED',
+                    'processing_started_at' => null,
+                    'next_attempt_at' => now()->addSeconds($this->retryDelaySeconds($notification->attempt_count)),
                     'last_error' => Str::limit($exception->getMessage(), 4000, ''),
                 ]);
                 report($exception);
@@ -60,12 +69,31 @@ class SendCourseNotifications extends Command
         return $failed === 0 ? self::SUCCESS : self::FAILURE;
     }
 
-    private function claimNext(int $maxAttempts): ?NotificationOutbox
+    private function claimNext(int $maxAttempts, int $staleAfterMinutes): ?NotificationOutbox
     {
-        return DB::connection('course133')->transaction(function () use ($maxAttempts) {
+        return DB::connection('course133')->transaction(function () use ($maxAttempts, $staleAfterMinutes) {
+            $now = now();
+            $staleBefore = $now->copy()->subMinutes($staleAfterMinutes);
+
             $notification = NotificationOutbox::query()
-                ->whereIn('delivery_status', ['PENDING', 'FAILED', 'SENDING'])
                 ->where('attempt_count', '<', $maxAttempts)
+                ->where(function ($query) use ($now, $staleBefore): void {
+                    $query->where('delivery_status', 'PENDING')
+                        ->orWhere(function ($failed) use ($now): void {
+                            $failed->where('delivery_status', 'FAILED')
+                                ->where(function ($ready) use ($now): void {
+                                    $ready->whereNull('next_attempt_at')
+                                        ->orWhere('next_attempt_at', '<=', $now);
+                                });
+                        })
+                        ->orWhere(function ($sending) use ($staleBefore): void {
+                            $sending->where('delivery_status', 'SENDING')
+                                ->where(function ($stale) use ($staleBefore): void {
+                                    $stale->whereNull('processing_started_at')
+                                        ->orWhere('processing_started_at', '<=', $staleBefore);
+                                });
+                        });
+                })
                 ->orderBy('created_at')
                 ->lockForUpdate()
                 ->first();
@@ -77,11 +105,22 @@ class SendCourseNotifications extends Command
             $notification->update([
                 'delivery_status' => 'SENDING',
                 'attempt_count' => $notification->attempt_count + 1,
+                'processing_started_at' => $now,
+                'next_attempt_at' => null,
                 'last_error' => null,
             ]);
 
             return $notification;
         });
+    }
+
+    private function retryDelaySeconds(int $attemptCount): int
+    {
+        $baseDelay = max(1, (int) config('course-workflow.notifications.retry_delay_seconds', 30));
+        $maxDelay = max($baseDelay, (int) config('course-workflow.notifications.max_retry_delay_seconds', 900));
+        $multiplier = 2 ** max(0, min($attemptCount - 1, 10));
+
+        return min($baseDelay * $multiplier, $maxDelay);
     }
 
     private function messageFor(string $type, CourseRequest $request): array
@@ -103,7 +142,7 @@ class SendCourseNotifications extends Command
             'STUDENT_ROSTER_UPDATED' => 'ผู้ยื่นคำร้องอัปเดตรายชื่อผู้เรียน',
             'STUDENT_ROSTER_REOPEN_REQUESTED' => 'ผู้ยื่นคำร้องขอแก้ไขรายชื่อผู้เรียน',
             'STUDENT_ROSTER_ACKNOWLEDGED' => 'เจ้าหน้าที่รับทราบรายชื่อผู้เรียนแล้ว',
-            'STUDENT_ROSTER_REOPENED' => 'เจ้าหน้าที่เปิดให้แก้ไขรายชื่อผู้เรียน',
+            'STUDENT_ROSTER_REOPENED' => 'เจ้าหน้าที่อนุญาตให้อัปโหลดรายชื่อใหม่',
             default => 'สถานะคำร้องมีการเปลี่ยนแปลง',
         };
 

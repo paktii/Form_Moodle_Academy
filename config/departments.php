@@ -1,6 +1,6 @@
 <?php
 
-// Temporary department snapshot. Replace this provider with Server 199 when integration is enabled.
+// Fallback snapshot used only when the department directory on Server 199 is unavailable.
 return [
     100 => 'คณะมนุษยศาสตร์',
     200 => 'คณะวิทยาศาสตร์',

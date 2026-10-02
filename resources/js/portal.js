@@ -67,6 +67,43 @@ function openDialog(id, trigger) {
     renderPdfPreview(dialog);
 }
 
+function updateDropzoneFile(input, event) {
+    const zone = input.closest('[data-dropzone]');
+    const filename = zone?.querySelector('[data-file-name]');
+    if (!zone || !filename) return;
+
+    const file = input.files[0];
+    input.setCustomValidity('');
+    if (!file || event?.detail?.source === 'signature-pad') {
+        filename.innerHTML = '';
+        zone.classList.remove('has-file');
+        return;
+    }
+
+    const allowed = input.accept.split(',').map((extension) => extension.trim());
+    if (!allowed.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+        input.setCustomValidity('ประเภทไฟล์ไม่ถูกต้อง กรุณาเลือกไฟล์ที่รองรับ');
+    } else if (file.size > 10 * 1024 * 1024) {
+        input.setCustomValidity('ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
+    }
+
+    const text = input.validationMessage || `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+    const iconUrl = document.querySelector('.portal-logo')?.src.replace('logo.png', 'icons/file-text.svg') || '/img/icons/file-text.svg';
+    filename.innerHTML = `
+        <img src="${iconUrl}" alt="" class="portal-icon file-upload__file-icon">
+        <span class="file-upload__file-row">
+            <span class="file-upload__filename-text">${text}</span>
+            <button type="button" class="file-upload__remove" aria-label="ยกเลิกการเลือกไฟล์">×</button>
+        </span>
+    `;
+    zone.classList.add('has-file');
+}
+
+document.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-dropzone] input[type="file"]');
+    if (input) updateDropzoneFile(input, event);
+});
+
 function resetUploadDialog(dialog) {
     const form = dialog.querySelector('form[id^="upload-form-"]');
     if (!form) return;
@@ -183,6 +220,7 @@ document.querySelectorAll('dialog').forEach((dialog) => {
 document.addEventListener('click', (event) => {
     const rosterConfirmButton = event.target.closest('[data-roster-confirm]');
     if (rosterConfirmButton) {
+        event.preventDefault();
         const requestId = rosterConfirmButton.dataset.rosterConfirm;
         const input = document.getElementById(`student-roster-file-${requestId}`);
         if (!input?.files.length) {
@@ -370,7 +408,24 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     const arrow = field.querySelector('[data-searchable-select-arrow]');
     const clear = field.querySelector('[data-searchable-select-clear]');
     const options = [...field.querySelectorAll('[data-searchable-select-option]')];
+    const dependencyName = field.dataset.searchableSelectDependsOn;
+    const dependencyValue = dependencyName
+        ? [...document.querySelectorAll('[data-searchable-select-value]')].find((candidate) => candidate.name === dependencyName)
+        : null;
+    const defaultPlaceholder = input.dataset.defaultPlaceholder || input.placeholder;
+    const dependencyPlaceholder = input.dataset.dependencyPlaceholder || defaultPlaceholder;
     let activeIndex = -1;
+
+    function setValue(nextValue) {
+        if (value.value === nextValue) return;
+        value.value = nextValue;
+        value.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function matchesDependency(option) {
+        return !dependencyValue
+            || (dependencyValue.value !== '' && option.dataset.parentValue === dependencyValue.value);
+    }
 
     function visibleOptions() {
         return options.filter((option) => !option.hidden);
@@ -383,6 +438,7 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     }
 
     function openMenu() {
+        if (input.disabled) return;
         menu.hidden = false;
         input.setAttribute('aria-expanded', 'true');
     }
@@ -408,7 +464,7 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
 
     function selectOption(option) {
         input.value = option.textContent.trim();
-        value.value = option.dataset.value;
+        setValue(option.dataset.value);
         options.forEach((item) => item.setAttribute('aria-selected', item === option ? 'true' : 'false'));
         input.setCustomValidity('');
         updateControls();
@@ -422,14 +478,14 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
         let selected = null;
         options.forEach((option) => {
             const label = option.textContent.trim().toLocaleLowerCase('th');
-            option.hidden = search !== '' && !label.includes(search);
+            option.hidden = !matchesDependency(option) || (search !== '' && !label.includes(search));
             if (!option.hidden) resultCount += 1;
-            if (label === search) selected = option;
+            if (!option.hidden && label === search) selected = option;
         });
-        value.value = selected?.dataset.value ?? '';
+        setValue(selected?.dataset.value ?? '');
         options.forEach((option) => option.setAttribute('aria-selected', option === selected ? 'true' : 'false'));
         input.setCustomValidity(input.value && !selected ? 'กรุณาเลือกหน่วยงานจากรายการ' : '');
-        empty.hidden = resultCount !== 0;
+        empty.hidden = resultCount !== 0 || (dependencyValue && dependencyValue.value === '');
         updateControls();
         setActive(-1);
     }
@@ -461,7 +517,7 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     });
     clear.addEventListener('click', () => {
         input.value = '';
-        value.value = '';
+        setValue('');
         input.setCustomValidity('');
         filterOptions();
         input.focus();
@@ -471,7 +527,28 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     document.addEventListener('click', (event) => {
         if (!field.contains(event.target)) closeMenu();
     });
-    filterOptions();
+    function syncDependency() {
+        if (!dependencyValue) {
+            filterOptions();
+            return;
+        }
+
+        const enabled = dependencyValue.value !== '';
+        const selected = options.find((option) => option.dataset.value === value.value);
+        if (!enabled || !selected || !matchesDependency(selected)) {
+            input.value = '';
+            setValue('');
+        }
+        input.disabled = !enabled;
+        input.placeholder = enabled ? defaultPlaceholder : dependencyPlaceholder;
+        input.setCustomValidity('');
+        if (!enabled) closeMenu();
+        filterOptions();
+        updateControls();
+    }
+
+    dependencyValue?.addEventListener('change', syncDependency);
+    syncDependency();
 });
 
 const instructorList = document.querySelector('[data-instructor-list]');
@@ -508,36 +585,10 @@ instructorList?.addEventListener('click', (event) => {
 document.querySelectorAll('[data-dropzone]').forEach((zone) => {
     const input = zone.querySelector('input[type="file"]');
     const filename = zone.querySelector('[data-file-name]');
-    function update(event) {
-        const file = input.files[0];
-        input.setCustomValidity('');
-        if (!file || event?.detail?.source === 'signature-pad') {
-            filename.innerHTML = '';
-            zone.classList.remove('has-file');
-            return;
-        }
-        const allowed = input.accept.split(',').map((extension) => extension.trim());
-        if (!allowed.some((extension) => file.name.toLowerCase().endsWith(extension))) {
-            input.setCustomValidity('ประเภทไฟล์ไม่ถูกต้อง กรุณาเลือกไฟล์ที่รองรับ');
-        } else if (file.size > 10 * 1024 * 1024) {
-            input.setCustomValidity('ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
-        }
-        const text = input.validationMessage || `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-        const iconUrl = document.querySelector('.portal-logo')?.src.replace('logo.png', 'icons/file-text.svg') || '/img/icons/file-text.svg';
-        filename.innerHTML = `
-            <img src="${iconUrl}" alt="" class="portal-icon file-upload__file-icon">
-            <span class="file-upload__file-row">
-                <span class="file-upload__filename-text">${text}</span>
-                <button type="button" class="file-upload__remove" aria-label="ยกเลิกการเลือกไฟล์">×</button>
-            </span>
-        `;
-        zone.classList.add('has-file');
-    }
-    input.addEventListener('change', update);
     filename.addEventListener('click', (event) => {
         if (event.target.closest('.file-upload__remove')) {
             input.value = '';
-            update();
+            updateDropzoneFile(input);
         }
     });
     ['dragenter', 'dragover'].forEach((name) => zone.addEventListener(name, (event) => {
@@ -551,7 +602,7 @@ document.querySelectorAll('[data-dropzone]').forEach((zone) => {
         const transfer = new DataTransfer();
         transfer.items.add(event.dataTransfer.files[0]);
         input.files = transfer.files;
-        update();
+        updateDropzoneFile(input);
     });
 });
 
@@ -1033,6 +1084,14 @@ if (requestList) {
         search.value = '';
         filterRows();
     });
+    requestList.querySelector('[data-filter-officer-pending]')?.addEventListener('click', () => {
+        rosterOnly = false;
+        rosterUpdatesOnly = false;
+        status.value = 'UNDER_OFFICER_REVIEW';
+        date.value = '';
+        search.value = '';
+        filterRows();
+    });
     requestList.querySelector('[data-filter-roster]')?.addEventListener('click', () => {
         rosterOnly = true;
         rosterUpdatesOnly = false;
@@ -1059,6 +1118,31 @@ if (requestList) {
     });
     renderRows();
 }
+
+const courseForm = document.getElementById('course-form');
+courseForm?.addEventListener('keydown', (event) => {
+    const input = event.target;
+    if (
+        event.defaultPrevented
+        || event.key !== 'Enter'
+        || event.isComposing
+        || !(input instanceof HTMLInputElement)
+        || ['button', 'submit', 'radio', 'checkbox', 'file'].includes(input.type)
+    ) return;
+
+    const nextButton = courseForm.querySelector('button[type="submit"][name="navigation"][value="next"]');
+    if (nextButton) {
+        event.preventDefault();
+        courseForm.requestSubmit(nextButton);
+        return;
+    }
+
+    const finishButton = courseForm.querySelector('[data-finish-request]');
+    if (finishButton) {
+        event.preventDefault();
+        finishButton.click();
+    }
+});
 
 document.querySelectorAll('form').forEach((form) => {
     form.addEventListener('submit', (event) => {

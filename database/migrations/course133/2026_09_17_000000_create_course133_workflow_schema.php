@@ -19,7 +19,6 @@ return new class extends Migration
 
         // IDs sourced from Server 199 are plain int columns for now. No cross-server FKs are created.
         $this->database()->unprepared($sql);
-        $this->seedConfiguredRoleAssignments();
     }
 
     public function down(): void
@@ -48,26 +47,4 @@ SQL);
         return DB::connection($this->connection);
     }
 
-    private function seedConfiguredRoleAssignments(): void
-    {
-        foreach (
-            [
-                'user' => 'REQUESTER',
-                'officer' => 'OFFICER',
-                'approver' => 'APPROVER',
-            ] as $actorKey => $roleCode
-        ) {
-            $roleId = $this->database()->table('course133.app_role')
-                ->where('role_code', $roleCode)
-                ->value('role_id');
-
-            $this->database()->table('course133.user_role_assignment')->updateOrInsert(
-                [
-                    'pers_id' => (int) config("course-workflow.actors.$actorKey.pers_id"),
-                    'role_id' => $roleId,
-                ],
-                ['is_active' => true],
-            );
-        }
-    }
 };

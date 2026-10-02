@@ -13,7 +13,7 @@ class EnsurePortalRole
         $actor = $request->session()->get('portal.actor');
 
         if (! is_array($actor)) {
-            return redirect()->route('login', $roles[0] ?? 'user');
+            return redirect()->route('login');
         }
 
         abort_unless(in_array($actor['role'] ?? null, $roles, true), 403);

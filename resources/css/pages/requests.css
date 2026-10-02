@@ -203,6 +203,27 @@
         white-space: nowrap;
     }
 
+    @media (min-width: 761px) {
+        .request-table tbody tr:not([data-empty-row]) {
+            height: 72px;
+        }
+
+        .request-table tbody tr:not([data-empty-row]) td {
+            height: 72px;
+            padding-block: 12px;
+        }
+
+        .request-card__title > span,
+        .request-card__unit-text {
+            display: -webkit-box;
+            overflow: hidden;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+    }
+
     .course-link {
         color: #287cbc;
         text-decoration: underline;

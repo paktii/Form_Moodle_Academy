@@ -157,8 +157,12 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
                     [notification_type] varchar(50) NOT NULL                                                              ,
                     [recipient_pers_id] int NULL                                                                          ,
                     [recipient_email]   varchar(254) NOT NULL                                                             ,
+                    [reply_to_email]    varchar(254) NULL                                                                 ,
+                    [reply_to_name]     nvarchar(300) NULL                                                                ,
                     [delivery_status]   varchar(20) NOT NULL DEFAULT ('PENDING')                                          ,
                     [attempt_count]     int NOT NULL DEFAULT (0)                                                          ,
+                    [processing_started_at] datetime2 NULL                                                               ,
+                    [next_attempt_at]   datetime2 NULL                                                                    ,
                     [sent_at]           datetime2 NULL                                                                    ,
                     [last_error]        nvarchar(max) NULL                                                                ,
                     [created_at]        datetime2 NOT NULL DEFAULT (SYSDATETIME())                                        ,
@@ -194,12 +198,15 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
             ON [course133].[notification_outbox]
                 (
                     [delivery_status],
+                    [next_attempt_at],
+                    [processing_started_at],
                     [created_at]
                 )
             WHERE [delivery_status] IN
                 (
                     'PENDING',
-                    'FAILED'
+                    'FAILED',
+                    'SENDING'
                 )
             ;
             INSERT INTO [course133].[app_role]

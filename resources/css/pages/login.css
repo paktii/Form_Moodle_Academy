@@ -80,6 +80,74 @@
         box-shadow: 0 0 0 3px rgb(220 38 38 / 10%);
     }
 
+    .login-role-switcher {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+    }
+
+    .login-role-switcher legend {
+        margin-bottom: 6px;
+        color: #374151;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    .login-role-switcher__options {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .login-role-switcher__options label {
+        cursor: pointer;
+    }
+
+    .login-role-switcher__options input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        clip-path: inset(50%);
+        overflow: hidden;
+    }
+
+    .login-role-switcher__options span {
+        display: flex;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        color: #374151;
+        font-size: 13px;
+        text-align: center;
+    }
+
+    .login-role-switcher__options input:checked + span {
+        border-color: var(--portal-navy);
+        background: var(--portal-navy);
+        color: #fff;
+    }
+
+    .login-role-switcher__options input:focus-visible + span {
+        outline: 2px solid var(--portal-navy);
+        outline-offset: 2px;
+    }
+
+    .login-role-switcher small {
+        color: #667085;
+        font-size: 12px;
+    }
+
+    .login-role-switcher__error {
+        margin: 0;
+        color: #dc2626;
+        font-size: 13px;
+    }
+
     .login-submit {
         width: 100%;
         height: 46px;

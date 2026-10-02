@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::controller(PortalController::class)->group(function () {
     Route::get('/login', 'login')->name('login');
-    Route::post('/login', 'enter')->name('login.enter');
+    Route::post('/login', 'enter')->middleware('throttle:portal-login')->name('login.enter');
     Route::post('/logout', 'logout')->name('logout');
 
     Route::middleware('portal.role:user')->group(function () {

@@ -14,6 +14,7 @@ $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
                         @if($step === 1)
                         <x-portal-field name="requester_unit" label="ส่วนงาน/คณะ/สำนักของผู้ยื่น" :value="$value('requester_unit')" readonly />
                         <x-portal-searchable-select name="target_dept_id" label="ส่วนงาน/คณะ/สำนักเป้าหมาย" :options="$departments" :value="$value('target_dept_id')" placeholder="พิมพ์ชื่อส่วนงาน/คณะ/สำนักที่ต้องการสร้างรายวิชาให้" :required="true" />
+                        <x-portal-searchable-select name="target_subdept_id" label="หน่วยงานย่อยเป้าหมาย (ถ้ามี)" :options="$subdepartments" :option-parents="$subdepartmentParents" :value="$value('target_subdept_id')" depends-on="target_dept_id" :parent-value="$value('target_dept_id')" placeholder="พิมพ์ชื่อหน่วยงานย่อยที่ต้องการสร้างรายวิชาให้" />
                         <x-portal-field name="project_name" label="ชื่อโครงการ" :value="$value('project_name')" placeholder="ระบุชื่อโครงการพัฒนาทักษะวิชาการหรือหลักสูตร" :required="true" />
                         <fieldset class="radio-fieldset">
                             <legend>ประเภทโครงการ<span class="required-indicator" aria-hidden="true">*</span></legend>
@@ -30,7 +31,7 @@ $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
                         <x-portal-field name="coordinator_position" label="ตำแหน่ง" :value="$value('coordinator_position')" placeholder="ระบุตำแหน่งในโครงการ" :required="true" />
                         <div class="form-grid">
                             <x-portal-field name="coordinator_phone" label="เบอร์โทรศัพท์ติดต่อ / ภายใน" :value="$value('coordinator_phone')" placeholder="เช่น 02-649-5000 ต่อ 15052" type="tel" :required="true" />
-                            <x-portal-field name="coordinator_email" label="E-mail (มหาวิทยาลัย)" :value="$value('coordinator_email')" placeholder="เช่น example@g.swu.ac.th" type="email" :required="true" />
+                            <x-portal-field name="coordinator_email" label="E-mail (มหาวิทยาลัย)" :value="$value('coordinator_email')" placeholder="เช่น example@g.swu.ac.th" inputmode="email" autocomplete="email" :required="true" />
                         </div>
                         @elseif($step === 2)
                         <div class="form-grid">

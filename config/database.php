@@ -128,6 +128,20 @@ return [
             'trust_server_certificate' => env('DB_133_TRUST_SERVER_CERTIFICATE', 'true'),
         ],
 
+        'saladb' => [
+            'driver' => env('SECOND_DB_CONNECTION', 'sqlsrv'),
+            'host' => env('SECOND_DB_HOST', '10.1.5.199'),
+            'port' => env('SECOND_DB_PORT', '1433'),
+            'database' => env('SECOND_DB_DATABASE', 'saladb'),
+            'username' => env('SECOND_DB_USERNAME'),
+            'password' => env('SECOND_DB_PASSWORD'),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'encrypt' => env('SECOND_DB_ENCRYPT', 'no'),
+            'trust_server_certificate' => env('SECOND_DB_TRUST_SERVER_CERTIFICATE', 'true'),
+        ],
+
     ],
 
     /*

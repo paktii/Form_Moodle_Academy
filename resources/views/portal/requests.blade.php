@@ -4,6 +4,7 @@ $title = $isUser ? 'สถานะเอกสาร' : ($role === 'officer' ? 
 $tabTitle = $isUser ? 'My Requests' : ($role === 'officer' ? 'Officer Queue' : 'Approval Queue');
 $detailRoute = $isUser ? 'requests.show' : ($role === 'officer' ? 'officer.show' : 'approver.show');
 $pending = $records->where('status', 'PENDING_SIGNED_DOCUMENT')->count();
+$pendingOfficerReviews = $role === 'officer' ? $records->where('status', 'UNDER_OFFICER_REVIEW')->count() : 0;
 $missingRosters = $records->filter(fn ($record) => ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false))->count();
 $rosterUpdates = $records->filter(fn ($record) => $record['student_roster_needs_officer_attention'] ?? false)->count();
 $filterStatuses = match ($role) {
@@ -39,22 +40,13 @@ default => $statuses,
             </div>
         </div>
         @endif
-        @if($role === 'officer' && $rosterUpdates)
-        @php
-            $rosterUpdatesPending = $records->filter(fn ($record) => ($record['student_roster_needs_officer_attention'] ?? false) && $record['status'] === 'PENDING_COURSE_ID')->count();
-            $rosterUpdatesRecorded = $records->filter(fn ($record) => ($record['student_roster_needs_officer_attention'] ?? false) && $record['status'] === 'COURSE_ID_RECORDED')->count();
-            $rosterDetail = '';
-            if ($rosterUpdatesPending && $rosterUpdatesRecorded) {
-                $rosterDetail = " ({$rosterUpdatesPending} รายการรอบันทึก Course ID / {$rosterUpdatesRecorded} รายการที่บันทึก Course ID แล้ว)";
-            } elseif ($rosterUpdatesPending) {
-                $rosterDetail = " ({$rosterUpdatesPending} รายการรอบันทึก Course ID)";
-            } elseif ($rosterUpdatesRecorded) {
-                $rosterDetail = " ({$rosterUpdatesRecorded} รายการที่บันทึก Course ID แล้ว)";
-            }
-        @endphp
-        <div class="notification-banner" aria-label="แจ้งเตือนรายชื่อผู้เรียน">
-            <span>แจ้งเตือน: คุณมี {{ $rosterUpdates }} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดตที่ยังไม่รับทราบ{{ $rosterDetail }} กรุณาตรวจสอบและรับทราบรายชื่อ</span>
-            <div class="notification-banner__actions"><x-portal-button variant="secondary" data-filter-roster-updates>ตรวจสอบรายชื่อ</x-portal-button></div>
+        @if($role === 'officer' && ($pendingOfficerReviews || $rosterUpdates))
+        <div class="notification-banner" aria-label="รายการแจ้งเตือน">
+            <span>แจ้งเตือน: @if($pendingOfficerReviews && $rosterUpdates)คุณมี {{ $pendingOfficerReviews }} คำร้องสถานะรออนุมัติ และ {{ $rosterUpdates }} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต กรุณาตรวจสอบและรับทราบรายชื่อ@elseif($pendingOfficerReviews)คุณมี {{ $pendingOfficerReviews }} คำร้องสถานะรออนุมัติ กรุณาตรวจสอบและลงนาม@elseคุณมี {{ $rosterUpdates }} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต กรุณาตรวจสอบและรับทราบรายชื่อ@endif</span>
+            <div class="notification-banner__actions">
+                @if($pendingOfficerReviews)<x-portal-button variant="secondary" data-filter-officer-pending>ตรวจสอบคำร้อง</x-portal-button>@endif
+                @if($rosterUpdates)<x-portal-button variant="secondary" data-filter-roster-updates>ตรวจสอบรายชื่อ</x-portal-button>@endif
+            </div>
         </div>
         @endif
         <section class="filter-card" aria-label="ค้นหาและกรองคำร้อง">
@@ -88,18 +80,19 @@ default => $statuses,
                 </thead>
                 <tbody>
                     @foreach($records as $record)
-                    <tr data-request-row data-status="{{ $record['status'] }}" data-date="{{ $record['submitted_at'] }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $record['unit'] ?? '' }} {{ $record['requester'] ?? '' }}">
+                    @php($targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])->filter(fn ($value) => filled($value))->implode(', '))
+                    <tr data-request-row data-status="{{ $record['status'] }}" data-date="{{ $record['submitted_at'] }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $targetUnit }} {{ $record['requester'] ?? '' }}">
                         @if($isUser)
                         <td class="date-cell request-card__date">{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
-                        <td class="course-cell request-card__title"><span>{{ $record['project_name'] }}</span><small>เลขที่คำร้อง: {{ $record['number'] }}</small></td>
-                        <td class="request-card__unit">{{ $record['unit'] }}</td>
+                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span><small>เลขที่คำร้อง: {{ $record['number'] }}</small></td>
+                        <td class="request-card__unit"><span class="request-card__unit-text" title="{{ $targetUnit }}">{{ $targetUnit }}</span></td>
                         <td class="request-card__status"><x-status-badge :status="$record['status']" /></td>
                         <td class="request-card__course-id">@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?name='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif</td>
                         @else
                         <td class="request-table__number request-card__number">{{ $record['number'] }}</td>
-                        <td class="course-cell request-card__title"><span>{{ $record['project_name'] }}</span></td>
+                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span></td>
                         <td class="requester-cell request-card__requester">{{ $record['requester'] }}</td>
-                        <td class="request-card__unit">{{ $record['unit'] }}</td>
+                        <td class="request-card__unit"><span class="request-card__unit-text" title="{{ $targetUnit }}">{{ $targetUnit }}</span></td>
                         <td class="date-cell request-card__date">{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
                         <td class="request-card__status"><x-status-badge :status="$record['status']" /></td>
                         @endif
@@ -117,7 +110,7 @@ default => $statuses,
                                     data-request-upload
                                     :hidden="! $record['unsigned_pdf_downloaded']">อัปโหลดไฟล์</x-portal-button>
                                 @elseif($role === 'officer' && ($record['student_roster_reopen_requested'] ?? false))
-                                <x-portal-button :href="route($detailRoute, $record['id'])">เปิดให้แก้ไข</x-portal-button>
+                                <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจสอบ</x-portal-button>
                                 @elseif($role === 'officer' && ($record['student_roster_needs_officer_attention'] ?? false))
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจรายชื่อ</x-portal-button>
                                 @elseif($role === 'officer' && $record['status'] === 'PENDING_COURSE_ID')
@@ -207,7 +200,7 @@ default => $statuses,
                         <dd>{{ $record['submitted_at'] }}</dd>
                     </div>
                 </dl>
-                <x-portal-field name="course_id" :id="'course-id-'.$record['id']" label="Course ID" placeholder="เช่น DE164" :required="true" maxlength="100" pattern="[A-Za-z0-9_-]+" />
+                <x-portal-field name="course_id" :id="'course-id-'.$record['id']" label="Course ID" placeholder="เช่น DE164" :required="true" maxlength="100" />
                 <div class="modal-actions modal-actions--stack"><x-portal-button type="button" data-course-id-next="{{ $record['id'] }}">บันทึกและแจ้งเตือนผู้ขอคำร้อง</x-portal-button><x-portal-button variant="plain" data-course-id-cancel="{{ $record['id'] }}">ยกเลิก</x-portal-button></div>
             </div>
             <div id="course-id-step2-{{ $record['id'] }}" hidden>

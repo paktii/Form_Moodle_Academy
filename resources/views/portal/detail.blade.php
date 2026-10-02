@@ -38,7 +38,7 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
                 @if($record['student_roster_reopen_requested'])
                 <span class="roster-status roster-status--pending">ขอแก้ไข</span>
                 @elseif($record['student_roster_needs_officer_attention'])
-                <span class="roster-status roster-status--pending">{{ $record['student_roster_is_update'] ? 'อัปเดตใหม่' : 'ไฟล์ใหม่' }}</span>
+                <span class="roster-status roster-status--pending">{{ $record['student_roster_is_old_file'] ? 'ไฟล์เก่า' : ($record['student_roster_is_update'] ? 'อัปเดตใหม่' : 'ไฟล์ใหม่') }}</span>
                 @elseif($record['student_roster_acknowledged'])
                 <span class="roster-status roster-status--complete">รับทราบแล้ว</span>
                 @endif
@@ -93,9 +93,9 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
         <form action="{{ route('officer.student-roster.acknowledge', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">ยืนยันรับทราบ</x-portal-button></div></form>
     </x-portal-modal>
     @elseif($role === 'officer' && $record['has_student_roster'] && $record['student_roster_acknowledged'])
-    <x-portal-modal id="reopen-roster-dialog" title="เปิดให้แก้ไขรายชื่อ">
-        <p class="confirmation-message">ต้องการเปิดให้ผู้ยื่นคำร้องอัปโหลดรายชื่อเวอร์ชันใหม่ใช่หรือไม่?<br>ระบบจะแจ้งผู้ยื่นคำร้องให้ทราบ</p>
-        <form action="{{ route('officer.student-roster.reopen', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">ยืนยันเปิดให้แก้ไข</x-portal-button></div></form>
+    <x-portal-modal id="reopen-roster-dialog" title="ตรวจสอบคำขอแก้ไขรายชื่อ">
+        <p class="confirmation-message">ต้องการอนุญาตให้ผู้ยื่นคำร้องอัปโหลดรายชื่อเวอร์ชันใหม่ใช่หรือไม่?<br>ระบบจะแจ้งผู้ยื่นคำร้องให้ทราบ</p>
+        <form action="{{ route('officer.student-roster.reopen', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">อนุญาตให้อัปโหลดใหม่</x-portal-button></div></form>
     </x-portal-modal>
     @endif
     @if($isUser && in_array($record['status'], ['RETURNED_FOR_REVISION', 'PENDING_SIGNED_DOCUMENT']))

@@ -7,6 +7,6 @@
     <div class="form-grid form-grid--three">
         <x-portal-field :name="'instructors['.$index.'][first]'" label="ชื่ออาจารย์ผู้สอน:" :value="$instructor['first'] ?? ''" placeholder="ระบุชื่ออาจารย์ผู้สอน" :required="true" />
         <x-portal-field :name="'instructors['.$index.'][last]'" label="นามสกุลอาจารย์ผู้สอน:" :value="$instructor['last'] ?? ''" placeholder="ระบุนามสกุลอาจารย์ผู้สอน" :required="true" />
-        <x-portal-field :name="'instructors['.$index.'][email]'" label="Email:" type="email" :value="$instructor['email'] ?? ''" placeholder="ระบุ Email อาจารย์ผู้สอน" :required="true" />
+        <x-portal-field :name="'instructors['.$index.'][email]'" label="Email:" :value="$instructor['email'] ?? ''" placeholder="ระบุ Email อาจารย์ผู้สอน" inputmode="email" autocomplete="email" :required="true" />
     </div>
 </div>

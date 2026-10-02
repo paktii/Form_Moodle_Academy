@@ -20,6 +20,9 @@ $learningPeriod = trim($thaiDate($record['starts_at'] ?? null).' ถึง '.$th
 $enrollment = ($record['enrollment'] ?? '') === 'อื่น ๆ (ระบุ)'
     ? trim($record['enrollment_other'] ?? '')
     : trim($record['enrollment'] ?? '');
+$targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])
+    ->filter(fn ($value) => filled($value))
+    ->implode(', ');
 $officerPassed = ($record['officer_decision'] ?? null) === 'PASSED';
 $approved = ($record['approval_decision'] ?? null) === 'APPROVED';
 $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNED'], true);
@@ -47,7 +50,7 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                 </div>
                 <div class="document-field document-field--wide">
                     <dt>ส่วนงาน/คณะ/สำนักเป้าหมาย</dt>
-                    <dd>{{ $text('unit') }}</dd>
+                    <dd>{{ $targetUnit }}</dd>
                 </div>
                 <div class="document-field document-field--wide">
                     <dt>ชื่อโครงการ</dt>
@@ -171,7 +174,7 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                     <p>ลงชื่อ <span></span></p>
                     <p>( <span>{{ $coordinatorName }}</span> )</p>
                     <p>ตำแหน่ง <span>{{ $text('coordinator_position') }}</span></p>
-                    <p>วันที่ <span>{{ now()->locale('th')->translatedFormat('j F Y') }}</span></p>
+                    <p>วันที่ <span>{{ $thaiDate(now()) }}</span></p>
                 </div>
                 <div class="document-signature">
                     <h3>หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ</h3>
