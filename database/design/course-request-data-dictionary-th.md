@@ -19,10 +19,10 @@ Requester กรอกคำร้อง
 
 | ฐานข้อมูล | Schema | หน้าที่ |
 |---|---|---|
-| `saladb` บน Server 199 | `dbo` | บุคลากรและหน่วยงานจาก `dbo.persons` และ `dbo.departments` |
+| SWU MIS API | `/mis/v1` | บุคลากรและหน่วยงานจาก `Officer` และ `Department` |
 | `academy_db1447` บน Server 133 | `course133` | สิทธิ์ คำร้อง เอกสาร การตรวจ การอนุมัติ และ Course ID |
 
-ฐาน 133 อ้าง `dbo.persons.person_id` และ `dbo.departments.dept_cd` แบบ **Logical Reference (LR)** โดยไม่สร้าง Foreign Key ข้าม Server ช่วงแรกสามารถใช้ค่า `int` ที่กำหนดไว้ใน Laravel และค่อยเพิ่มการตรวจสอบกับ connection ของฐาน 199 ภายหลัง
+ฐาน 133 อ้าง `Officer.personId` และ `Department.deptCd` แบบ **Logical Reference (LR)** โดยไม่สร้าง Foreign Key ไปยังข้อมูลภายนอก Laravel ตรวจสอบรหัสเหล่านี้ผ่าน SWU MIS API
 
 ## สัญลักษณ์
 
@@ -37,9 +37,9 @@ Requester กรอกคำร้อง
 
 ## ERD
 
-ความสัมพันธ์ที่มีคำว่า `LR` เป็น Logical Reference ระหว่าง Server 133 กับ Server 199 จึงไม่มี Foreign Key ข้าม Server
+ความสัมพันธ์ที่มีคำว่า `LR` เป็น Logical Reference ระหว่าง Server 133 กับข้อมูลจาก SWU MIS API จึงไม่มี Foreign Key ไปยังข้อมูลภายนอก
 
-ความสัมพันธ์หน่วยงานแม่–ลูกยังมีอยู่ โดย `dbo.departments.in_dept_cd` อ้าง `dbo.departments.dept_cd` แต่ไม่แสดงเป็นเส้นวนในภาพใหญ่เพื่อให้อ่านง่าย
+ความสัมพันธ์หน่วยงานแม่–ลูกยังมีอยู่ โดย `Department.indeptCd` อ้างรหัส `Department.deptCd` แต่ไม่แสดงเป็นเส้นวนในภาพใหญ่เพื่อให้อ่านง่าย
 
 ```mermaid
 erDiagram
@@ -202,11 +202,11 @@ erDiagram
 
 > เส้นที่ติดป้าย `LR` ใช้อธิบายความสัมพันธ์เชิงระบบเท่านั้น ไม่มี constraint ข้าม database จริง
 
-# Data Dictionary: Server 199 / `saladb.dbo`
+# Data Dictionary: SWU MIS API
 
-ฝั่ง 199 ใช้ตาราง `saladb.dbo.persons` 52 คอลัมน์และ `saladb.dbo.departments` 18 คอลัมน์ตาม metadata ที่ export จาก SSMS รายละเอียดทุกคอลัมน์อยู่ใน [Snapshot SQL Server 199 — Data Dictionary](sqlserver199-snapshot-data-dictionary.md)
+ข้อมูลบุคลากรอ่านจาก endpoint `Officer` และข้อมูลหน่วยงานอ่านจาก endpoint `Department` โดยระบบเก็บเฉพาะรหัสอ้างอิงที่จำเป็นในฐาน Server 133
 
-ตารางนี้ไม่เก็บ password การเข้าสู่ระบบต้องให้ SSO/LDAP ยืนยัน `buasri_id` แล้วจึงอ่าน `person_id` จาก `dbo.persons`
+ตารางนี้ไม่เก็บ password การเข้าสู่ระบบต้องให้ LDAP ยืนยัน `buasri_id` แล้วจึงอ่าน `personId` จาก endpoint `Officer`
 
 # Data Dictionary: Server 133 / `academy_db1447.course133`
 
@@ -227,7 +227,7 @@ erDiagram
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
 | `role_assignment_id` | bigint identity | PK | auto | รหัสรายการมอบหมายสิทธิ์ |
-| `pers_id` | int | LR, NOT NULL | — | เก็บค่า `dbo.persons.person_id` ชนิด int |
+| `pers_id` | int | LR, NOT NULL | — | เก็บค่า `Officer.personId` ชนิด int |
 | `role_id` | smallint | FK, NOT NULL | — | อ้าง `app_role.role_id` |
 | `is_active` | bit | NOT NULL | `1` | สิทธิ์นี้ยังเปิดใช้งาน |
 
@@ -258,14 +258,14 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 
 ตารางหลักของคำร้องและสถานะปัจจุบัน
 
-ส่วนงานต้นสังกัดของผู้ยื่นไม่เก็บซ้ำในตารางนี้ ช่วงที่ยังไม่เชื่อม Server 199 ระบบอ่านจากข้อมูลผู้ใช้ชั่วคราว และภายหลังจะหา `persons.dept_cd` จาก `requester_pers_id` แล้วอ่านชื่อจาก `departments`
+ส่วนงานต้นสังกัดของผู้ยื่นไม่เก็บซ้ำในตารางนี้ ระบบค้นข้อมูลบุคลากรจาก endpoint `Officer` ด้วย `requester_pers_id` และอ่านชื่อหน่วยงานจาก endpoint `Department`
 
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
 | `request_id` | bigint identity | PK | auto | รหัสคำร้องภายใน |
 | `request_no` | varchar(30) | UK, NOT NULL | — | เลขคำร้องที่แสดงต่อผู้ใช้ |
-| `requester_pers_id` | int | LR, NOT NULL | — | ผู้ยื่นจาก `dbo.persons.person_id` |
-| `target_dept_id` | int | LR, NOT NULL | — | หน่วยงานเป้าหมายที่ผู้ยื่นเลือก; ช่วงที่ยังไม่เชื่อม 199 ตรวจจาก `config/departments.php` และภายหลังจะอ้าง `saladb.dbo.departments.dept_cd`; เจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้รับตรวจคำร้องทุกหน่วยงาน |
+| `requester_pers_id` | int | LR, NOT NULL | — | ผู้ยื่นจาก `Officer.personId` |
+| `target_dept_id` | int | LR, NOT NULL | — | หน่วยงานเป้าหมายที่ผู้ยื่นเลือกจากข้อมูล `deptCd` ของ endpoint `Department`; หาก API ไม่พร้อมใช้งาน ระบบใช้ snapshot ใน `config/departments.php`; เจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้รับตรวจคำร้องทุกหน่วยงาน |
 | `course_name_th` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาไทย |
 | `course_name_en` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาอังกฤษ |
 | `status` | varchar(40) | NOT NULL | `DRAFT` | สถานะ workflow ปัจจุบัน |
@@ -292,7 +292,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `enrollment_other` | varchar(500) | Conditional | `NULL` | ต้องมีเมื่อ `enrollment_method = 'อื่น ๆ (ระบุ)'` |
 | `expected_students` | integer | NOT NULL | — | จำนวนผู้เรียนที่คาดการณ์ ต้องมากกว่า 0 |
 | `course_id` | varchar(100) | NULL | `NULL` | Course ID ที่บุคคลภายนอกสร้างและ Officer นำมากรอก |
-| `recorded_by_pers_id` | int | LR, NULL | `NULL` | Officer ผู้บันทึก Course ID จากฐาน 199 |
+| `recorded_by_pers_id` | int | LR, NULL | `NULL` | Officer ผู้บันทึก Course ID โดยอ้าง `Officer.personId` |
 
 ## `course133.course_instructor`
 
@@ -302,7 +302,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 |---|---|---|---|---|
 | `instructor_id` | bigint identity | PK | auto | รหัสรายการผู้สอน |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
-| `pers_id` | int | LR, NULL | `NULL` | รหัสบุคลากรในฐาน 199 ถ้าเป็นบุคลากรภายใน |
+| `pers_id` | int | LR, NULL | `NULL` | รหัส `Officer.personId` ถ้าเป็นบุคลากรภายใน |
 | `instructor_name` | varchar(300) | NOT NULL | — | ชื่อผู้สอนตามคำร้อง |
 | `instructor_email` | varchar(254) | NOT NULL | — | อีเมลผู้สอน |
 
@@ -319,7 +319,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `original_filename` | varchar(500) | NOT NULL | — | ชื่อไฟล์ต้นฉบับ |
 | `mime_type` | varchar(100) | NOT NULL | — | MIME type; `SIGNED_FORM` ต้องเป็น `application/pdf` |
 | `file_size_bytes` | bigint | NOT NULL | — | ขนาดไฟล์ ต้องมากกว่า 0 |
-| `uploaded_by_pers_id` | int | LR, NOT NULL | — | ผู้สร้างหรืออัปโหลดจากฐาน 199 |
+| `uploaded_by_pers_id` | int | LR, NOT NULL | — | ผู้สร้างหรืออัปโหลดโดยอ้าง `Officer.personId` |
 | `uploaded_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาอัปโหลดตามเวลา Asia/Bangkok |
 
 เมื่ออัปโหลดเอกสารใหม่ ระบบเพิ่มแถวใหม่และใช้ `uploaded_at` เรียงจากใหม่ไปเก่า โดยเอกสารประเภท `ADDITIONAL_DOCUMENT` จำกัดไม่เกิน 5 ไฟล์ต่อคำร้องที่ระดับ Laravel
@@ -332,7 +332,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 |---|---|---|---|---|
 | `officer_review_id` | bigint identity | PK | auto | รหัสการตรวจ |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
-| `officer_pers_id` | int | LR, NOT NULL | — | Officer จากฐาน 199 |
+| `officer_pers_id` | int | LR, NOT NULL | — | Officer โดยอ้าง `Officer.personId` |
 | `decision` | varchar(20) | NOT NULL | — | `PASSED` หรือ `RETURNED` |
 | `return_reason` | text | NULL | `NULL` | เหตุผลส่งกลับ ต้องมีเมื่อเป็น `RETURNED` และส่งให้ Requester |
 | `reviewed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาตรวจตามเวลา Asia/Bangkok |
@@ -345,7 +345,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 |---|---|---|---|---|
 | `approval_id` | bigint identity | PK | auto | รหัสการพิจารณา |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
-| `approver_pers_id` | int | LR, NOT NULL | — | ผู้พิจารณาจากฐาน 199 |
+| `approver_pers_id` | int | LR, NOT NULL | — | ผู้พิจารณาโดยอ้าง `Officer.personId` |
 | `decision` | varchar(20) | NOT NULL | — | `APPROVED`, `REJECTED`, `RETURNED` |
 | `comment` | text | NULL | `NULL` | เหตุผลที่ส่งให้ Requester; บังคับเมื่อไม่ใช่ `APPROVED` |
 | `decided_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาพิจารณาตามเวลา Asia/Bangkok |
@@ -359,7 +359,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `history_id` | bigint identity | PK | auto | รหัสประวัติ |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
 | `status` | varchar(40) | NOT NULL | — | สถานะของคำร้อง ณ เหตุการณ์นี้ |
-| `changed_by_pers_id` | int | LR, NULL | `NULL` | ผู้เปลี่ยนจากฐาน 199; ว่างเมื่อระบบเปลี่ยนเอง |
+| `changed_by_pers_id` | int | LR, NULL | `NULL` | ผู้เปลี่ยนโดยอ้าง `Officer.personId`; ว่างเมื่อระบบเปลี่ยนเอง |
 | `change_source` | varchar(30) | NOT NULL | — | `REQUESTER`, `OFFICER`, `APPROVER`, `SYSTEM` |
 | `changed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาเปลี่ยนสถานะตามเวลา Asia/Bangkok |
 
@@ -372,7 +372,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `notification_id` | bigint identity | PK | auto | รหัสรายการแจ้งเตือน |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
 | `notification_type` | varchar(50) | NOT NULL | — | ประเภท เช่น `OFFICER_REVIEW_REQUIRED` |
-| `recipient_pers_id` | int | LR, NULL | `NULL` | ผู้รับจากฐาน 199 ถ้ามี |
+| `recipient_pers_id` | int | LR, NULL | `NULL` | ผู้รับโดยอ้าง `Officer.personId` ถ้ามี |
 | `recipient_email` | varchar(254) | NOT NULL | — | อีเมลปลายทาง |
 | `delivery_status` | varchar(20) | NOT NULL | `PENDING` | `PENDING`, `SENDING`, `SENT`, `FAILED` |
 | `attempt_count` | integer | NOT NULL | `0` | จำนวนครั้งที่พยายามส่ง ต้องไม่ติดลบ |
@@ -399,7 +399,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 
 | Parent | Child | Cardinality | วิธีบังคับ |
 |---|---|---|---|
-| `dbo.departments` | `dbo.persons` | บุคคล 0..1 หน่วยงาน; หน่วยงาน 0..N บุคคล | Logical relation ตาม `dept_cd`; รหัสหน่วยงานใน `persons` เป็น nullable |
+| `Department` | `Officer` | บุคคล 0..1 หน่วยงาน; หน่วยงาน 0..N บุคคล | Logical relation ตาม `departmentId` และ `facultyId` |
 | `app_role` | `user_role_assignment` | 1:N | FK ในฐาน 133 |
 | `project_type` | `course_request` | 1:N | FK `project_type_code` ในฐาน 133 |
 | `course_category` | `course_request` | 1:N | FK `category_code` ในฐาน 133 |
@@ -409,17 +409,17 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `course_request` | `course_approval` | 1:N | FK ในฐาน 133 |
 | `course_request` | `request_status_history` | 1:N | FK ในฐาน 133 |
 | `course_request` | `notification_outbox` | 1:N | FK ในฐาน 133 |
-| `dbo.persons`/`dbo.departments` | คอลัมน์รหัสบุคลากร/หน่วยงานฐาน 133 | 1:N | Laravel ตรวจผ่านสอง connections |
+| SWU MIS API | คอลัมน์รหัสบุคลากร/หน่วยงานฐาน 133 | 1:N | Laravel ตรวจผ่าน endpoint `Officer` และ `Department` |
 
 ## การระบุตัวผู้ใช้ตอน Login
 
-ระยะนี้ Laravel ใช้บัญชีชั่วคราวจาก `COURSE133_*` ใน `.env` และจับคู่ `pers_id` กับ `academy_db1447.course133.user_role_assignment` โดยยังไม่ query Server 199 ตอน login
+Laravel ตรวจรหัสผ่านด้วย LDAP ค้นข้อมูลบุคลากรผ่าน endpoint `Officer` และจับคู่ `pers_id` กับ `academy_db1447.course133.user_role_assignment`
 
 เมื่อเชื่อม SSO/LDAP ในภายหลัง ลำดับจะเป็น:
 
 ```text
 SSO/LDAP ยืนยัน Buasri ID
-→ ค้น buasri_id ใน saladb.dbo.persons
+→ ค้น Buasri ID ผ่าน SWU MIS API endpoint Officer
 → ได้ person_id
 → ค้น role ที่ active ใน academy_db1447.course133.user_role_assignment
 → Laravel สร้าง session และกำหนดหน้าตามสิทธิ์

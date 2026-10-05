@@ -8,7 +8,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        // Role assignments must be created explicitly for real Server 199 personnel.
+        // Role assignments must be created explicitly for personnel returned by the SWU MIS API.
     }
 
     public function down(): void

@@ -1,15 +1,15 @@
 # ERD ระบบคำร้องขอสร้างรายวิชา
 
-> สถานะการตรวจสอบ: ฝั่ง `saladb.dbo` ของ Server 199 ตรวจชื่อตารางและคอลัมน์กับ CSV snapshot แล้ว ส่วน `course133` รัน Laravel Migration ลง `academy_db1447` สำเร็จแล้วและเป็น As-built schema ของระบบปัจจุบัน
+> สถานะการตรวจสอบ: ข้อมูลบุคลากรและหน่วยงานอ่านจาก SWU MIS API ส่วน `course133` รัน Laravel Migration ลง `academy_db1447` สำเร็จแล้วและเป็น As-built schema ของระบบปัจจุบัน
 
-ระบบเป้าหมายแยกเป็น 2 SQL Server databases:
+ระบบเป้าหมายใช้สองแหล่งข้อมูล:
 
-- Server 199 / `saladb.dbo`: บุคลากรและหน่วยงาน
+- SWU MIS API: บุคลากรจาก `Officer` และหน่วยงานจาก `Department`
 - Server 133 / `academy_db1447.course133`: สิทธิ์ คำร้อง เอกสาร การตรวจ อนุมัติ และ Course ID
 
-`LR` หมายถึง Logical Reference ไป Server 199 ช่วงแรกใช้ค่า `int` ที่กำหนดใน Laravel โดยยังไม่ตรวจข้าม Server
+`LR` หมายถึง Logical Reference ไปยังรหัสจาก SWU MIS API โดยไม่มี Foreign Key ไปยังข้อมูลภายนอก
 
-> ความสัมพันธ์หน่วยงานแม่–ลูกไม่แสดงเป็นเส้นในภาพใหญ่เพื่อป้องกันเส้นวนที่อ่านยาก โดย `dbo.departments.in_dept_cd` อ้าง `dbo.departments.dept_cd` ภายในตารางเดียวกัน
+> ความสัมพันธ์หน่วยงานแม่–ลูกไม่แสดงเป็นเส้นในภาพใหญ่เพื่อป้องกันเส้นวนที่อ่านยาก โดย `Department.indeptCd` อ้างรหัส `Department.deptCd`
 
 ## สัญลักษณ์ของ Relation
 
@@ -39,20 +39,20 @@
 | `records` | บันทึก | คำร้องมีประวัติสถานะหลายเหตุการณ์ |
 | `records_course_id` | บันทึก Course ID | บุคลากรเป็น Officer ผู้กรอก Course ID ลงในคำร้อง |
 | `triggers` | กระตุ้นให้เกิด | เหตุการณ์ของคำร้องสร้างรายการแจ้งเตือนใน outbox |
-| `identifies` | ระบุตัวบุคคล | รหัสบุคลากรจาก `dbo.persons` ใช้ระบุว่า role assignment หรือผู้สอนเป็นใคร |
+| `identifies` | ระบุตัวบุคคล | รหัส `personId` จาก endpoint `Officer` ใช้ระบุว่า role assignment หรือผู้สอนเป็นใคร |
 | `submits` | ยื่นคำร้อง | บุคลากรเป็นผู้ยื่น `course_request` |
 | `target_department` | หน่วยงานเป้าหมาย | ส่วนงาน/คณะ/สำนักที่ผู้ยื่นต้องการสร้างรายวิชาให้ โดยเจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้ตรวจคำร้อง |
 | `uploads` | อัปโหลด | บุคลากรเป็นผู้สร้างหรืออัปโหลดเอกสาร |
 | `reviews` | ตรวจสอบ | บุคลากรที่มีบทบาท Officer เป็นผู้ตรวจคำร้อง |
 | `approves` | พิจารณาอนุมัติ | บุคลากรที่มีบทบาท Approver เป็นผู้อนุมัติ ปฏิเสธ หรือส่งกลับ |
 | `changes` | เปลี่ยนสถานะ | บุคลากรเป็นผู้ทำให้สถานะคำร้องเปลี่ยน |
-| `parent_of` | เป็นหน่วยงานแม่ของ | ใช้กับ `departments.in_dept_cd → departments.dept_cd`; คำนี้ถูกนำออกจากภาพใหญ่เพราะเส้นวนอ่านยาก |
+| `parent_of` | เป็นหน่วยงานแม่ของ | ใช้กับ `Department.indeptCd → Department.deptCd`; คำนี้ถูกนำออกจากภาพใหญ่เพราะเส้นวนอ่านยาก |
 
-คำที่ขึ้นต้นด้วย `LR` หมายถึงความสัมพันธ์นั้นเป็น Logical Reference ข้ามฐานข้อมูล เช่น `LR uploads` คือรหัสผู้อัปโหลดในฐาน 133 อ้างถึงบุคลากรในฐาน 199 โดยให้ Laravel ตรวจสอบ
+คำที่ขึ้นต้นด้วย `LR` หมายถึงความสัมพันธ์นั้นเป็น Logical Reference ไปยัง SWU MIS API เช่น `LR uploads` คือรหัสผู้อัปโหลดในฐาน 133 อ้างถึง `Officer.personId` โดยให้ Laravel ตรวจสอบ
 
 ```mermaid
 erDiagram
-    DBO_DEPARTMENTS o|--o{ DBO_PERSONS : contains
+    DEPARTMENT_API o|--o{ OFFICER_API : contains
 
     APP_ROLE ||--o{ USER_ROLE_ASSIGNMENT : grants
     PROJECT_TYPE ||--o{ COURSE_REQUEST : classifies
@@ -64,32 +64,32 @@ erDiagram
     COURSE_REQUEST ||--o{ REQUEST_STATUS_HISTORY : records
     COURSE_REQUEST ||--o{ NOTIFICATION_OUTBOX : triggers
 
-    DBO_PERSONS ||--o{ USER_ROLE_ASSIGNMENT : "LR identifies"
-    DBO_PERSONS ||--o{ COURSE_REQUEST : "LR submits"
-    DBO_DEPARTMENTS ||--o{ COURSE_REQUEST : "LR target_department"
-    DBO_PERSONS o|--o{ COURSE_INSTRUCTOR : "LR identifies"
-    DBO_PERSONS ||--o{ COURSE_DOCUMENT : "LR uploads"
-    DBO_PERSONS ||--o{ OFFICER_REVIEW : "LR reviews"
-    DBO_PERSONS ||--o{ COURSE_APPROVAL : "LR approves"
-    DBO_PERSONS o|--o{ COURSE_REQUEST : "LR records_course_id"
-    DBO_PERSONS o|--o{ REQUEST_STATUS_HISTORY : "LR changes"
-    DBO_PERSONS o|--o{ NOTIFICATION_OUTBOX : "LR receives"
+    OFFICER_API ||--o{ USER_ROLE_ASSIGNMENT : "LR identifies"
+    OFFICER_API ||--o{ COURSE_REQUEST : "LR submits"
+    DEPARTMENT_API ||--o{ COURSE_REQUEST : "LR target_department"
+    OFFICER_API o|--o{ COURSE_INSTRUCTOR : "LR identifies"
+    OFFICER_API ||--o{ COURSE_DOCUMENT : "LR uploads"
+    OFFICER_API ||--o{ OFFICER_REVIEW : "LR reviews"
+    OFFICER_API ||--o{ COURSE_APPROVAL : "LR approves"
+    OFFICER_API o|--o{ COURSE_REQUEST : "LR records_course_id"
+    OFFICER_API o|--o{ REQUEST_STATUS_HISTORY : "LR changes"
+    OFFICER_API o|--o{ NOTIFICATION_OUTBOX : "LR receives"
 
-    DBO_DEPARTMENTS {
-        integer dept_cd PK
-        varchar dept_lname_th
-        integer in_dept_cd FK
-        varchar active_flag
+    DEPARTMENT_API {
+        string deptCd PK
+        string deptLnameTh
+        string indeptCd
+        string activeFlag
     }
 
-    DBO_PERSONS {
-        integer person_id PK
-        varchar buasri_id
-        integer dept_cd FK
-        integer in_dept_cd FK
-        varchar person_fname_th
-        varchar person_lname_th
-        varchar active_flag
+    OFFICER_API {
+        string personId PK
+        string buasriId
+        string facultyId
+        string departmentId
+        string nameTh
+        string lnameTh
+        string activeFlag
     }
 
     APP_ROLE {
@@ -100,7 +100,7 @@ erDiagram
 
     USER_ROLE_ASSIGNMENT {
         bigint role_assignment_id PK
-        int pers_id "LR: dbo.persons.person_id"
+        int pers_id "LR: Officer.personId"
         smallint role_id FK
         bit is_active
     }
@@ -121,8 +121,8 @@ erDiagram
     COURSE_REQUEST {
         bigint request_id PK
         varchar request_no UK
-        int requester_pers_id "LR: dbo.persons.person_id"
-        int target_dept_id "LR: dbo.departments.dept_cd"
+        int requester_pers_id "LR: Officer.personId"
+        int target_dept_id "LR: Department.deptCd"
         varchar course_name_th
         varchar course_name_en
         varchar status
@@ -149,13 +149,13 @@ erDiagram
         varchar enrollment_other
         integer expected_students
         varchar course_id
-        int recorded_by_pers_id "LR: dbo.persons.person_id"
+        int recorded_by_pers_id "LR: Officer.personId"
     }
 
     COURSE_INSTRUCTOR {
         bigint instructor_id PK
         bigint request_id FK
-        int pers_id "LR: dbo.persons.person_id"
+        int pers_id "LR: Officer.personId"
         varchar instructor_name
         varchar instructor_email
     }
@@ -165,14 +165,14 @@ erDiagram
         bigint request_id FK
         varchar document_type
         varchar storage_key UK
-        int uploaded_by_pers_id "LR: dbo.persons.person_id"
+        int uploaded_by_pers_id "LR: Officer.personId"
         datetime2 uploaded_at
     }
 
     OFFICER_REVIEW {
         bigint officer_review_id PK
         bigint request_id FK
-        int officer_pers_id "LR: dbo.persons.person_id"
+        int officer_pers_id "LR: Officer.personId"
         varchar decision
         text return_reason
         datetime2 reviewed_at
@@ -181,7 +181,7 @@ erDiagram
     COURSE_APPROVAL {
         bigint approval_id PK
         bigint request_id FK
-        int approver_pers_id "LR: dbo.persons.person_id"
+        int approver_pers_id "LR: Officer.personId"
         varchar decision
         text comment
         datetime2 decided_at
@@ -191,7 +191,7 @@ erDiagram
         bigint history_id PK
         bigint request_id FK
         varchar status
-        int changed_by_pers_id "LR: dbo.persons.person_id"
+        int changed_by_pers_id "LR: Officer.personId"
         varchar change_source
         datetime2 changed_at
     }
@@ -200,7 +200,7 @@ erDiagram
         bigint notification_id PK
         bigint request_id FK
         varchar notification_type
-        int recipient_pers_id "LR: dbo.persons.person_id"
+        int recipient_pers_id "LR: Officer.personId"
         varchar recipient_email
         varchar delivery_status
         integer attempt_count
@@ -212,8 +212,8 @@ erDiagram
 
 | Parent | Child | Cardinality | การบังคับ |
 |---|---|---:|---|
-| `dbo.departments` | `dbo.departments` | 1 : 0..N | FK `in_dept_cd` ภายในฐาน 199 |
-| `dbo.departments` | `dbo.persons` | บุคคล 0..1 หน่วยงาน; หน่วยงาน 0..N บุคคล | FK `dept_cd` และ `in_dept_cd` เป็น nullable |
+| `Department` | `Department` | 1 : 0..N | Logical relation `indeptCd → deptCd` |
+| `Department` | `Officer` | บุคคล 0..1 หน่วยงาน; หน่วยงาน 0..N บุคคล | Logical relation ผ่าน `departmentId` และ `facultyId` |
 | `course133.app_role` | `course133.user_role_assignment` | 1 : 0..N | FK |
 | `course133.course_request` | `course_instructor` | 1 : 1..N | FK; Laravel บังคับอย่างน้อย 1 คน |
 | `course133.course_request` | `course_document` | 1 : 0..N | FK |
@@ -223,7 +223,7 @@ erDiagram
 | `course133.course_category` | `course133.course_request` | 1 : 0..N | FK `category_code` |
 | `course133.course_request` | `request_status_history` | 1 : 0..N | FK |
 | `course133.course_request` | `notification_outbox` | 1 : 0..N | FK |
-| ฐาน 199 | คอลัมน์ที่ระบุ `LR` ในฐาน 133 | 1 : 0..N | Laravel ตรวจผ่าน 2 connections |
+| SWU MIS API | คอลัมน์ที่ระบุ `LR` ในฐาน 133 | 1 : 0..N | Laravel ตรวจผ่าน endpoint `Officer` และ `Department` |
 
 รายละเอียดคอลัมน์ทั้งหมดอยู่ใน [Data Dictionary](course-request-data-dictionary-th.md)
 

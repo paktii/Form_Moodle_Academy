@@ -27,7 +27,7 @@ class PortalIdentityService
         $email = $this->personnelDirectory->email($person);
 
         if ($email === null) {
-            throw new RuntimeException('The authenticated person has no valid Google Workspace account in Server 199.');
+            throw new RuntimeException('The authenticated person has no valid Google Workspace account in the SWU MIS API.');
         }
 
         $roleCodes = $this->roleCodesForPerson((int) $person->person_id);

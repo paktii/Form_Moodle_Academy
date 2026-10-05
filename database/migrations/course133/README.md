@@ -1,8 +1,8 @@
 # SQL Server 133 migration
 
-Migration ชุดนี้สร้าง schema `course133` จำนวน 11 ตารางในฐาน `academy_db1447` ผ่าน connection `course133` โดยไม่แก้ฐาน `saladb` บน Server 199
+Migration ชุดนี้สร้าง schema `course133` จำนวน 11 ตารางในฐาน `academy_db1447` ผ่าน connection `course133` โดยข้อมูลบุคลากรและหน่วยงานอ่านจาก SWU MIS API
 
-คอลัมน์ `*_pers_id` และ `target_dept_id` ใช้ `int` ให้ตรงกับ `saladb.dbo.persons.person_id` และ `saladb.dbo.departments.dept_cd` แต่ไม่มี Foreign Key ข้าม Server ช่วงที่ยังไม่เชื่อม Server 199 Laravel ใช้ snapshot หน่วยงานใน `config/departments.php` เพื่อตรวจสอบค่าที่ผู้ยื่นเลือกและบันทึกรหัสหน่วยงานเป้าหมายลง Server 133
+คอลัมน์ `*_pers_id` และ `target_dept_id` ใช้ `int` ให้ตรงกับ `personId` และ `deptCd` จาก SWU MIS API แต่ไม่มี Foreign Key ไปยังข้อมูลภายนอก หาก API หน่วยงานไม่พร้อมใช้งาน Laravel จะใช้ snapshot ใน `config/departments.php` สำหรับตรวจสอบค่าที่ผู้ยื่นเลือกและบันทึกรหัสหน่วยงานเป้าหมายลง Server 133
 
 ตั้งค่า `DB_133_*` สำหรับฐานคำร้องใน `.env` แล้วรันจากโฟลเดอร์โปรเจกต์:
 

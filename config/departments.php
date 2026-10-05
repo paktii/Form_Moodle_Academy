@@ -1,6 +1,6 @@
 <?php
 
-// Fallback snapshot used only when the department directory on Server 199 is unavailable.
+// Fallback snapshot used only when the SWU MIS Department API is unavailable.
 return [
     100 => 'คณะมนุษยศาสตร์',
     200 => 'คณะวิทยาศาสตร์',

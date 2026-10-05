@@ -17,7 +17,7 @@ return new class extends Migration
             throw new RuntimeException('The SQL Server 133 schema file could not be read.');
         }
 
-        // IDs sourced from Server 199 are plain int columns for now. No cross-server FKs are created.
+        // IDs sourced from the SWU MIS API are plain int columns. External API records cannot use database FKs.
         $this->database()->unprepared($sql);
     }
 

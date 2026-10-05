@@ -1112,7 +1112,7 @@ if (requestList) {
         rosterOnly = false;
         rosterUpdatesOnly = false;
         status.value = '';
-        date.value = '';
+        date.value = 'month';
         search.value = '';
         filterRows();
     });

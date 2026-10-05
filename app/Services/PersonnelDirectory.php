@@ -2,28 +2,45 @@
 
 namespace App\Services;
 
-use App\Models\SalaPerson;
-
 class PersonnelDirectory
 {
-    /** @var array<int, SalaPerson|null> */
+    /** @var array<int, object|null> */
     private array $peopleById = [];
 
-    public function findActiveByBuasriId(string $buasriId): ?SalaPerson
+    public function __construct(private readonly SwuMisApiClient $api) {}
+
+    public function findActiveByBuasriId(string $buasriId): ?object
     {
-        return SalaPerson::query()
-            ->where('buasri_id', $buasriId)
-            ->where('active_flag', 'A')
-            ->orderByDesc('person_id')
-            ->first();
+        $normalizedId = strtolower(trim($buasriId));
+        $person = collect($this->api->search(
+            (string) config('swu_mis_api.endpoints.officers', 'Officer'),
+            'buasri',
+            $normalizedId,
+        ))->first(fn (array $record) => strtolower(trim((string) ($record['buasriId'] ?? ''))) === $normalizedId
+            && strtoupper(trim((string) ($record['activeFlag'] ?? ''))) === 'A'
+        );
+
+        return is_array($person) ? $this->mapPerson($person) : null;
     }
 
-    public function findByPersonId(int $personId): ?SalaPerson
+    public function findByPersonId(int $personId): ?object
     {
-        return $this->peopleById[$personId] ??= SalaPerson::query()->find($personId);
+        if (array_key_exists($personId, $this->peopleById)) {
+            return $this->peopleById[$personId];
+        }
+
+        $person = collect($this->api->search(
+            (string) config('swu_mis_api.endpoints.officers', 'Officer'),
+            'personid',
+            (string) $personId,
+        ))->first(fn (array $record) => (int) ($record['personId'] ?? 0) === $personId);
+
+        return $this->peopleById[$personId] = is_array($person)
+            ? $this->mapPerson($person)
+            : null;
     }
 
-    public function email(SalaPerson $person): ?string
+    public function email(object $person): ?string
     {
         $account = trim((string) $person->gafe_account);
 
@@ -36,7 +53,7 @@ class PersonnelDirectory
         return filter_var($email, FILTER_VALIDATE_EMAIL) ? strtolower($email) : null;
     }
 
-    public function name(SalaPerson $person): string
+    public function name(object $person): string
     {
         return trim(implode(' ', array_filter([
             trim((string) $person->prename_lname_th),
@@ -46,7 +63,7 @@ class PersonnelDirectory
     }
 
     /** @return array<string, string> */
-    public function coordinatorDefaults(SalaPerson $person): array
+    public function coordinatorDefaults(object $person): array
     {
         $phone = collect([
             $person->in_telephone_no,
@@ -61,5 +78,36 @@ class PersonnelDirectory
             'coordinator_phone' => $phone ?? '',
             'coordinator_email' => $this->email($person) ?? '',
         ];
+    }
+
+    /** @param array<string, mixed> $record */
+    private function mapPerson(array $record): object
+    {
+        $facultyId = $this->positiveInt($record['facultyId'] ?? null);
+        $departmentId = $this->positiveInt($record['departmentId'] ?? null);
+
+        return (object) [
+            'person_id' => (int) ($record['personId'] ?? 0),
+            'buasri_id' => strtolower(trim((string) ($record['buasriId'] ?? ''))),
+            'gafe_account' => trim((string) ($record['gafeMail'] ?? '')),
+            'prename_lname_th' => trim((string) ($record['titleTh'] ?? $record['stitleTh'] ?? '')),
+            'person_fname_th' => trim((string) ($record['nameTh'] ?? '')),
+            'person_lname_th' => trim((string) ($record['lnameTh'] ?? '')),
+            'position' => trim((string) ($record['positionTh'] ?? '')),
+            'dept_cd' => $departmentId ?? $facultyId,
+            'in_dept_cd' => $facultyId,
+            'division' => trim((string) ($record['departmentTh'] ?? $record['facultyTh'] ?? '')),
+            'active_flag' => strtoupper(trim((string) ($record['activeFlag'] ?? ''))),
+            'in_telephone_no' => '',
+            'did_phone_no' => '',
+            'mobile_phone' => '',
+        ];
+    }
+
+    private function positiveInt(mixed $value): ?int
+    {
+        $number = (int) $value;
+
+        return $number > 0 ? $number : null;
     }
 }

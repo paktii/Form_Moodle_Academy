@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\SalaDepartment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -15,36 +14,14 @@ class DepartmentDirectory
 
     private ?Collection $subdepartmentParents = null;
 
+    public function __construct(private readonly SwuMisApiClient $api) {}
+
     /** @return Collection<int, string> */
     public function options(): Collection
     {
-        if ($this->departments !== null) {
-            return $this->departments;
-        }
+        $this->load();
 
-        try {
-            $departments = SalaDepartment::query()
-                ->where('active_flag', 'Y')
-                ->whereColumn('dept_cd', 'in_dept_cd')
-                ->whereNotNull('dept_lname_th')
-                ->orderBy('dept_lname_th')
-                ->get(['dept_cd', 'dept_lname_th'])
-                ->mapWithKeys(fn (SalaDepartment $department) => [
-                    (int) $department->dept_cd => trim((string) $department->dept_lname_th),
-                ])
-                ->filter(fn (string $name, int $id) => $id > 0 && $name !== '');
-
-            if ($departments->isNotEmpty()) {
-                return $this->departments = $departments;
-            }
-        } catch (Throwable $exception) {
-            Log::warning('DB199 department directory is unavailable; using the local snapshot.', [
-                'exception' => $exception::class,
-            ]);
-        }
-
-        return $this->departments = collect(config('departments', []))
-            ->mapWithKeys(fn ($name, $id) => [(int) $id => trim((string) $name)]);
+        return $this->departments;
     }
 
     public function name(int $departmentId): string
@@ -83,37 +60,58 @@ class DepartmentDirectory
 
     private function loadSubdepartments(): void
     {
-        if ($this->subdepartments !== null && $this->subdepartmentParents !== null) {
+        $this->load();
+    }
+
+    private function load(): void
+    {
+        if ($this->departments !== null && $this->subdepartments !== null && $this->subdepartmentParents !== null) {
             return;
         }
 
+        $this->departments = collect();
         $this->subdepartments = collect();
         $this->subdepartmentParents = collect();
 
         try {
-            $rows = SalaDepartment::query()
-                ->where('active_flag', 'Y')
-                ->whereColumn('dept_cd', '<>', 'in_dept_cd')
-                ->whereNotNull('dept_lname_th')
-                ->orderBy('dept_lname_th')
-                ->get(['dept_cd', 'in_dept_cd', 'dept_lname_th']);
+            $rows = $this->api->all((string) config('swu_mis_api.endpoints.departments', 'Department'));
 
             foreach ($rows as $department) {
-                $id = (int) $department->dept_cd;
-                $parentId = (int) $department->in_dept_cd;
-                $name = trim((string) $department->dept_lname_th);
-
-                if ($id <= 0 || $parentId <= 0 || $name === '') {
+                if (strtoupper(trim((string) ($department['activeFlag'] ?? ''))) !== 'Y') {
                     continue;
                 }
 
-                $this->subdepartments->put($id, $name);
-                $this->subdepartmentParents->put($id, $parentId);
+                $id = (int) ($department['deptCd'] ?? 0);
+                $parentId = (int) ($department['indeptCd'] ?? 0);
+                $name = trim((string) ($department['deptLnameTh'] ?? $department['deptSnameTh'] ?? ''));
+
+                if ($id <= 0 || $name === '') {
+                    continue;
+                }
+
+                if ($parentId <= 0 || $id === $parentId) {
+                    $this->departments->put($id, $name);
+                } else {
+                    $this->subdepartments->put($id, $name);
+                    $this->subdepartmentParents->put($id, $parentId);
+                }
+            }
+
+            $this->departments = $this->departments->sort();
+            $this->subdepartments = $this->subdepartments->sort();
+
+            if ($this->departments->isNotEmpty()) {
+                return;
             }
         } catch (Throwable $exception) {
-            Log::warning('DB199 subdepartment directory is unavailable.', [
+            Log::warning('SWU MIS department API is unavailable; using the local snapshot.', [
                 'exception' => $exception::class,
             ]);
         }
+
+        $this->departments = collect(config('departments', []))
+            ->mapWithKeys(fn ($name, $id) => [(int) $id => trim((string) $name)])
+            ->filter(fn (string $name, int $id) => $id > 0 && $name !== '')
+            ->sort();
     }
 }

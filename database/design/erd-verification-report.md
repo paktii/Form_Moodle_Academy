@@ -4,20 +4,15 @@
 
 ## ผลสรุป
 
-ERD ปัจจุบันเป็น As-built ของ schema `academy_db1447.course133` ที่ Laravel Migration สร้างแล้ว ร่วมกับ logical reference ไปยัง snapshot ของ `saladb.dbo` บน Server 199
+ERD ปัจจุบันเป็น As-built ของ schema `academy_db1447.course133` ที่ Laravel Migration สร้างแล้ว ร่วมกับ logical reference ไปยังข้อมูลจาก SWU MIS API
 
-## Server 199 — `saladb.dbo`
+## SWU MIS API
 
-ตรวจจาก `persons.csv`, `departments.csv` และ metadata ที่ export จาก SSMS:
+ตรวจ schema การตอบกลับกับเอกสารบริการข้อมูลและ API จริงแล้ว:
 
-- `dbo.persons`: ตรงกับ snapshot 52 คอลัมน์
-- `dbo.departments`: ตรงกับ snapshot 18 คอลัมน์
-- `persons.person_id`: `int`
-- `persons.dept_cd`, `persons.in_dept_cd`: `int`, nullable
-- `departments.dept_cd`: `int`
-- `departments.in_dept_cd`: `int`, nullable
-- ERD แสดงเฉพาะคอลัมน์หลักเพื่อให้อ่านง่าย รายละเอียดครบอยู่ใน `sqlserver199-snapshot-data-dictionary.md`
-- ยังต้องใช้ผลลัพธ์หมวด Foreign Keys จาก `inspect-sqlserver199-schema.sql` เพื่อยืนยันว่าเส้น `departments → persons` และ self-reference เป็น constraint จริงใน SQL Server ต้นทาง หรือเป็นเพียง logical relationship
+- ข้อมูลบุคลากรอ่านจาก endpoint `Officer` โดยใช้ `personId` เป็นรหัสอ้างอิง
+- ข้อมูลหน่วยงานอ่านจาก endpoint `Department` โดยใช้ `deptCd` เป็นรหัสอ้างอิง
+- การเชื่อมหน่วยงานของบุคลากรใช้ `facultyId` และ `departmentId`
 
 ## Server 133 — `academy_db1447`
 
@@ -27,20 +22,20 @@ ERD ปัจจุบันเป็น As-built ของ schema `academy_db14
 
 ## Logical Reference ที่ใช้ใน Laravel Migration
 
-Laravel Migration ฝั่ง 133 ใช้ชนิด `int` ให้ตรงกับคีย์ต้นทางจริง แต่ยังไม่สร้าง Foreign Key ข้าม Server:
+Laravel Migration ฝั่ง 133 ใช้ชนิด `int` ให้ตรงกับคีย์จาก API แต่ไม่สร้าง Foreign Key ไปยังข้อมูลภายนอก:
 
 | คอลัมน์ในฐาน 133 | ชนิด | อ้างถึง |
 |---|---|---|
-| `pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `requester_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `officer_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `approver_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `uploaded_by_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `recorded_by_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `changed_by_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `recipient_pers_id` | `int` | `saladb.dbo.persons.person_id` |
-| `target_dept_id` | `int` | `saladb.dbo.departments.dept_cd` |
+| `pers_id` | `int` | `Officer.personId` |
+| `requester_pers_id` | `int` | `Officer.personId` |
+| `officer_pers_id` | `int` | `Officer.personId` |
+| `approver_pers_id` | `int` | `Officer.personId` |
+| `uploaded_by_pers_id` | `int` | `Officer.personId` |
+| `recorded_by_pers_id` | `int` | `Officer.personId` |
+| `changed_by_pers_id` | `int` | `Officer.personId` |
+| `recipient_pers_id` | `int` | `Officer.personId` |
+| `target_dept_id` | `int` | `Department.deptCd` |
 
-ความสัมพันธ์เหล่านี้ยังคงเป็น Logical Reference เพราะ Server 133 และ 199 อยู่คนละ SQL Server จึงไม่มี Foreign Key ข้าม Server
+ความสัมพันธ์เหล่านี้เป็น Logical Reference เพราะข้อมูลต้นทางมาจาก SWU MIS API จึงไม่มี Foreign Key จากฐาน Server 133 ไปยังข้อมูลภายนอก
 
-`scope_dept_id` และ `requester_dept_id` ถูกนำออกจากแบบปัจจุบันแล้ว โดยสิทธิ์ Officer/Approver ใช้ได้ทุกหน่วยงาน และหน่วยงานของ requester อ่านจาก `saladb.dbo.persons` ตาม `requester_pers_id`
+`scope_dept_id` และ `requester_dept_id` ถูกนำออกจากแบบปัจจุบันแล้ว โดยสิทธิ์ Officer/Approver ใช้ได้ทุกหน่วยงาน และหน่วยงานของ requester อ่านจาก endpoint `Officer` ตาม `requester_pers_id`

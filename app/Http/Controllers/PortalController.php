@@ -1254,7 +1254,7 @@ class PortalController extends Controller
         }
 
         throw ValidationException::withMessages([
-            'email' => 'ไม่พบอีเมล Google Workspace ของผู้ยื่นคำร้องใน Server 199',
+            'email' => 'ไม่พบอีเมล Google Workspace ของผู้ยื่นคำร้องใน SWU MIS API',
         ]);
     }
 
