@@ -265,7 +265,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `request_id` | bigint identity | PK | auto | รหัสคำร้องภายใน |
 | `request_no` | varchar(30) | UK, NOT NULL | — | เลขคำร้องที่แสดงต่อผู้ใช้ |
 | `requester_pers_id` | int | LR, NOT NULL | — | ผู้ยื่นจาก `Officer.personId` |
-| `target_dept_id` | int | LR, NOT NULL | — | หน่วยงานเป้าหมายที่ผู้ยื่นเลือกจากข้อมูล `deptCd` ของ endpoint `Department`; หาก API ไม่พร้อมใช้งาน ระบบใช้ snapshot ใน `config/departments.php`; เจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้รับตรวจคำร้องทุกหน่วยงาน |
+| `target_dept_id` | int | LR, NOT NULL | — | หน่วยงานเป้าหมายที่ผู้ยื่นเลือกจากข้อมูล `deptCd` ของ endpoint `Department` ใน SWU MIS API; เจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้รับตรวจคำร้องทุกหน่วยงาน |
 | `course_name_th` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาไทย |
 | `course_name_en` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาอังกฤษ |
 | `status` | varchar(40) | NOT NULL | `DRAFT` | สถานะ workflow ปัจจุบัน |

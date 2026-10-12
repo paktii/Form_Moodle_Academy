@@ -4,9 +4,17 @@ $title = $isUser ? 'สถานะเอกสาร' : ($role === 'officer' ? 
 $tabTitle = $isUser ? 'My Requests' : ($role === 'officer' ? 'Officer Queue' : 'Approval Queue');
 $detailRoute = $isUser ? 'requests.show' : ($role === 'officer' ? 'officer.show' : 'approver.show');
 $pending = $records->where('status', 'PENDING_SIGNED_DOCUMENT')->count();
+$completedRequests = $isUser ? $records->filter(fn ($record) => $record['status'] === 'COURSE_ID_RECORDED' && filled($record['completion_notification_id'] ?? null)) : collect();
 $pendingOfficerReviews = $role === 'officer' ? $records->where('status', 'UNDER_OFFICER_REVIEW')->count() : 0;
+$pendingCourseIds = $role === 'officer' ? $records->where('status', 'PENDING_COURSE_ID')->count() : 0;
+$pendingApprovals = $role === 'approver' ? $records->where('status', 'PENDING_APPROVAL')->count() : 0;
 $missingRosters = $records->filter(fn ($record) => ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false))->count();
 $rosterUpdates = $records->filter(fn ($record) => $record['student_roster_needs_officer_attention'] ?? false)->count();
+$officerNotificationMessages = collect([
+    $pendingOfficerReviews ? "{$pendingOfficerReviews} คำร้องสถานะรออนุมัติ" : null,
+    $pendingCourseIds ? "{$pendingCourseIds} คำร้องที่ต้องบันทึก Course ID" : null,
+    $rosterUpdates ? "{$rosterUpdates} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต" : null,
+])->filter()->implode(' และ ');
 $filterStatuses = match ($role) {
 'officer' => [
 'UNDER_OFFICER_REVIEW' => 'รออนุมัติ',
@@ -27,38 +35,77 @@ default => $statuses,
     <main class="portal-main list-page {{ $isUser ? 'list-page--user' : '' }}" data-request-list>
         <div class="page-heading">
             <div>
-                <h2 class="page-heading__title">{{ $title }}</h2>@if($isUser)<p class="page-heading__description">ติดตามขั้นตอนและประวัติการส่งเอกสารขอสร้างรายวิชาและคำร้องทั่วไปของคุณ</p>@elseif($role === 'approver')<p class="page-heading__description">ผู้บริหารพิจารณาอนุมัติสร้างรายวิชาในระบบ SWU Moodle Academy</p>@elseif($role === 'officer')<p class="page-heading__description">เจ้าหน้าที่ตรวจสอบความถูกต้องของเอกสารและคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy</p>@endif
+                <h2 class="page-heading__title">{{ $title }}</h2>@if($isUser)<p class="page-heading__description">ติดตามขั้นตอนและประวัติการส่งเอกสารขอสร้างรายวิชาของคุณ</p>@elseif($role === 'approver')<p class="page-heading__description">ผู้บริหารพิจารณาอนุมัติสร้างรายวิชาในระบบ SWU Moodle Academy</p>@elseif($role === 'officer')<p class="page-heading__description">เจ้าหน้าที่ตรวจสอบความถูกต้องของเอกสารและคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy</p>@endif
             </div>
             @if($isUser)<x-portal-button :href="route('requests.create')" variant="danger"><x-portal-icon name="plus" />สร้างคำร้องใหม่</x-portal-button>@endif
         </div>
-        @if($isUser && ($pending || $missingRosters))
-        <div class="notification-banner" aria-label="รายการแจ้งเตือน">
-            <span>แจ้งเตือน: @if($pending)คุณมี {{ $pending }} คำร้องที่ต้องอัปโหลดเอกสารที่ลงนามแล้ว@endif @if($pending && $missingRosters) และ @endif @if($missingRosters) {{ $missingRosters }} คำร้องที่ยังไม่แนบรายชื่อผู้เรียน@endif</span>
+        @if($isUser && ($pending || $missingRosters || $completedRequests->isNotEmpty()))
+        <div class="notification-banner" aria-label="รายการแจ้งเตือน" @if(!$pending && !$missingRosters) hidden data-completed-only-banner @endif>
+            <span>แจ้งเตือน: @if($pending)คุณมี {{ $pending }} คำร้องที่ต้องอัปโหลดเอกสารที่ลงนามแล้ว@endif @if($pending && $missingRosters) และ @endif @if($missingRosters) {{ $missingRosters }} คำร้องที่ยังไม่แนบรายชื่อผู้เรียน@endif @if($completedRequests->isNotEmpty())<span hidden data-completed-banner-message>@if($pending || $missingRosters) และ @endifมี <strong data-completed-banner-count></strong> คำร้องเสร็จสมบูรณ์แล้ว สามารถดู Course ID ได้</span>@endif</span>
             <div class="notification-banner__actions">
                 @if($pending)<x-portal-button variant="secondary" data-filter-pending>ดูเอกสาร</x-portal-button>@endif
                 @if($missingRosters)<x-portal-button variant="secondary" data-filter-roster>แนบรายชื่อ</x-portal-button>@endif
+                @if($completedRequests->isNotEmpty())<x-portal-button variant="secondary" data-filter-newly-completed hidden>ดูคำร้อง</x-portal-button>@endif
             </div>
         </div>
         @endif
-        @if($role === 'officer' && ($pendingOfficerReviews || $rosterUpdates))
+        @if($role === 'officer' && ($pendingOfficerReviews || $pendingCourseIds || $rosterUpdates))
         <div class="notification-banner" aria-label="รายการแจ้งเตือน">
-            <span>แจ้งเตือน: @if($pendingOfficerReviews && $rosterUpdates)คุณมี {{ $pendingOfficerReviews }} คำร้องสถานะรออนุมัติ และ {{ $rosterUpdates }} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต กรุณาตรวจสอบและรับทราบรายชื่อ@elseif($pendingOfficerReviews)คุณมี {{ $pendingOfficerReviews }} คำร้องสถานะรออนุมัติ กรุณาตรวจสอบและลงนาม@elseคุณมี {{ $rosterUpdates }} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต กรุณาตรวจสอบและรับทราบรายชื่อ@endif</span>
-            <div class="notification-banner__actions">
+            <span>แจ้งเตือน: คุณมี {{ $officerNotificationMessages }} กรุณาตรวจสอบและดำเนินการ</span>
+            <div class="notification-banner__actions notification-banner__actions--officer">
                 @if($pendingOfficerReviews)<x-portal-button variant="secondary" data-filter-officer-pending>ตรวจสอบคำร้อง</x-portal-button>@endif
+                @if($pendingCourseIds)<x-portal-button variant="secondary" data-filter-course-id>บันทึก Course ID</x-portal-button>@endif
                 @if($rosterUpdates)<x-portal-button variant="secondary" data-filter-roster-updates>ตรวจสอบรายชื่อ</x-portal-button>@endif
+            </div>
+        </div>
+        @endif
+        @if($role === 'approver' && $pendingApprovals)
+        <div class="notification-banner" aria-label="รายการแจ้งเตือน">
+            <span>แจ้งเตือน: คุณมี {{ $pendingApprovals }} คำร้องสถานะรออนุมัติ</span>
+            <div class="notification-banner__actions">
+                <x-portal-button variant="secondary" data-filter-approver-pending>พิจารณาคำร้อง</x-portal-button>
             </div>
         </div>
         @endif
         <section class="filter-card" aria-label="ค้นหาและกรองคำร้อง">
             <label class="search-control"><x-portal-icon name="search" /><input type="search" data-search placeholder="ค้นหาเลขที่คำร้อง, ชื่อโครงการ หรือ ส่วนงาน" aria-label="ค้นหาคำร้อง"></label>
-            <select class="filter-control" data-status-filter aria-label="กรองสถานะ">
-                <option value="">สถานะทั้งหมด</option>@foreach(array_unique($filterStatuses) as $label)<option value="{{ implode(',', array_keys($filterStatuses, $label)) }}">{{ $label }}</option>@endforeach
-            </select>
-            <select class="filter-control" data-date-filter aria-label="กรองวันที่ยื่น">
-                <option value="">วันที่ยื่น: ทั้งหมด</option>
-                <option value="month" selected>เดือนนี้</option>
-                <option value="year">ปีนี้</option>
-            </select>
+            <div class="status-filter-menu" data-status-filter-menu>
+                <select class="filter-control status-filter-menu__native" data-status-filter aria-label="กรองสถานะ">
+                    @if($role === 'officer')
+                        <option value="UNDER_OFFICER_REVIEW,PENDING_COURSE_ID,PENDING_APPROVAL" data-default-queue-status selected>งานที่ต้องดำเนินการ</option>
+                    @elseif($role === 'approver')
+                        <option value="PENDING_APPROVAL" data-default-queue-status selected>งานที่ต้องดำเนินการ</option>
+                    @endif
+                    <option value="">สถานะทั้งหมด</option>@foreach(array_unique($filterStatuses) as $label)<option value="{{ implode(',', array_keys($filterStatuses, $label)) }}">{{ $label }}</option>@endforeach
+                </select>
+                <button type="button" class="filter-control status-filter-menu__trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="request-status-filter-options" data-status-filter-trigger>
+                    <span data-status-filter-label>{{ $isUser ? 'สถานะทั้งหมด' : 'งานที่ต้องดำเนินการ' }}</span>
+                </button>
+                <div id="request-status-filter-options" class="status-filter-menu__options" role="listbox" hidden data-status-filter-options>
+                    @if($role === 'officer')
+                    <button type="button" role="option" aria-selected="true" data-status-filter-option data-value="UNDER_OFFICER_REVIEW,PENDING_COURSE_ID,PENDING_APPROVAL">งานที่ต้องดำเนินการ</button>
+                    @elseif($role === 'approver')
+                    <button type="button" role="option" aria-selected="true" data-status-filter-option data-value="PENDING_APPROVAL">งานที่ต้องดำเนินการ</button>
+                    @endif
+                    <button type="button" role="option" aria-selected="{{ $isUser ? 'true' : 'false' }}" data-status-filter-option data-value="">สถานะทั้งหมด</button>
+                    @foreach(array_unique($filterStatuses) as $label)<button type="button" role="option" aria-selected="false" data-status-filter-option data-value="{{ implode(',', array_keys($filterStatuses, $label)) }}">{{ $label }}</button>@endforeach
+                </div>
+            </div>
+            <div class="date-filter-menu" data-date-filter-menu>
+                <select class="filter-control date-filter-menu__native" data-date-filter aria-label="กรองวันที่ยื่น">
+                    <option value="" @selected(! $isUser)>วันที่ยื่น: ทั้งหมด</option>
+                    <option value="month" @selected($isUser)>เดือนนี้</option>
+                    <option value="year">ปีนี้</option>
+                </select>
+                <button type="button" class="filter-control date-filter-menu__trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="request-date-filter-options" data-date-filter-trigger>
+                    <span data-date-filter-label>{{ $isUser ? 'เดือนนี้' : 'วันที่ยื่น: ทั้งหมด' }}</span>
+                </button>
+                <div id="request-date-filter-options" class="date-filter-menu__options" role="listbox" hidden data-date-filter-options>
+                    <button type="button" role="option" aria-selected="{{ $isUser ? 'false' : 'true' }}" data-date-filter-option data-value="">วันที่ยื่น: ทั้งหมด</button>
+                    <button type="button" role="option" aria-selected="{{ $isUser ? 'true' : 'false' }}" data-date-filter-option data-value="month">เดือนนี้</button>
+                    <button type="button" role="option" aria-selected="false" data-date-filter-option data-value="year">ปีนี้</button>
+                </div>
+            </div>
             <button type="button" class="clear-filter-btn" data-clear-filter aria-label="ล้างตัวกรอง">
                 <x-portal-icon name="filter-x" />
             </button>
@@ -81,23 +128,40 @@ default => $statuses,
                 <tbody>
                     @foreach($records as $record)
                     @php($targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])->filter(fn ($value) => filled($value))->implode(', '))
-                    <tr data-request-row data-status="{{ $record['status'] }}" data-date="{{ $record['submitted_at'] }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $targetUnit }} {{ $record['requester'] ?? '' }}">
+                    @php($hasCourseIdAction = $role === 'officer' && in_array($record['status'], ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true))
+                    @php($usesFullWidthMobileAction = in_array($role, ['officer', 'approver'], true))
+                    <tr data-request-row data-status="{{ $record['status'] }}" data-date="{{ $record['submitted_at'] }}" data-completion-notification="{{ $isUser && $record['status'] === 'COURSE_ID_RECORDED' ? ($record['completion_notification_id'] ?? '') : '' }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $targetUnit }} {{ $record['proposer'] ?? '' }}">
                         @if($isUser)
                         <td class="date-cell request-card__date">{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
                         <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span><small>เลขที่คำร้อง: {{ $record['number'] }}</small></td>
                         <td class="request-card__unit"><span class="request-card__unit-text" title="{{ $targetUnit }}">{{ $targetUnit }}</span></td>
                         <td class="request-card__status"><x-status-badge :status="$record['status']" /></td>
-                        <td class="request-card__course-id">@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?name='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif</td>
+                        <td class="request-card__course-id">@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif</td>
                         @else
                         <td class="request-table__number request-card__number">{{ $record['number'] }}</td>
                         <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span></td>
-                        <td class="requester-cell request-card__requester">{{ $record['requester'] }}</td>
+                        <td @class([
+                            'requester-cell',
+                            'request-card__requester',
+                            'request-card__requester--paired' => $usesFullWidthMobileAction,
+                        ])>{{ $record['proposer'] }}</td>
                         <td class="request-card__unit"><span class="request-card__unit-text" title="{{ $targetUnit }}">{{ $targetUnit }}</span></td>
-                        <td class="date-cell request-card__date">{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
+                        <td @class([
+                            'date-cell',
+                            'request-card__date',
+                            'request-card__date--paired' => $usesFullWidthMobileAction,
+                        ])>{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
                         <td class="request-card__status"><x-status-badge :status="$record['status']" /></td>
                         @endif
-                        <td class="table-actions request-card__actions">
-                            <span data-default-actions>
+                        <td @class([
+                            'table-actions',
+                            'request-card__actions',
+                            'request-card__actions--paired' => $usesFullWidthMobileAction,
+                        ])>
+                            <span data-default-actions @class([
+                                'request-actions-group' => $role === 'officer',
+                                'request-actions-group--paired' => $usesFullWidthMobileAction,
+                            ])>
                                 @if($isUser && $record['status'] === 'PENDING_SIGNED_DOCUMENT')
                                 <x-portal-button
                                     :href="route('requests.document.download', $record['id'])"
@@ -113,19 +177,16 @@ default => $statuses,
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจสอบ</x-portal-button>
                                 @elseif($role === 'officer' && ($record['student_roster_needs_officer_attention'] ?? false))
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจรายชื่อ</x-portal-button>
-                                @elseif($role === 'officer' && $record['status'] === 'PENDING_COURSE_ID')
+                                @elseif($hasCourseIdAction)
                                 <x-portal-button
-                                    :href="route('requests.attachment', [$record['id'], 'signed'])"
-                                    class="approved-pdf-button"
-                                    aria-label="ดาวน์โหลด PDF ที่อนุมัติแล้ว"
-                                    data-approved-pdf-download
-                                    :hidden="$record['approved_pdf_downloaded']">ดาวน์โหลด PDF</x-portal-button>
+                                    variant="secondary"
+                                    class="request-preview-button"
+                                    :data-open-dialog="'native-pdf-preview-'.$record['id']"
+                                    aria-label="ดูตัวอย่าง PDF ที่อนุมัติแล้ว"
+                                    title="Preview PDF"><x-portal-icon name="eye" /></x-portal-button>
                                 <x-portal-button
                                     :data-open-dialog="'course-'.$record['id']"
-                                    data-course-id-action
-                                    :hidden="! $record['approved_pdf_downloaded']">บันทึก Course ID</x-portal-button>
-                                @elseif($role === 'officer' && $record['status'] === 'COURSE_ID_RECORDED')
-                                <x-portal-button :href="route('requests.attachment', [$record['id'], 'signed'])" class="approved-pdf-button" aria-label="ดาวน์โหลด PDF ที่อนุมัติแล้ว">ดาวน์โหลด PDF</x-portal-button>
+                                    data-course-id-action>{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข Course ID' : 'บันทึก Course ID' }}</x-portal-button>
                                 @else
                                 <x-portal-button :href="route($detailRoute, $record['id'])" :variant="$isUser ? 'secondary' : 'primary'">{{ $role === 'officer' && $record['status'] === 'UNDER_OFFICER_REVIEW' ? 'ตรวจสอบ' : ($role === 'approver' && $record['status'] === 'PENDING_APPROVAL' ? 'พิจารณา' : 'รายละเอียด') }}</x-portal-button>
                                 @endif
@@ -182,8 +243,14 @@ default => $statuses,
         </form>
     </x-portal-modal>
     @endif
-    @if($role === 'officer' && $record['status'] === 'PENDING_COURSE_ID')
-    <x-portal-modal :id="'course-'.$record['id']" title="บันทึก Course ID" class="course-modal">
+    @if($role === 'officer' && in_array($record['status'], ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true))
+    <x-portal-modal :id="'native-pdf-preview-'.$record['id']" title="ตัวอย่าง PDF ที่อนุมัติแล้ว" class="native-pdf-preview-dialog">
+        <iframe
+            data-native-pdf-preview
+            data-pdf-url="{{ route('requests.attachment', [$record['id'], 'signed', 'preview' => 1]) }}"
+            title="ตัวอย่าง PDF ที่อนุมัติแล้ว"></iframe>
+    </x-portal-modal>
+    <x-portal-modal :id="'course-'.$record['id']" :title="$record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข Course ID' : 'บันทึก Course ID'" class="course-modal">
         <form id="course-id-form-{{ $record['id'] }}" method="post" action="{{ route('officer.course-id', $record['id']) }}">@csrf
             <div id="course-id-step1-{{ $record['id'] }}">
                 <dl class="request-summary">
@@ -193,19 +260,19 @@ default => $statuses,
                     </div>
                     <div>
                         <dt>ผู้เสนอขอ</dt>
-                        <dd>{{ $record['requester'] }}</dd>
+                        <dd>{{ $record['proposer'] }}</dd>
                     </div>
                     <div>
                         <dt>วันที่ยื่น</dt>
                         <dd>{{ $record['submitted_at'] }}</dd>
                     </div>
                 </dl>
-                <x-portal-field name="course_id" :id="'course-id-'.$record['id']" label="Course ID" placeholder="เช่น DE164" :required="true" maxlength="100" />
-                <div class="modal-actions modal-actions--stack"><x-portal-button type="button" data-course-id-next="{{ $record['id'] }}">บันทึกและแจ้งเตือนผู้ขอคำร้อง</x-portal-button><x-portal-button variant="plain" data-course-id-cancel="{{ $record['id'] }}">ยกเลิก</x-portal-button></div>
+                <x-portal-field name="course_id" :id="'course-id-'.$record['id']" label="Course ID (ตัวเลขหลัง id=)" type="number" :value="$record['course_id'] ?? ''" placeholder="เช่น 2" :required="true" min="1" step="1" inputmode="numeric" />
+                <div class="modal-actions modal-actions--stack"><x-portal-button type="button" data-course-id-next="{{ $record['id'] }}">{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'บันทึกการแก้ไขและแจ้งเตือนผู้ขอคำร้อง' : 'บันทึกและแจ้งเตือนผู้ขอคำร้อง' }}</x-portal-button><x-portal-button variant="plain" data-course-id-cancel="{{ $record['id'] }}">ยกเลิก</x-portal-button></div>
             </div>
             <div id="course-id-step2-{{ $record['id'] }}" hidden>
-                <p class="confirmation-message">ยืนยันบันทึก Course ID <strong data-course-id-preview></strong><br>และแจ้งเตือนผู้ขอคำร้องใช่หรือไม่?</p>
-                <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-course-id-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button><x-portal-button type="submit">ยืนยันบันทึก</x-portal-button></div>
+                <p class="confirmation-message">ยืนยัน{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข' : 'บันทึก' }} Course ID <strong data-course-id-preview></strong><br>และแจ้งเตือนผู้ขอคำร้องใช่หรือไม่?</p>
+                <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-course-id-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button><x-portal-button type="submit">ยืนยัน{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'การแก้ไข' : 'บันทึก' }}</x-portal-button></div>
             </div>
             <div id="course-id-step3-{{ $record['id'] }}" hidden>
                 <p class="confirmation-message">คุณต้องการยกเลิกใช่หรือไม่?<br>Course ID ที่กรอกไว้จะถูกล้าง</p>

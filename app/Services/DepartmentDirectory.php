@@ -3,8 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
-use Throwable;
+use RuntimeException;
 
 class DepartmentDirectory
 {
@@ -73,45 +72,34 @@ class DepartmentDirectory
         $this->subdepartments = collect();
         $this->subdepartmentParents = collect();
 
-        try {
-            $rows = $this->api->all((string) config('swu_mis_api.endpoints.departments', 'Department'));
+        $rows = $this->api->all((string) config('swu_mis_api.endpoints.departments', 'Department'));
 
-            foreach ($rows as $department) {
-                if (strtoupper(trim((string) ($department['activeFlag'] ?? ''))) !== 'Y') {
-                    continue;
-                }
-
-                $id = (int) ($department['deptCd'] ?? 0);
-                $parentId = (int) ($department['indeptCd'] ?? 0);
-                $name = trim((string) ($department['deptLnameTh'] ?? $department['deptSnameTh'] ?? ''));
-
-                if ($id <= 0 || $name === '') {
-                    continue;
-                }
-
-                if ($parentId <= 0 || $id === $parentId) {
-                    $this->departments->put($id, $name);
-                } else {
-                    $this->subdepartments->put($id, $name);
-                    $this->subdepartmentParents->put($id, $parentId);
-                }
+        foreach ($rows as $department) {
+            if (strtoupper(trim((string) ($department['activeFlag'] ?? ''))) !== 'Y') {
+                continue;
             }
 
-            $this->departments = $this->departments->sort();
-            $this->subdepartments = $this->subdepartments->sort();
+            $id = (int) ($department['deptCd'] ?? 0);
+            $parentId = (int) ($department['indeptCd'] ?? 0);
+            $name = trim((string) ($department['deptLnameTh'] ?? $department['deptSnameTh'] ?? ''));
 
-            if ($this->departments->isNotEmpty()) {
-                return;
+            if ($id <= 0 || $name === '') {
+                continue;
             }
-        } catch (Throwable $exception) {
-            Log::warning('SWU MIS department API is unavailable; using the local snapshot.', [
-                'exception' => $exception::class,
-            ]);
+
+            if ($parentId <= 0 || $id === $parentId) {
+                $this->departments->put($id, $name);
+            } else {
+                $this->subdepartments->put($id, $name);
+                $this->subdepartmentParents->put($id, $parentId);
+            }
         }
 
-        $this->departments = collect(config('departments', []))
-            ->mapWithKeys(fn ($name, $id) => [(int) $id => trim((string) $name)])
-            ->filter(fn (string $name, int $id) => $id > 0 && $name !== '')
-            ->sort();
+        $this->departments = $this->departments->sort();
+        $this->subdepartments = $this->subdepartments->sort();
+
+        if ($this->departments->isEmpty()) {
+            throw new RuntimeException('SWU MIS Department API returned no active parent departments.');
+        }
     }
 }

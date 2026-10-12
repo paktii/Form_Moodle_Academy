@@ -38,8 +38,11 @@ class SendCourseNotifications extends Command
                 Mail::raw($body, function ($message) use ($notification, $subject): void {
                     $message->to($notification->recipient_email)->subject($subject);
 
-                    if (filter_var($notification->reply_to_email, FILTER_VALIDATE_EMAIL)) {
-                        $message->replyTo($notification->reply_to_email, $notification->reply_to_name ?: null);
+                    $replyToAddress = (string) config('mail.from.address');
+                    $replyToName = (string) config('mail.from.name');
+
+                    if (filter_var($replyToAddress, FILTER_VALIDATE_EMAIL)) {
+                        $message->replyTo($replyToAddress, $replyToName !== '' ? $replyToName : null);
                     }
                 });
 

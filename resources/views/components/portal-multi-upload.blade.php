@@ -12,8 +12,10 @@
     >
     <label class="file-upload__label multi-upload__trigger" for="{{ $id }}" data-multi-upload-trigger>
         <x-portal-icon name="upload" />
-        <span>เพิ่มเอกสาร</span>
-        <small>สูงสุด {{ $maxFiles }} ไฟล์ ไฟล์ละไม่เกิน 10 MB</small>
+        <span class="multi-upload__copy">
+            <span>เพิ่มเอกสาร</span>
+            <small>สูงสุด {{ $maxFiles }} ไฟล์ ไฟล์ละไม่เกิน 10 MB</small>
+        </span>
     </label>
     <ul class="multi-upload__list" data-multi-upload-list aria-live="polite">@foreach($files as $index => $file)
             <li class="multi-upload__item" data-existing-file>

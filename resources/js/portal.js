@@ -64,6 +64,10 @@ function openDialog(id, trigger) {
     dialogTriggers.set(dialog, trigger ?? document.activeElement);
     dialog.showModal();
     document.documentElement.classList.add('has-open-dialog');
+    const nativePdfPreview = dialog.querySelector('[data-native-pdf-preview]');
+    if (nativePdfPreview && !nativePdfPreview.hasAttribute('src')) {
+        nativePdfPreview.src = nativePdfPreview.dataset.pdfUrl;
+    }
     renderPdfPreview(dialog);
 }
 
@@ -143,7 +147,7 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', async (event) => {
-    const downloadButton = event.target.closest('[data-request-pdf-download], [data-approved-pdf-download]');
+    const downloadButton = event.target.closest('[data-request-pdf-download]');
     if (!downloadButton) return;
 
     event.preventDefault();
@@ -167,9 +171,7 @@ document.addEventListener('click', async (event) => {
         window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
         downloadButton.hidden = true;
-        const nextAction = downloadButton.hasAttribute('data-approved-pdf-download')
-            ? downloadButton.parentElement?.querySelector('[data-course-id-action]')
-            : downloadButton.parentElement?.querySelector('[data-request-upload]');
+        const nextAction = downloadButton.parentElement?.querySelector('[data-request-upload]');
         if (nextAction) {
             nextAction.hidden = false;
             nextAction.focus();
@@ -821,11 +823,20 @@ document.querySelectorAll('[data-signature-pad]').forEach((signaturePad) => {
     });
 });
 
+const additionalDocumentListTarget = document.querySelector('[data-additional-document-list]');
+if (additionalDocumentListTarget) {
+    const additionalDocumentList = document.querySelector('[data-multi-upload-list]');
+    if (additionalDocumentList) additionalDocumentListTarget.append(additionalDocumentList);
+}
+
 document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
     const input = upload.querySelector('[data-multi-upload-input]');
-    const list = upload.querySelector('[data-multi-upload-list]');
+    const list = upload.querySelector('[data-multi-upload-list]')
+        || document.querySelector('[data-additional-document-list] [data-multi-upload-list]');
     const trigger = upload.querySelector('[data-multi-upload-trigger]');
     const error = upload.querySelector('[data-multi-upload-error]');
+    const emptyState = document.querySelector('[data-additional-document-empty]');
+    const attachmentContent = document.querySelector('[data-additional-documents-content]');
     const form = document.getElementById(input.getAttribute('form')) || input.closest('form');
     const maxFiles = Number(upload.dataset.maxFiles || 5);
     const allowedExtensions = input.accept.split(',').map((extension) => extension.trim().toLowerCase());
@@ -849,6 +860,9 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
         const full = existingCount() + selectedFiles.length >= maxFiles;
         trigger.classList.toggle('is-disabled', full);
         trigger.setAttribute('aria-disabled', full ? 'true' : 'false');
+        const hasFiles = list.children.length > 0;
+        if (emptyState) emptyState.hidden = hasFiles;
+        attachmentContent?.classList.toggle('has-files', hasFiles);
     }
 
     function renderNewFiles() {
@@ -928,7 +942,17 @@ const requestList = document.querySelector('[data-request-list]');
 if (requestList) {
     const search = requestList.querySelector('[data-search]');
     const status = requestList.querySelector('[data-status-filter]');
+    const statusMenu = requestList.querySelector('[data-status-filter-menu]');
+    const statusMenuTrigger = statusMenu?.querySelector('[data-status-filter-trigger]');
+    const statusMenuOptions = statusMenu?.querySelector('[data-status-filter-options]');
+    const statusMenuLabel = statusMenu?.querySelector('[data-status-filter-label]');
+    const statusMenuItems = [...(statusMenu?.querySelectorAll('[data-status-filter-option]') ?? [])];
     const date = requestList.querySelector('[data-date-filter]');
+    const dateMenu = requestList.querySelector('[data-date-filter-menu]');
+    const dateMenuTrigger = dateMenu?.querySelector('[data-date-filter-trigger]');
+    const dateMenuOptions = dateMenu?.querySelector('[data-date-filter-options]');
+    const dateMenuLabel = dateMenu?.querySelector('[data-date-filter-label]');
+    const dateMenuItems = [...(dateMenu?.querySelectorAll('[data-date-filter-option]') ?? [])];
     const rows = [...requestList.querySelectorAll('[data-request-row]')];
     const pagination = requestList.querySelector('[data-pagination]');
     const pageNumbers = pagination.querySelector('[data-page-numbers]');
@@ -936,10 +960,157 @@ if (requestList) {
     const nextPage = pagination.querySelector('[data-page-next]');
     const pageInput = pagination.querySelector('[data-page-input]');
     const goToPage = pagination.querySelector('[data-page-go]');
+    const completedBanner = requestList.querySelector('[data-completed-only-banner]');
+    const completedBannerMessage = requestList.querySelector('[data-completed-banner-message]');
+    const completedBannerCount = requestList.querySelector('[data-completed-banner-count]');
+    const completedBannerButton = requestList.querySelector('[data-filter-newly-completed]');
     const mobilePagination = window.matchMedia('(max-width: 600px)');
     let currentPage = 1;
     let rosterOnly = false;
     let rosterUpdatesOnly = false;
+    let newlyCompletedOnly = false;
+    let newlyCompletedNotificationIds = new Set();
+
+    function closeStatusMenu() {
+        if (!statusMenuOptions || !statusMenuTrigger) return;
+        statusMenuOptions.hidden = true;
+        statusMenuTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncStatusMenu() {
+        if (!statusMenuLabel) return;
+        const selectedOption = status.options[status.selectedIndex];
+        const selectedLabel = selectedOption?.textContent.trim() ?? '';
+        statusMenuLabel.textContent = selectedOption?.textContent ?? '';
+        statusMenuItems.forEach((item) => {
+            item.setAttribute('aria-selected', String(
+                item.dataset.value === status.value
+                && item.textContent.trim() === selectedLabel
+            ));
+        });
+    }
+
+    function closeDateMenu() {
+        if (!dateMenuOptions || !dateMenuTrigger) return;
+        dateMenuOptions.hidden = true;
+        dateMenuTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncDateMenu() {
+        if (!dateMenuLabel) return;
+        const selectedOption = [...date.options].find((option) => option.value === date.value);
+        dateMenuLabel.textContent = selectedOption?.textContent ?? '';
+        dateMenuItems.forEach((item) => {
+            item.setAttribute('aria-selected', String(item.dataset.value === date.value));
+        });
+    }
+
+    if (statusMenu && statusMenuTrigger && statusMenuOptions) {
+        statusMenuTrigger.addEventListener('click', () => {
+            const willOpen = statusMenuOptions.hidden;
+            closeDateMenu();
+            statusMenuOptions.hidden = !willOpen;
+            statusMenuTrigger.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        statusMenuItems.forEach((item) => {
+            item.addEventListener('click', () => {
+                const matchingOptionIndex = [...status.options].findIndex((option) =>
+                    option.value === item.dataset.value
+                    && option.textContent.trim() === item.textContent.trim()
+                );
+                if (matchingOptionIndex >= 0) status.selectedIndex = matchingOptionIndex;
+                syncStatusMenu();
+                closeStatusMenu();
+                status.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!statusMenu.contains(event.target)) closeStatusMenu();
+        });
+
+        statusMenu.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeStatusMenu();
+                statusMenuTrigger.focus();
+            }
+        });
+    }
+
+    if (dateMenu && dateMenuTrigger && dateMenuOptions) {
+        dateMenuTrigger.addEventListener('click', () => {
+            const willOpen = dateMenuOptions.hidden;
+            closeStatusMenu();
+            dateMenuOptions.hidden = !willOpen;
+            dateMenuTrigger.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        dateMenuItems.forEach((item) => {
+            item.addEventListener('click', () => {
+                date.value = item.dataset.value;
+                syncDateMenu();
+                closeDateMenu();
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!dateMenu.contains(event.target)) closeDateMenu();
+        });
+
+        dateMenu.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeDateMenu();
+                dateMenuTrigger.focus();
+            }
+        });
+    }
+
+    if (completedBannerMessage && completedBannerCount && completedBannerButton) {
+        const completionRows = rows.filter((row) => row.dataset.completionNotification);
+        const seenStorageKey = 'course133.completed-notification-seen.v1';
+        let seenNotificationIds = [];
+
+        try {
+            const savedIds = JSON.parse(window.localStorage.getItem(seenStorageKey) || '[]');
+            if (Array.isArray(savedIds)) seenNotificationIds = savedIds.map(String);
+        } catch {
+            // Keep the completion notice usable when browser storage is unavailable.
+        }
+
+        const unseenNotificationIds = completionRows
+            .map((row) => row.dataset.completionNotification)
+            .filter((notificationId) => !seenNotificationIds.includes(notificationId));
+
+        if (unseenNotificationIds.length > 0) {
+            completedBannerCount.textContent = String(unseenNotificationIds.length);
+            completedBannerMessage.hidden = false;
+            completedBannerButton.hidden = false;
+            if (completedBanner) completedBanner.hidden = false;
+
+            completedBannerButton.addEventListener('click', () => {
+                try {
+                    window.localStorage.setItem(seenStorageKey, JSON.stringify([...new Set([...seenNotificationIds, ...unseenNotificationIds])]));
+                } catch {
+                    // The banner still dismisses for this page view if storage is unavailable.
+                }
+
+                completedBannerMessage.hidden = true;
+                completedBannerButton.hidden = true;
+                if (completedBanner) completedBanner.hidden = true;
+
+                rosterOnly = false;
+                rosterUpdatesOnly = false;
+                newlyCompletedOnly = true;
+                newlyCompletedNotificationIds = new Set(unseenNotificationIds);
+                status.value = '';
+                date.value = '';
+                search.value = '';
+                filterRows();
+            });
+        }
+    }
 
     function pageSize() {
         return mobilePagination.matches ? 5 : 10;
@@ -963,6 +1134,7 @@ if (requestList) {
             && (!status.value || status.value.split(',').includes(row.dataset.status))
             && (!rosterOnly || row.dataset.missingRoster === 'true')
             && (!rosterUpdatesOnly || row.dataset.rosterUpdate === 'true')
+            && (!newlyCompletedOnly || newlyCompletedNotificationIds.has(row.dataset.completionNotification))
             && matchesDate;
     }
 
@@ -1036,6 +1208,8 @@ if (requestList) {
 
     function filterRows() {
         currentPage = 1;
+        syncStatusMenu();
+        syncDateMenu();
         renderRows();
     }
 
@@ -1048,6 +1222,7 @@ if (requestList) {
     function runStandardFilter() {
         rosterOnly = false;
         rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
         filterRows();
     }
 
@@ -1079,6 +1254,7 @@ if (requestList) {
     requestList.querySelector('[data-filter-pending]')?.addEventListener('click', () => {
         rosterOnly = false;
         rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
         status.value = 'PENDING_SIGNED_DOCUMENT';
         date.value = '';
         search.value = '';
@@ -1087,7 +1263,30 @@ if (requestList) {
     requestList.querySelector('[data-filter-officer-pending]')?.addEventListener('click', () => {
         rosterOnly = false;
         rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
         status.value = 'UNDER_OFFICER_REVIEW';
+        date.value = '';
+        search.value = '';
+        filterRows();
+    });
+    requestList.querySelector('[data-filter-approver-pending]')?.addEventListener('click', () => {
+        rosterOnly = false;
+        rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
+        const pendingApprovalOption = [...status.options].find((option) =>
+            option.value === 'PENDING_APPROVAL'
+            && !option.hasAttribute('data-default-queue-status')
+        );
+        status.selectedIndex = pendingApprovalOption?.index ?? 0;
+        date.value = '';
+        search.value = '';
+        filterRows();
+    });
+    requestList.querySelector('[data-filter-course-id]')?.addEventListener('click', () => {
+        rosterOnly = false;
+        rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
+        status.value = 'PENDING_COURSE_ID';
         date.value = '';
         search.value = '';
         filterRows();
@@ -1095,6 +1294,7 @@ if (requestList) {
     requestList.querySelector('[data-filter-roster]')?.addEventListener('click', () => {
         rosterOnly = true;
         rosterUpdatesOnly = false;
+        newlyCompletedOnly = false;
         status.value = '';
         date.value = '';
         search.value = '';
@@ -1103,6 +1303,7 @@ if (requestList) {
     requestList.querySelector('[data-filter-roster-updates]')?.addEventListener('click', () => {
         rosterOnly = false;
         rosterUpdatesOnly = true;
+        newlyCompletedOnly = false;
         status.value = '';
         date.value = '';
         search.value = '';
@@ -1111,11 +1312,15 @@ if (requestList) {
     requestList.querySelector('[data-clear-filter]')?.addEventListener('click', () => {
         rosterOnly = false;
         rosterUpdatesOnly = false;
-        status.value = '';
-        date.value = 'month';
+        newlyCompletedOnly = false;
+        const defaultQueueStatus = status.querySelector('[data-default-queue-status]');
+        status.value = defaultQueueStatus?.value ?? '';
+        date.value = defaultQueueStatus ? '' : 'month';
         search.value = '';
         filterRows();
     });
+    syncStatusMenu();
+    syncDateMenu();
     renderRows();
 }
 

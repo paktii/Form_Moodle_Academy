@@ -206,6 +206,12 @@
         gap: 12px 24px;
     }
 
+    .project-type-fieldset .radio-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 24px;
+    }
+
     .stepper {
         border-radius: 8px;
         background: #fff;
@@ -303,6 +309,42 @@
         font-weight: 600;
     }
 
+    .document-attachments {
+        margin-top: 24px;
+        border-top: 1px solid #e5e7eb;
+        padding-top: 20px;
+    }
+
+    .document-attachments h2 {
+        margin-bottom: 12px;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .document-attachments__content {
+        display: flex;
+        min-height: 170px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #e5e7eb;
+        border-radius: 3px;
+        background: #f8f9fb;
+        padding: 12px;
+    }
+
+    .document-attachments__content.has-files {
+        display: block;
+    }
+
+    .document-attachments__empty {
+        margin: 0;
+        text-align: center;
+    }
+
+    .document-attachments .multi-upload__list {
+        margin-top: 0;
+    }
+
     .multi-upload {
         position: relative;
         margin-top: 16px;
@@ -313,9 +355,10 @@
     }
 
     .multi-upload__trigger {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
         min-height: 42px;
-        flex-direction: row;
-        justify-content: flex-start;
+        align-items: center;
         gap: 8px;
         border: 1px dashed #cbd5e1;
         border-radius: 4px;
@@ -325,10 +368,20 @@
         cursor: pointer;
     }
 
+    .multi-upload__copy {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        line-height: 1.35;
+    }
+
     .multi-upload__trigger small {
-        margin-left: auto;
+        margin-left: 0;
         color: #667085;
-        font-size: 11px;
+        font-size: clamp(9px, 1.15vw, 11px);
+        white-space: nowrap;
     }
 
     .multi-upload__trigger.is-disabled {
@@ -407,9 +460,6 @@
     }
 
     .expected-students {
-        display: flex;
-        align-items: flex-end;
-        gap: 12px;
         padding-bottom: 28px;
     }
 
@@ -419,12 +469,15 @@
         gap: 12px;
     }
 
-    .expected-students .form-field {
-        width: 110px;
+    .expected-students__control {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
     }
 
-    .expected-students>span {
-        padding-bottom: 32px;
+    .expected-students .form-field {
+        width: 110px;
+        margin-top: 0;
     }
 
     .signed-upload {
@@ -460,7 +513,46 @@
         }
     }
 
+    @media (max-width: 900px) {
+        .form-layout {
+            width: 100%;
+            grid-template-columns: minmax(0, 1fr);
+            padding: 28px clamp(16px, 4vw, 24px) 40px;
+        }
+
+        .form-layout form,
+        .form-card,
+        .stepper {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .project-type-fieldset .radio-options {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 12px;
+        }
+    }
+
     @media (max-width: 760px) {
+        .form-card__body--step-one {
+            gap: 0;
+        }
+
+        .form-actions {
+            gap: 12px;
+        }
+
+        .form-actions .portal-button {
+            flex: 0 0 clamp(88px, 32%, 120px);
+            min-width: 0;
+        }
+
+        .enrollment-fieldset .radio-options {
+            align-items: stretch;
+            flex-direction: column;
+            gap: 12px;
+        }
+
         .radio-options input[type="radio"] {
             flex: 0 0 18px;
             min-width: 18px;
@@ -473,7 +565,16 @@
 
         .form-layout {
             grid-template-columns: 1fr;
-            padding: 24px 16px;
+            padding: 24px clamp(12px, 4vw, 16px);
+        }
+
+        .form-card__body {
+            padding: clamp(16px, 5vw, 20px);
+        }
+
+        .form-card__heading {
+            padding-inline: clamp(12px, 4vw, 20px);
+            font-size: clamp(13px, 3.6vw, 14px);
         }
 
         .stepper__item {
@@ -490,7 +591,11 @@
         }
 
         .expected-students .form-label {
-            flex-wrap: wrap;
+            display: block;
+        }
+
+        .expected-students__control {
+            margin-top: 6px;
         }
 
         .form-section__header {
@@ -499,6 +604,13 @@
 
         .category-fieldset .radio-options {
             grid-template-columns: 1fr;
+        }
+
+        .radio-options label,
+        .form-label,
+        .searchable-select__option {
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .learning-label-sub {
@@ -513,6 +625,26 @@
         .multi-upload__trigger small {
             width: 100%;
             margin-left: 0;
+        }
+    }
+
+    @media (max-width: 380px) {
+        .form-actions .portal-button {
+            flex-basis: clamp(84px, 30%, 104px);
+            min-height: 44px;
+            padding-inline: 10px;
+        }
+
+        .stepper {
+            padding: 16px;
+        }
+
+        .stepper__title {
+            font-size: 17px;
+        }
+
+        .multi-upload__trigger small {
+            white-space: normal;
         }
     }
 }

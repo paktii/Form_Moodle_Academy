@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
 @import 'tailwindcss';
 @import './pages/portal.css';
 @import './pages/login.css';
@@ -7,6 +6,30 @@
 @import './pages/detail.css';
 @import './pages/request-detail.css';
 @import './pages/document.css';
+
+@font-face {
+    font-family: 'Sarabun';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/Sarabun-Regular.ttf') format('truetype');
+}
+
+@font-face {
+    font-family: 'Sarabun';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/Sarabun-Bold.ttf') format('truetype');
+}
+
+@font-face {
+    font-family: 'Sarabun';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../fonts/Sarabun-Bold.ttf') format('truetype');
+}
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -19,8 +42,15 @@
 
 @layer base {
 
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+    }
+
     html,
     body {
+        min-width: 0;
         font-family: 'Sarabun', ui-sans-serif, system-ui, sans-serif;
     }
 
@@ -43,7 +73,22 @@
     input,
     select,
     textarea {
+        max-width: 100%;
         font: inherit;
+    }
+
+    img,
+    picture,
+    video,
+    canvas,
+    svg {
+        max-width: 100%;
+    }
+
+    img,
+    picture,
+    video {
+        height: auto;
     }
 
     :focus-visible {
@@ -53,5 +98,92 @@
 
     [hidden] {
         display: none !important;
+    }
+}
+
+@layer components {
+    @media (max-width: 760px) {
+        .portal-page :where(h1, h2, h3, h4, p, li, dt, dd, legend, label) {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .page-heading__title,
+        .requester-detail__heading h2,
+        .detail-heading h2 {
+            font-size: clamp(18px, 5vw, 20px) !important;
+            line-height: 1.35;
+        }
+
+        .form-card__heading {
+            font-size: clamp(12px, 3.5vw, 14px);
+            line-height: 1.4;
+        }
+
+        .stepper__title,
+        .modal-heading h2 {
+            font-size: clamp(15px, 4.2vw, 18px);
+            line-height: 1.4;
+        }
+
+        .detail-section h3,
+        .requester-detail__card .detail-section h3 {
+            font-size: clamp(14px, 4vw, 16px);
+            line-height: 1.4;
+        }
+
+        .form-field,
+        .filter-control,
+        .form-label,
+        .radio-options,
+        .detail-field,
+        .document-row,
+        .notification-banner {
+            font-size: clamp(12px, 3.5vw, 14px);
+        }
+
+        .portal-button {
+            font-size: clamp(11px, 3.1vw, 12px);
+        }
+
+        .form-actions .portal-button,
+        .roster-review-actions .portal-button {
+            font-size: clamp(12px, 3.5vw, 14px);
+        }
+
+        .portal-button,
+        .status-badge,
+        .notification-banner,
+        .requester-detail__navigation > .muted {
+            min-width: 0;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        [data-finish-dialog-text] {
+            font-size: clamp(13px, 4vw, 16px) !important;
+            overflow-wrap: anywhere;
+        }
+
+        .field-error,
+        .login-role-switcher__error {
+            max-width: 100%;
+            font-size: clamp(11px, 3.3vw, 13px) !important;
+            overflow-wrap: anywhere;
+        }
+    }
+
+    @media (max-width: 380px) {
+        .portal-title {
+            font-size: clamp(13px, 4vw, 15px);
+        }
+
+        .portal-button {
+            padding-inline: 10px;
+        }
+
+        .status-badge {
+            font-size: 11px;
+        }
     }
 }

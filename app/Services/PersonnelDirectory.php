@@ -76,8 +76,23 @@ class PersonnelDirectory
             'coordinator_last' => trim((string) $person->person_lname_th),
             'coordinator_position' => trim((string) $person->position),
             'coordinator_phone' => $phone ?? '',
-            'coordinator_email' => $this->email($person) ?? '',
+            'coordinator_email' => $this->workspaceEmail($person) ?? '',
         ];
+    }
+
+    private function workspaceEmail(object $person): ?string
+    {
+        $account = trim((string) $person->gafe_account);
+        if ($account === '') {
+            return null;
+        }
+
+        $email = str_contains($account, '@') ? $account : $account.'@g.swu.ac.th';
+        $email = strtolower($email);
+
+        return str_ends_with($email, '@g.swu.ac.th') && filter_var($email, FILTER_VALIDATE_EMAIL)
+            ? $email
+            : null;
     }
 
     /** @param array<string, mixed> $record */

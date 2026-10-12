@@ -300,6 +300,45 @@
             grid-column: auto;
         }
     }
+
+    @media (max-width: 480px) {
+        .print-toolbar {
+            gap: 8px;
+            padding: 12px;
+        }
+
+        .print-toolbar .portal-button {
+            flex: 1 1 120px;
+        }
+
+        .print-document {
+            margin-inline: 8px;
+        }
+
+        .document-sheet {
+            padding: 20px 14px;
+        }
+
+        .document-header,
+        .document-header--compact {
+            grid-template-columns: 48px minmax(0, 1fr);
+        }
+
+        .document-header img,
+        .document-header--compact img {
+            width: 48px;
+            height: 48px;
+        }
+
+        .document-header__title h1 {
+            font-size: clamp(14px, 4.5vw, 17px);
+            overflow-wrap: anywhere;
+        }
+
+        .document-section__title {
+            overflow-wrap: anywhere;
+        }
+    }
 }
 
 @media print {

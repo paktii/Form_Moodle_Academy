@@ -363,4 +363,57 @@
             display: none;
         }
     }
+
+    @media (max-width: 480px) {
+        .requester-detail__navigation {
+            display: grid;
+            grid-template-columns: minmax(96px, 1fr) max-content;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .requester-detail__navigation > .portal-button {
+            width: 100%;
+        }
+
+        .requester-detail__navigation > span.muted {
+            width: auto;
+            white-space: nowrap;
+            overflow-wrap: normal;
+        }
+
+        .requester-detail__navigation > * {
+            min-width: 0;
+        }
+
+        .requester-detail__card {
+            padding: 16px;
+        }
+
+        .request-progress {
+            padding: 16px 8px;
+            gap: 6px;
+        }
+
+        .request-progress__icon {
+            width: clamp(36px, 11vw, 44px);
+            height: clamp(36px, 11vw, 44px);
+        }
+
+        .request-progress__step::after {
+            left: calc(50% + 24px);
+            width: calc(100% - 36px);
+        }
+
+        .request-progress__step > strong {
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+
+        .pending-signed-document,
+        .student-roster,
+        .course-result {
+            padding: 16px 12px;
+        }
+    }
 }

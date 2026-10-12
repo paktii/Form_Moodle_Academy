@@ -1,5 +1,10 @@
 @php
 $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
+$requestNumber = (string) ($data['request_no'] ?? $data['number'] ?? '');
+$requestCode = \Illuminate\Support\Str::afterLast($requestNumber, '-');
+$documentDownloadFilename = $requestCode !== ''
+    ? "CC-ITED-06_{$requestCode}.pdf"
+    : (($data['project_name'] ?? 'โครงการขออนุมัติ').'.pdf');
 @endphp
 <x-portal-layout title="สร้างคำร้อง" :tab-title="'New Request · Step '.$step">
     <main class="form-layout">
@@ -10,13 +15,12 @@ $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
                     <div class="form-card__heading">
                     <h2>ส่วนที่ {{ $step }} : {{ $steps[(int) $step] ?? '' }}</h2><button class="icon-button" type="button" data-open-dialog="discard-dialog" aria-label="ล้างแบบฟอร์ม"><x-portal-icon name="trash" /></button></div>
                     @endif
-                    <div class="form-card__body">
+                <div class="form-card__body {{ $step === 1 ? 'form-card__body--step-one' : '' }}">
                         @if($step === 1)
-                        <x-portal-field name="requester_unit" label="ส่วนงาน/คณะ/สำนักของผู้ยื่น" :value="$value('requester_unit')" readonly />
                         <x-portal-searchable-select name="target_dept_id" label="ส่วนงาน/คณะ/สำนักเป้าหมาย" :options="$departments" :value="$value('target_dept_id')" placeholder="พิมพ์ชื่อส่วนงาน/คณะ/สำนักที่ต้องการสร้างรายวิชาให้" :required="true" />
                         <x-portal-searchable-select name="target_subdept_id" label="หน่วยงานย่อยเป้าหมาย (ถ้ามี)" :options="$subdepartments" :option-parents="$subdepartmentParents" :value="$value('target_subdept_id')" depends-on="target_dept_id" :parent-value="$value('target_dept_id')" placeholder="พิมพ์ชื่อหน่วยงานย่อยที่ต้องการสร้างรายวิชาให้" />
                         <x-portal-field name="project_name" label="ชื่อโครงการ" :value="$value('project_name')" placeholder="ระบุชื่อโครงการพัฒนาทักษะวิชาการหรือหลักสูตร" :required="true" />
-                        <fieldset class="radio-fieldset">
+                        <fieldset class="radio-fieldset project-type-fieldset">
                             <legend>ประเภทโครงการ<span class="required-indicator" aria-hidden="true">*</span></legend>
                             <div class="radio-options">@foreach($projectTypes as $typeCode => $typeName)
                                 <label><input type="radio" name="project_type" value="{{ $typeCode }}" @checked($value('project_type')===$typeCode) required>{{ $typeName }}</label>
@@ -77,29 +81,42 @@ $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
                                 <x-portal-field name="ends_at" label="ถึง วันที่สิ้นสุด:" type="date" :value="$value('ends_at')" :required="true" min="{{ date('Y-m-d') }}" />
                             </div>
                         </fieldset>
-                        <fieldset class="radio-fieldset">
+                        <fieldset class="radio-fieldset enrollment-fieldset">
                             <legend>รูปแบบการเข้ารายวิชา:<span class="required-indicator" aria-hidden="true">*</span></legend>
                             <div class="radio-options">@foreach(['ใช้รหัสผ่าน (Enrollment Key)', 'ผู้ดูแลระบบนำเข้ารายชื่อ', 'อื่น ๆ (ระบุ)'] as $enrollment)
                                 <label><input type="radio" name="enrollment" value="{{ $enrollment }}" @checked($value('enrollment')===$enrollment) required>{{ $enrollment }}</label>
                                 @endforeach
                             </div>
-                            <p class="enrollment-import-note" data-conditional="enrollment" data-when="ผู้ดูแลระบบนำเข้ารายชื่อ" aria-live="polite" @if($value('enrollment') !=='ผู้ดูแลระบบนำเข้ารายชื่อ' ) hidden @endif>*กรุณาแนบรายชื่อในช่องเอกสารเพิ่มเติม <br class="enrollment-import-note__mobile-break">หากยังไม่มีรายชื่อกรุณาแนบมาภายหลัง</p>
+                            <p class="enrollment-import-note" data-conditional="enrollment" data-when="ผู้ดูแลระบบนำเข้ารายชื่อ" aria-live="polite" @if($value('enrollment') !=='ผู้ดูแลระบบนำเข้ารายชื่อ' ) hidden @endif>*กรุณาแนบรายชื่อ (.csv หรือ .xlsx) ในช่องเอกสารเพิ่มเติม <br class="enrollment-import-note__mobile-break">หากยังไม่มีรายชื่อกรุณาแนบมาภายหลัง</p>
                             <label class="form-label form-label--conditional" data-conditional="enrollment" data-when="อื่น ๆ (ระบุ)" @if($value('enrollment') !=='อื่น ๆ (ระบุ)' ) hidden @endif>ระบุรูปแบบการเข้ารายวิชาอื่น ๆ<span class="required-indicator" aria-hidden="true">*</span><input name="enrollment_other" value="{{ $value('enrollment_other') }}" class="form-field conditional-input" placeholder="ระบุรูปแบบการเข้ารายวิชา" required></label>
                         </fieldset>
-                        <div class="expected-students"><x-portal-field name="expected_students" label="จำนวนผู้เรียนที่คาดการณ์:" type="number" min="1" :value="$value('expected_students')" :required="true" /><span>คน</span></div>
+                        <div class="expected-students">
+                            <label class="form-label" for="field-expected-students">
+                                <span>จำนวนผู้เรียนที่คาดการณ์:<span class="required-indicator" aria-hidden="true">*</span></span>
+                                <span class="expected-students__control">
+                                    <input id="field-expected-students" name="expected_students" type="number" min="1" value="{{ $value('expected_students') }}" class="form-field @error('expected_students') form-field--error @enderror" required>
+                                    <span>คน</span>
+                                </span>
+                                @error('expected_students')
+                                    <span class="field-error" style="position: absolute; bottom: 0; left: 0; color: var(--portal-red); font-size: 13px; line-height: 1;">{{ $message }}</span>
+                                @enderror
+                            </label>
+                        </div>
                         @else
                         <section class="document-download">
                             <div class="form-section__header">
                                 <h2>ดาวน์โหลดเอกสารเพื่อลงนาม</h2><span class="muted">ทั้งหมด 1 ไฟล์</span>
                             </div>
                             <div class="document-row"><x-portal-icon name="download" />
-                                <div class="document-row__name">{{ $data['project_name'] ?? 'โครงการขออนุมัติ' }}.pdf</div><div class="document-row__actions"><x-portal-button variant="secondary" class="document-row__icon-button" data-open-dialog="pdf-preview-dialog" aria-label="Preview เอกสาร" title="Preview เอกสาร"><x-portal-icon name="eye" /></x-portal-button><x-portal-button :href="route('requests.document.download', 'draft')" variant="secondary" class="document-row__icon-button" aria-label="ดาวน์โหลดเอกสาร" title="ดาวน์โหลดเอกสาร"><x-portal-icon name="download" /></x-portal-button></div>
+                                <div class="document-row__name">{{ $documentDownloadFilename }}</div><div class="document-row__actions"><x-portal-button variant="secondary" class="document-row__icon-button" data-open-dialog="pdf-preview-dialog" aria-label="Preview เอกสาร" title="Preview เอกสาร"><x-portal-icon name="eye" /></x-portal-button><x-portal-button :href="route('requests.document.download', 'draft')" variant="secondary" class="document-row__icon-button" aria-label="ดาวน์โหลดเอกสาร" title="ดาวน์โหลดเอกสาร"><x-portal-icon name="download" /></x-portal-button></div>
                             </div>
                         </section>
-                        <section class="signed-upload">
-                            <h2>อัปโหลดเอกสารที่ลงนามแล้ว</h2>
-                            <p class="muted">สามารถอัปโหลดเอกสารที่ลงนามแล้วในภายหลังได้</p>
-                            <x-portal-upload name="signed_document" id="signed-document" />
+                        <section class="document-attachments">
+                            <h2>เอกสารเพิ่มเติมที่แนบมา</h2>
+                            <div class="document-attachments__content" data-additional-documents-content>
+                                <p class="muted document-attachments__empty" data-additional-document-empty>ไม่มีเอกสารเพิ่มเติมที่แนบมา</p>
+                                <div data-additional-document-list></div>
+                            </div>
                         </section>
                         @endif
                     </div>

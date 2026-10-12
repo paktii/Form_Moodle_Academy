@@ -17,6 +17,10 @@
         display: none;
     }
 
+    .roster-confirmation__mobile-break {
+        display: none;
+    }
+
     .detail-heading p {
         font-size: 12px;
         margin-top: 6px;
@@ -77,6 +81,10 @@
     .attachment-card a {
         color: var(--portal-navy);
         font-size: 12px;
+    }
+
+    .approver-document-download > .portal-icon {
+        display: none;
     }
 
     .roster-document-row .roster-status {
@@ -203,6 +211,10 @@
     }
 
     @media (max-width: 600px) {
+        .roster-confirmation__mobile-break {
+            display: block;
+        }
+
 
         .detail-grid,
         .detail-grid--four {
@@ -242,12 +254,52 @@
         }
 
         .detail-page--approver .roster-document-row > a {
-            order: 1;
+            order: 2;
         }
 
         .detail-page--approver .roster-document-row > .roster-status {
-            order: 2;
+            order: 1;
+        }
+
+        .detail-page--approver .attachment-card .document-row {
+            flex-wrap: nowrap;
+        }
+
+        .detail-page--approver .attachment-card .document-row__name {
+            flex-basis: auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .detail-page--approver .attachment-card .approver-document-download {
+            --approver-download-size: clamp(28px, 8vw, 32px);
+
+            display: flex;
+            flex: 0 0 var(--approver-download-size);
+            align-items: center;
+            justify-content: center;
+            width: var(--approver-download-size);
+            min-height: var(--approver-download-size);
             margin-left: auto;
+            padding: clamp(4px, 1.5vw, 6px);
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: #fff;
+        }
+
+        .detail-page--approver .attachment-card .approver-document-download > .portal-icon {
+            display: block;
+            width: clamp(15px, 4.5vw, 18px);
+            height: clamp(15px, 4.5vw, 18px);
+        }
+
+        .detail-page--approver .attachment-card .approver-document-download > span {
+            display: none;
+        }
+
+        .detail-page--approver .attachment-card .roster-document-row > .approver-document-download {
+            margin-left: 0;
         }
 
         .detail-page--officer .attachment-card .document-row {
@@ -276,6 +328,39 @@
 
         .detail-page--officer .attachment-card .document-row__download-label {
             display: none;
+        }
+
+        .detail-actions,
+        .reason-banner,
+        .roster-version-row {
+            align-items: stretch;
+            flex-wrap: wrap;
+        }
+
+        .detail-actions .portal-button,
+        .reason-banner .portal-button {
+            flex: 1 1 120px;
+        }
+
+        .detail-grid,
+        .detail-field,
+        .detail-field dd {
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 380px) {
+        .detail-heading h2 {
+            font-size: 19px;
+            overflow-wrap: anywhere;
+        }
+
+        .detail-actions {
+            padding: 8px;
+        }
+
+        .detail-actions .portal-button {
+            flex-basis: 100%;
         }
     }
 }

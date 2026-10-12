@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsurePortalRole;
+use App\Http\Middleware\DiscardPortalDraftWhenLeavingForm;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'portal.draft.lifecycle' => DiscardPortalDraftWhenLeavingForm::class,
             'portal.role' => EnsurePortalRole::class,
         ]);
     })

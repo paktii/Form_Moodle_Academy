@@ -1,4 +1,4 @@
-@props(['record', 'variant' => 'review'])
+@props(['record', 'variant' => 'review', 'showRequesterUnit' => true, 'splitTargetUnit' => false])
 @php
     $projectType = ($record['project_type'] ?? '') === 'OTHER'
         ? trim($record['project_other'] ?? '')
@@ -24,8 +24,13 @@
         ->implode(', ');
     $groups = [
         'ข้อมูลส่วนงานและโครงการ' => [
-            ['ส่วนงาน/คณะ/สำนักของผู้ยื่น', $record['requester_unit'] ?? ''],
-            ['ส่วนงาน/คณะ/สำนักเป้าหมาย', $targetUnit],
+            ...($showRequesterUnit ? [['ส่วนงาน/คณะ/สำนักของผู้ยื่น', $record['requester_unit'] ?? '']] : []),
+            ...($splitTargetUnit
+                ? [
+                    ['ส่วนงาน/คณะ/สำนักเป้าหมาย', $record['unit'] ?? ''],
+                    ['ภาควิชา/ส่วนงานย่อยเป้าหมาย', $record['subunit'] ?? ''],
+                ]
+                : [['ส่วนงาน/คณะ/สำนักเป้าหมาย', $targetUnit]]),
             ['ชื่อโครงการ', $record['project_name'] ?? ''],
             ['ประเภทโครงการ', $projectType],
             ['ชื่อผู้ประสานงาน', trim(($record['coordinator_first'] ?? '').' '.($record['coordinator_last'] ?? ''))],

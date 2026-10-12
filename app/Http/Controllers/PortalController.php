@@ -102,6 +102,17 @@ class PortalController extends Controller
         return redirect()->route('login');
     }
 
+    public function home(Request $request)
+    {
+        $role = $this->actor($request)['role'];
+
+        if ($role !== 'user') {
+            return redirect()->route($this->homeRoute($role));
+        }
+
+        return $this->index($request, 'user');
+    }
+
     public function index(Request $request, string $role = 'user')
     {
         $query = CourseRequest::query()->with($this->recordRelations());
@@ -143,6 +154,10 @@ class PortalController extends Controller
             $data = array_replace($this->personnelDirectory->coordinatorDefaults($person), $data);
         }
         $data['requester_unit'] = $this->personDepartmentName($personId);
+        if ($step === 4 && empty($data['id']) && empty($data['request_no'])) {
+            $data['request_no'] = $this->nextRequestNumber();
+            $request->session()->put('portal.draft.request_no', $data['request_no']);
+        }
 
         return view('portal.form-steps', [
             'step' => $step,
@@ -303,7 +318,7 @@ class PortalController extends Controller
                 $actor = $this->actor($request);
                 $courseRequest = isset($data['id'])
                     ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id'])
-                    : new CourseRequest(['request_no' => $this->nextRequestNumber()]);
+                    : new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
 
                 if ($courseRequest->exists) {
                     abort_unless((int) $courseRequest->requester_pers_id === (int) $actor['pers_id'], 403);
@@ -356,7 +371,7 @@ class PortalController extends Controller
 
                 $this->addHistory($courseRequest, $status, $actor['pers_id'], 'REQUESTER');
                 if ($status === 'UNDER_OFFICER_REVIEW') {
-                    $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', $this->roleRecipient('OFFICER'), $actor);
+                    $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $actor);
                 }
 
                 return $courseRequest;
@@ -444,7 +459,7 @@ class PortalController extends Controller
                 $this->createDocument($courseRequest, 'SIGNED_FORM', $stored, 'signed', $actor['pers_id']);
                 $courseRequest->update(['status' => 'UNDER_OFFICER_REVIEW', 'submitted_at' => now()]);
                 $this->addHistory($courseRequest, 'UNDER_OFFICER_REVIEW', $actor['pers_id'], 'REQUESTER');
-                $this->queueNotification($courseRequest, 'OFFICER_REVIEW_REQUIRED', $this->roleRecipient('OFFICER'), $actor);
+                $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $actor);
             });
         } catch (Throwable $exception) {
             $this->deletePendingFiles($stored);
@@ -484,10 +499,10 @@ class PortalController extends Controller
 
                 $isUpdate = $existing !== null;
                 $this->createDocument($courseRequest, 'STUDENT_ROSTER', $stored, 'roster', $actor['pers_id']);
-                $this->queueNotification(
+                $this->queueRoleNotifications(
                     $courseRequest,
                     $isUpdate ? 'STUDENT_ROSTER_UPDATED' : 'STUDENT_ROSTER_SUBMITTED',
-                    $this->roleRecipient('OFFICER'),
+                    'OFFICER',
                     $actor
                 );
             });
@@ -557,10 +572,10 @@ class PortalController extends Controller
                 ->exists();
 
             if (! $alreadyRequested) {
-                $this->queueNotification(
+                $this->queueRoleNotifications(
                     $courseRequest,
                     'STUDENT_ROSTER_REOPEN_REQUESTED',
-                    $this->roleRecipient('OFFICER'),
+                    'OFFICER',
                     $actor
                 );
             }
@@ -667,8 +682,21 @@ class PortalController extends Controller
                                 $pdf->AddFont('Sarabun', '', 'Sarabun-Regular.php');
                                 $pdf->SetFont('Sarabun', '', 9);
                                 $pdf->SetTextColor(0, 0, 0);
+                                $officerName = trim((string) ($actor['name'] ?? ''));
+                                if ($officerName === '') {
+                                    $officerName = $this->personName((int) $actor['pers_id']);
+                                }
+                                $encodedOfficerName = iconv('UTF-8', 'CP874//IGNORE', $officerName);
+                                $officerNameFontSize = 9;
+                                while ($officerNameFontSize > 7 && $pdf->GetStringWidth($encodedOfficerName) > (47 * $scaleX)) {
+                                    $officerNameFontSize -= 0.5;
+                                    $pdf->SetFont('Sarabun', '', $officerNameFontSize);
+                                }
+                                $officerNameX = (62 * $scaleX) - ($pdf->GetStringWidth($encodedOfficerName) / 2);
+                                $pdf->Text($officerNameX, 170.4 * $scaleY, $encodedOfficerName);
+                                $pdf->SetFont('Sarabun', '', 9);
                                 $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
-                                $pdf->Text(43 * $scaleX, 173.3 * $scaleY, $dateStr);
+                                $pdf->Text(43 * $scaleX, 181 * $scaleY, $dateStr);
                             }
                         }
                         $pdf->Output('F', $pdfAbsPath);
@@ -686,9 +714,11 @@ class PortalController extends Controller
             ]);
             $courseRequest->update(['status' => $status]);
             $this->addHistory($courseRequest, $status, $actor['pers_id'], 'OFFICER');
-            $this->queueNotification($courseRequest, $passed ? 'APPROVAL_REQUIRED' : 'REQUEST_RETURNED', $passed
-                ? $this->roleRecipient('APPROVER')
-                : $this->requesterRecipient($courseRequest), $actor);
+            if ($passed) {
+                $this->queueRoleNotifications($courseRequest, 'APPROVAL_REQUIRED', 'APPROVER', $actor);
+            } else {
+                $this->queueNotification($courseRequest, 'REQUEST_RETURNED', $this->requesterRecipient($courseRequest), $actor);
+            }
         });
 
         return redirect()->route('officer.reviews')->with('success', $data['decision'] === 'pass'
@@ -824,8 +854,21 @@ class PortalController extends Controller
                                     $pdf->SetFont('Sarabun', '', 9);
                                 }
 
+                                $approverName = trim((string) ($actor['name'] ?? ''));
+                                if ($approverName === '') {
+                                    $approverName = $this->personName((int) $actor['pers_id']);
+                                }
+                                $encodedApproverName = iconv('UTF-8', 'CP874//IGNORE', $approverName);
+                                $approverNameFontSize = 9;
+                                while ($approverNameFontSize > 7 && $pdf->GetStringWidth($encodedApproverName) > (47 * $scaleX)) {
+                                    $approverNameFontSize -= 0.5;
+                                    $pdf->SetFont('Sarabun', '', $approverNameFontSize);
+                                }
+                                $approverNameX = (146.5 * $scaleX) - ($pdf->GetStringWidth($encodedApproverName) / 2);
+                                $pdf->Text($approverNameX, 179.5 * $scaleY, $encodedApproverName);
+                                $pdf->SetFont('Sarabun', '', 9);
                                 $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
-                                $pdf->Text(127.5 * $scaleX, 183.3 * $scaleY, $dateStr);
+                                $pdf->Text(127.5 * $scaleX, 190 * $scaleY, $dateStr);
                             }
                         }
 
@@ -903,10 +946,11 @@ class PortalController extends Controller
                 'return' => 'REQUEST_RETURNED',
                 'reject' => 'REQUEST_REJECTED',
             };
-            $recipient = $data['decision'] === 'approve'
-                ? $this->roleRecipient('OFFICER')
-                : $this->requesterRecipient($courseRequest);
-            $this->queueNotification($courseRequest, $notificationType, $recipient, $actor);
+            if ($data['decision'] === 'approve') {
+                $this->queueRoleNotifications($courseRequest, $notificationType, 'OFFICER', $actor);
+            } else {
+                $this->queueNotification($courseRequest, $notificationType, $this->requesterRecipient($courseRequest), $actor);
+            }
         });
 
         $message = match ($data['decision']) {
@@ -920,24 +964,33 @@ class PortalController extends Controller
 
     public function courseId(Request $request, int $id)
     {
-        $data = $request->validate(['course_id' => 'required|string|max:100']);
+        $data = $request->validate([
+            'course_id' => ['required', 'integer', 'min:1'],
+        ], [
+            'course_id.integer' => 'กรุณากรอก Course ID เป็นตัวเลขเท่านั้น',
+            'course_id.min' => 'Course ID ต้องเป็นเลขจำนวนเต็มตั้งแต่ 1 ขึ้นไป',
+        ]);
 
-        DB::connection('course133')->transaction(function () use ($request, $id, $data) {
+        $wasRecorded = DB::connection('course133')->transaction(function () use ($request, $id, $data): bool {
             $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
-            abort_unless($courseRequest->status === 'PENDING_COURSE_ID', 409);
-            abort_unless($courseRequest->approved_pdf_downloaded_at !== null, 409, 'กรุณาดาวน์โหลด PDF ที่อนุมัติแล้วก่อนบันทึก Course ID');
+            abort_unless(in_array($courseRequest->status, ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true), 409);
+            $wasRecorded = $courseRequest->status === 'COURSE_ID_RECORDED';
             $actor = $this->actor($request);
 
             $courseRequest->update([
-                'course_id' => $data['course_id'],
+                'course_id' => (string) (int) $data['course_id'],
                 'recorded_by_pers_id' => $actor['pers_id'],
                 'status' => 'COURSE_ID_RECORDED',
             ]);
             $this->addHistory($courseRequest, 'COURSE_ID_RECORDED', $actor['pers_id'], 'OFFICER');
             $this->queueNotification($courseRequest, 'COURSE_ID_RECORDED', $this->requesterRecipient($courseRequest), $actor);
+
+            return $wasRecorded;
         });
 
-        return redirect()->route('officer.reviews')->with('success', 'บันทึก Course ID สำเร็จ ผู้ยื่นคำร้องสามารถดูรหัสรายวิชาได้แล้ว');
+        return redirect()->route('officer.reviews')->with('success', $wasRecorded
+            ? 'แก้ไข Course ID สำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว'
+            : 'บันทึก Course ID สำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว');
     }
 
     public function document(Request $request, string $id = 'draft')
@@ -959,7 +1012,11 @@ class PortalController extends Controller
         $record = $this->documentRecord($request, $id);
         $projectName = $record['project_name'] ?? 'โครงการขออนุมัติ';
         $safeName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '-', $projectName);
-        $filename = "{$safeName}.pdf";
+        $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+        $requestCode = Str::afterLast($requestNumber, '-');
+        $filename = $requestCode !== ''
+            ? $this->requestDocumentFilename($requestNumber)
+            : "{$safeName}.pdf";
 
         $response = Pdf::loadView('portal.document-pdf', compact('record'))
             ->setPaper('a4', 'portrait')
@@ -997,7 +1054,20 @@ class PortalController extends Controller
         /** @var FilesystemAdapter $disk */
         $disk = Storage::disk('local');
 
-        $response = $disk->download($document->storage_key, $document->original_filename);
+        $downloadName = $kind === 'signed'
+            ? $this->requestDocumentFilename($courseRequest->request_no)
+            : $document->original_filename;
+
+        if ($kind === 'signed' && $request->boolean('preview')) {
+            return $disk->response(
+                $document->storage_key,
+                $downloadName,
+                ['Content-Type' => 'application/pdf'],
+                'inline'
+            );
+        }
+
+        $response = $disk->download($document->storage_key, $downloadName);
 
         if ($kind === 'signed'
             && $this->actor($request)['role'] === 'officer'
@@ -1107,6 +1177,10 @@ class PortalController extends Controller
         ])->values()->all();
         $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
         $latestApproval = $courseRequest->approvals->sortByDesc('decided_at')->first();
+        $courseIdNotification = $courseRequest->notifications
+            ->where('notification_type', 'COURSE_ID_RECORDED')
+            ->sortByDesc('notification_id')
+            ->first();
         $studentRosterReopenRequested = $studentRoster?->roster_acknowledged_at !== null
             && $courseRequest->notifications->contains(fn ($notification) =>
                 $notification->notification_type === 'STUDENT_ROSTER_REOPEN_REQUESTED'
@@ -1133,6 +1207,7 @@ class PortalController extends Controller
             'id' => $courseRequest->request_id,
             'number' => $courseRequest->request_no,
             'requester' => $this->personName($courseRequest->requester_pers_id),
+            'proposer' => trim($courseRequest->coordinator_first_name.' '.$courseRequest->coordinator_last_name),
             'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
             'target_dept_id' => $courseRequest->target_dept_id,
             'unit' => $this->departmentName($courseRequest->target_dept_id),
@@ -1185,6 +1260,7 @@ class PortalController extends Controller
             'approved_pdf_downloaded' => $courseRequest->approved_pdf_downloaded_at !== null,
             'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
             'course_id' => $courseRequest->course_id,
+            'completion_notification_id' => $courseIdNotification?->notification_id,
             'reason' => $reason,
             'returned_by' => $courseRequest->status === 'RETURNED_FOR_REVISION'
                 ? ($returnedByApprover ? 'APPROVER' : 'OFFICER')
@@ -1197,7 +1273,7 @@ class PortalController extends Controller
             'approval_comment' => $latestApproval?->comment,
             'approval_decided_at' => $this->thaiBuddhistDate($latestApproval?->decided_at),
             'signed_path' => $signed?->storage_key,
-            'signed_name' => $signed?->original_filename,
+            'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no) : null,
             'additional_files' => $additionalFiles,
             'removed_additional_document_ids' => [],
         ];
@@ -1209,7 +1285,9 @@ class PortalController extends Controller
             'request_id' => $courseRequest->request_id,
             'document_type' => $type,
             'storage_key' => $data[$prefix . '_path'],
-            'original_filename' => $data[$prefix . '_name'],
+            'original_filename' => $type === 'SIGNED_FORM'
+                ? $this->requestDocumentFilename($courseRequest->request_no)
+                : $data[$prefix . '_name'],
             'mime_type' => $data[$prefix . '_mime'],
             'file_size_bytes' => $data[$prefix . '_size'],
             'uploaded_by_pers_id' => $uploaderId,
@@ -1243,6 +1321,13 @@ class PortalController extends Controller
         ]);
     }
 
+    private function queueRoleNotifications(CourseRequest $courseRequest, string $type, string $roleCode, array $actor): void
+    {
+        foreach ($this->roleRecipients($roleCode) as $recipient) {
+            $this->queueNotification($courseRequest, $type, $recipient, $actor);
+        }
+    }
+
     private function requesterRecipient(CourseRequest $courseRequest): array
     {
         $personId = (int) $courseRequest->requester_pers_id;
@@ -1258,23 +1343,32 @@ class PortalController extends Controller
         ]);
     }
 
-    private function roleRecipient(string $roleCode): array
+    private function roleRecipients(string $roleCode): array
     {
-        $personId = DB::connection('course133')
+        $personIds = DB::connection('course133')
             ->table('course133.user_role_assignment as assignments')
             ->join('course133.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
             ->where('roles.role_code', $roleCode)
             ->where('assignments.is_active', true)
             ->orderBy('assignments.role_assignment_id')
-            ->value('assignments.pers_id');
+            ->pluck('assignments.pers_id');
 
-        $person = $personId !== null
-            ? $this->personnelDirectory->findByPersonId((int) $personId)
-            : null;
-        $email = $person ? $this->personnelDirectory->email($person) : null;
+        $recipients = $personIds->map(function ($personId) use ($roleCode) {
+            $personId = (int) $personId;
+            $person = $this->personnelDirectory->findByPersonId($personId);
+            $email = $person ? $this->personnelDirectory->email($person) : null;
 
-        if ($personId !== null && $email !== null) {
-            return ['pers_id' => (int) $personId, 'email' => $email];
+            if ($email === null) {
+                throw ValidationException::withMessages([
+                    'role' => "ไม่พบอีเมลของบุคลากรรหัส $personId สำหรับสิทธิ $roleCode",
+                ]);
+            }
+
+            return ['pers_id' => $personId, 'email' => $email];
+        })->values()->all();
+
+        if ($recipients !== []) {
+            return $recipients;
         }
 
         throw ValidationException::withMessages([
@@ -1351,6 +1445,11 @@ class PortalController extends Controller
         } while (CourseRequest::query()->where('request_no', $number)->exists());
 
         return $number;
+    }
+
+    private function requestDocumentFilename(string $requestNumber): string
+    {
+        return 'CC-ITED-06_' . Str::afterLast($requestNumber, '-') . '.pdf';
     }
 
     private function actor(Request $request): array

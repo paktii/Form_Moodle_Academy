@@ -3,13 +3,16 @@
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
 
-Route::controller(PortalController::class)->group(function () {
+Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')->group(function () {
     Route::get('/login', 'login')->name('login');
     Route::post('/login', 'enter')->middleware('throttle:portal-login')->name('login.enter');
     Route::post('/logout', 'logout')->name('logout');
 
+    Route::get('/', 'home')
+        ->middleware('portal.role:user,officer,approver')
+        ->name('requests.index');
+
     Route::middleware('portal.role:user')->group(function () {
-        Route::get('/', 'index')->defaults('role', 'user')->name('requests.index');
         Route::redirect('/request/create', '/request/create/1')->name('requests.create');
         Route::get('/request/create/{step}', 'form')->whereNumber('step')->name('requests.form');
         Route::post('/request/create/{step}', 'saveStep')->whereNumber('step')->name('requests.save-step');

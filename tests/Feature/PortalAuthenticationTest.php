@@ -16,6 +16,28 @@ class PortalAuthenticationTest extends TestCase
         $this->get('/approver/reviews')->assertRedirect('/login');
     }
 
+    #[DataProvider('staffHomeRoutes')]
+    public function test_root_redirects_staff_to_their_home_page(string $role, string $destination): void
+    {
+        $this->withSession(['portal.actor' => [
+            'pers_id' => 100,
+            'dept_id' => 200,
+            'buasri_id' => 'someone',
+            'name' => 'ผู้ใช้งานทดสอบ',
+            'email' => 'someone@g.swu.ac.th',
+            'label' => $role === 'officer' ? 'เจ้าหน้าที่' : 'ผู้อนุมัติ',
+            'role' => $role,
+        ]])->get('/')->assertRedirect($destination);
+    }
+
+    public static function staffHomeRoutes(): array
+    {
+        return [
+            'officer' => ['officer', '/officer/reviews'],
+            'approver' => ['approver', '/approver/reviews'],
+        ];
+    }
+
     #[DataProvider('directoryRoles')]
     public function test_each_directory_role_can_log_in(string $role, string $destination): void
     {

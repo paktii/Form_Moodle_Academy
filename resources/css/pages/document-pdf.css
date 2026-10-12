@@ -252,6 +252,12 @@ body {
     line-height: 1.5;
 }
 
+.document-staff-card .document-staff-name {
+    margin-top: 0;
+    text-align: center;
+    white-space: nowrap;
+}
+
 .document-decisions>span {
     display: inline-block;
     margin-right: 6mm;

@@ -2,7 +2,7 @@
 
 Migration ชุดนี้สร้าง schema `course133` จำนวน 11 ตารางในฐาน `academy_db1447` ผ่าน connection `course133` โดยข้อมูลบุคลากรและหน่วยงานอ่านจาก SWU MIS API
 
-คอลัมน์ `*_pers_id` และ `target_dept_id` ใช้ `int` ให้ตรงกับ `personId` และ `deptCd` จาก SWU MIS API แต่ไม่มี Foreign Key ไปยังข้อมูลภายนอก หาก API หน่วยงานไม่พร้อมใช้งาน Laravel จะใช้ snapshot ใน `config/departments.php` สำหรับตรวจสอบค่าที่ผู้ยื่นเลือกและบันทึกรหัสหน่วยงานเป้าหมายลง Server 133
+คอลัมน์ `*_pers_id` และ `target_dept_id` ใช้ `int` ให้ตรงกับ `personId` และ `deptCd` จาก SWU MIS API แต่ไม่มี Foreign Key ไปยังข้อมูลภายนอก ข้อมูลหน่วยงานสำหรับตรวจสอบค่าที่ผู้ยื่นเลือกต้องมาจาก endpoint `Department` โดยตรงก่อนบันทึกรหัสหน่วยงานเป้าหมายลง Server 133
 
 ตั้งค่า `DB_133_*` สำหรับฐานคำร้องใน `.env` แล้วรันจากโฟลเดอร์โปรเจกต์:
 

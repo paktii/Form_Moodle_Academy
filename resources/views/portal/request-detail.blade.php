@@ -13,7 +13,7 @@
                 <h2 style="font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.4;">{{ $record['project_name'] }}</h2>
                 <div style="flex-shrink: 0; margin-top: 4px;"><x-status-badge :status="$record['status']" /></div>
             </div>
-            <x-request-data :record="$record" variant="summary" />
+            <x-request-data :record="$record" variant="summary" :show-requester-unit="false" :split-target-unit="true" />
             <section class="requester-attachments">
                 <div class="requester-attachments__heading">
                     <h3><x-portal-icon name="paperclip" />เอกสารแนบประกอบคำร้อง</h3><span class="muted">ทั้งหมด {{ 1 + count($record['additional_files'] ?? []) + ($record['has_student_roster'] ? 1 : 0) }} ไฟล์</span>
@@ -91,7 +91,7 @@
             @endif
             @if($record['course_id'] ?? null)<section class="course-result">
                 <h3>ผลการสร้างรายวิชา</h3>
-                <p>Course ID: <a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?name='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a></p>
+                <p>Course ID: <a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a></p>
             </section>@endif
         </article>
     </main>
