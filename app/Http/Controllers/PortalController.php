@@ -2,33 +2,39 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CourseApproval;
+use App\Models\ApproverReview;
 use App\Models\CourseCategory;
 use App\Models\CourseDocument;
 use App\Models\CourseRequest;
+use App\Models\DeanReview;
+use App\Models\FacultyDean;
 use App\Models\NotificationOutbox;
 use App\Models\OfficerReview;
 use App\Models\ProjectType;
 use App\Models\RequestStatusHistory;
 use App\Services\DepartmentDirectory;
+use App\Services\DocumentPdfRenderer;
 use App\Services\PersonnelDirectory;
 use App\Services\PortalIdentityService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 use setasign\Fpdi\Fpdi;
+use setasign\Fpdi\PdfParser\StreamReader;
+use Symfony\Component\HttpFoundation\HeaderUtils;
+use Throwable;
 
 class PortalController extends Controller
 {
     public function __construct(
         private readonly DepartmentDirectory $departmentDirectory,
+        private readonly DocumentPdfRenderer $documentPdfRenderer,
         private readonly PersonnelDirectory $personnelDirectory,
         private readonly PortalIdentityService $portalIdentityService,
     ) {
@@ -102,6 +108,138 @@ class PortalController extends Controller
         return redirect()->route('login');
     }
 
+    public function deanReviewConfirmation(int $id, ?string $decision = null)
+    {
+        $courseRequest = CourseRequest::query()->with($this->recordRelations())->findOrFail($id);
+        $record = $this->toRecord($courseRequest);
+        $linkExpiresAt = now()->addMinutes(30);
+        $decisionUrl = URL::temporarySignedRoute(
+            'dean.review.decide',
+            $linkExpiresAt,
+            ['id' => $courseRequest->request_id],
+        );
+        $documentUrl = URL::temporarySignedRoute(
+            'dean.review.document',
+            $linkExpiresAt,
+            ['id' => $courseRequest->request_id],
+        );
+        $additionalDocumentUrls = collect($record['additional_files'] ?? [])
+            ->mapWithKeys(fn (array $file) => [
+                $file['document_id'] => URL::temporarySignedRoute(
+                    'dean.review.attachment',
+                    $linkExpiresAt,
+                    [
+                        'id' => $courseRequest->request_id,
+                        'document' => $file['document_id'],
+                    ],
+                ),
+            ])
+            ->all();
+        $studentRosterDocId = $record['student_roster_versions'][0]['document_id'] ?? null;
+        $studentRosterUrl = $studentRosterDocId
+            ? URL::temporarySignedRoute(
+                'dean.review.attachment',
+                $linkExpiresAt,
+                ['id' => $courseRequest->request_id, 'document' => $studentRosterDocId],
+            )
+            : null;
+
+        return view('portal.dean-review', [
+            'courseRequest' => $courseRequest,
+            'record' => $record,
+            'decisionUrl' => $decisionUrl,
+            'documentUrl' => $documentUrl,
+            'additionalDocumentUrls' => $additionalDocumentUrls,
+            'studentRosterUrl' => $studentRosterUrl,
+            'alreadyProcessed' => $courseRequest->status !== 'PENDING_DEAN_REVIEW',
+        ]);
+    }
+
+    public function deanReviewDocument(int $id)
+    {
+        $courseRequest = CourseRequest::query()->with($this->recordRelations())->findOrFail($id);
+        $record = $this->toRecord($courseRequest);
+
+        return $this->generatedPdfResponse(
+            $record,
+            $this->requestDocumentFilename($courseRequest->request_no),
+            false,
+        );
+    }
+
+    public function deanReviewAttachment(int $id, int $document)
+    {
+        $courseRequest = CourseRequest::query()->findOrFail($id);
+        $courseDocument = $courseRequest->documents()
+            ->whereKey($document)
+            ->whereIn('document_type', ['ADDITIONAL_DOCUMENT', 'STUDENT_ROSTER'])
+            ->firstOrFail();
+
+        return Storage::disk('local')->download(
+            $courseDocument->storage_key,
+            $courseDocument->original_filename,
+        );
+    }
+
+    public function deanReviewDecision(Request $request, int $id, ?string $decision = null)
+    {
+        $request->merge(['decision' => $decision ?? $request->input('decision')]);
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'reject'])],
+            'reason' => 'required_if:decision,reject|nullable|string|max:3000',
+        ], [
+            'reason.required' => 'กรุณาระบุเหตุผลที่ไม่รับรอง',
+        ]);
+        $decision = $data['decision'];
+
+        $result = DB::connection('course133')->transaction(function () use ($id, $decision, $data) {
+            $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
+
+            if ($courseRequest->status !== 'PENDING_DEAN_REVIEW') {
+                return ['request' => $courseRequest, 'processed' => false];
+            }
+
+            $deanPersonId = (int) $courseRequest->dean_pers_id;
+            abort_unless($deanPersonId > 0, 409);
+            $deanActor = $this->personActor($deanPersonId, 'คณบดี');
+            $status = $decision === 'approve' ? 'UNDER_OFFICER_REVIEW' : 'REJECTED';
+
+            DeanReview::create([
+                'request_id' => $courseRequest->request_id,
+                'dean_pers_id' => $deanPersonId,
+                'decision' => $decision === 'approve' ? 'APPROVED' : 'REJECTED',
+                'comment' => $decision === 'approve' ? null : trim($data['reason']),
+                'decided_at' => now(),
+            ]);
+            $courseRequest->update(['status' => $status]);
+            $this->addHistory($courseRequest, $status, $deanPersonId, 'DEAN');
+
+            if ($decision === 'approve') {
+                $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $deanActor);
+            } else {
+                $this->queueNotification($courseRequest, 'DEAN_REJECTED', $this->requesterRecipient($courseRequest), $deanActor);
+            }
+
+            return ['request' => $courseRequest, 'processed' => true];
+        });
+
+        $courseRequest = $result['request'];
+        $confirmationUrl = URL::temporarySignedRoute(
+            'dean.review.confirm',
+            now()->addMinutes(30),
+            ['id' => $courseRequest->request_id],
+        );
+        $redirect = redirect()->to($confirmationUrl);
+
+        if (! $result['processed']) {
+            return $redirect;
+        }
+
+        return $redirect->with('success', $decision === 'approve'
+            ? 'รับรองคำร้องเรียบร้อยแล้ว<br>ระบบส่งต่อให้เจ้าหน้าที่ตรวจสอบแล้ว'
+            : 'บันทึกผลไม่รับรองเรียบร้อยแล้ว<br>ระบบแจ้งผู้ยื่นคำร้องแล้ว');
+    }
+
     public function home(Request $request)
     {
         $role = $this->actor($request)['role'];
@@ -158,6 +296,9 @@ class PortalController extends Controller
             $data['request_no'] = $this->nextRequestNumber();
             $request->session()->put('portal.draft.request_no', $data['request_no']);
         }
+        $deanOptions = $step === 4
+            ? $this->deanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            : [];
 
         return view('portal.form-steps', [
             'step' => $step,
@@ -168,6 +309,7 @@ class PortalController extends Controller
             'departments' => $this->departmentDirectory->options(),
             'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
             'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
+            'deanOptions' => $deanOptions,
         ]);
     }
 
@@ -175,6 +317,10 @@ class PortalController extends Controller
     {
         abort_unless(in_array($step, [1, 2, 3, 4], true), 404);
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $activeDeanPersonIds = $step === 4
+            ? $this->activeDeanPersonIds((int) $request->session()->get('portal.draft.target_dept_id', 0))
+            : [];
+        $deanRequired = $required === 'required' && $activeDeanPersonIds !== [] ? 'required' : 'nullable';
 
         $rules = match ($step) {
             1 => [
@@ -210,6 +356,13 @@ class PortalController extends Controller
                 'enrollment_other' => ($required === 'required' ? 'required_if:enrollment,อื่น ๆ (ระบุ)|' : '') . 'nullable|string|max:500',
                 'expected_students' => "$required|integer|min:1|max:1000000",
             ],
+            4 => [
+                'dean_pers_id' => [
+                    $deanRequired,
+                    'integer',
+                    Rule::in($activeDeanPersonIds),
+                ],
+            ],
             default => [],
         };
         $rules['additional_documents'] = 'nullable|array|max:5';
@@ -223,6 +376,8 @@ class PortalController extends Controller
             'after_or_equal' => 'วันที่สิ้นสุดกิจกรรมต้องไม่ก่อนวันที่เริ่มต้น',
             'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
             'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
+            'dean_pers_id.required' => 'กรุณาเลือกหัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการ',
+            'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงานเป้าหมาย',
         ]);
         $removeAdditional = $validated['remove_additional'] ?? [];
         unset($validated['additional_documents'], $validated['remove_additional']);
@@ -247,6 +402,11 @@ class PortalController extends Controller
         }
 
         $existingDraft = $request->session()->get('portal.draft', []);
+        if ($step === 1
+            && isset($validated['target_dept_id'])
+            && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+        }
         $data = array_replace($existingDraft, $validated);
         if ($step <= 3) {
             $data['unsigned_pdf_downloaded_at'] = null;
@@ -257,6 +417,10 @@ class PortalController extends Controller
         }
         if (isset($validated['project_type'])) {
             $data['project_type_label'] = ProjectType::where('project_type_code', $validated['project_type'])->value('project_type_name_th');
+        }
+        if (isset($validated['dean_pers_id'])) {
+            $data['dean_pers_id'] = (int) $validated['dean_pers_id'];
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
         }
         $additionalFiles = $this->draftAdditionalFiles($existingDraft);
         $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
@@ -307,14 +471,9 @@ class PortalController extends Controller
             }
         }
 
-        $request->validate(['signed_document' => 'nullable|file|mimes:pdf|max:10240']);
-        $signed = $request->hasFile('signed_document')
-            ? $this->storeDraftFile($request->file('signed_document'), 'signed')
-            : [];
-
         $deletedAdditionalPaths = [];
         try {
-            $courseRequest = DB::connection('course133')->transaction(function () use ($request, $data, $signed, &$deletedAdditionalPaths) {
+            $courseRequest = DB::connection('course133')->transaction(function () use ($request, $data, &$deletedAdditionalPaths) {
                 $actor = $this->actor($request);
                 $courseRequest = isset($data['id'])
                     ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id'])
@@ -325,7 +484,7 @@ class PortalController extends Controller
                     abort_unless(in_array($courseRequest->status, ['RETURNED_FOR_REVISION', 'PENDING_SIGNED_DOCUMENT'], true), 409);
                 }
 
-                $status = isset($signed['signed_path']) ? 'UNDER_OFFICER_REVIEW' : 'PENDING_SIGNED_DOCUMENT';
+                $status = 'PENDING_DEAN_REVIEW';
                 $courseRequest->fill($this->requestAttributes($data, $actor['pers_id'], $status));
                 $courseRequest->save();
 
@@ -365,19 +524,18 @@ class PortalController extends Controller
                         }
                     }
                 }
-                if (isset($signed['signed_path'])) {
-                    $this->createDocument($courseRequest, 'SIGNED_FORM', $signed, 'signed', $actor['pers_id']);
-                }
-
                 $this->addHistory($courseRequest, $status, $actor['pers_id'], 'REQUESTER');
-                if ($status === 'UNDER_OFFICER_REVIEW') {
-                    $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $actor);
-                }
+                $this->queueNotification(
+                    $courseRequest,
+                    'DEAN_REVIEW_REQUIRED',
+                    $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง'),
+                    $actor,
+                );
 
                 return $courseRequest;
             });
         } catch (Throwable $exception) {
-            $this->deletePendingFiles(array_merge($data, $signed));
+            $this->deletePendingFiles($data);
             throw $exception;
         }
 
@@ -387,9 +545,7 @@ class PortalController extends Controller
 
         $request->session()->forget(['portal.draft', 'portal.completed']);
 
-        return redirect()->route('requests.index')->with('success', $courseRequest->status === 'UNDER_OFFICER_REVIEW'
-            ? 'ส่งคำร้องเรียบร้อยแล้ว'
-            : 'บันทึกคำร้องแล้ว<br>กรุณาอัปโหลดเอกสารที่ลงนามเพื่อส่งตรวจสอบ');
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอคณบดีรับรอง');
     }
 
     public function clearStep(Request $request, int $step)
@@ -398,6 +554,7 @@ class PortalController extends Controller
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'project_name', 'project_type', 'project_other', 'coordinator_first', 'coordinator_last', 'coordinator_position', 'coordinator_phone', 'coordinator_email'],
             2 => ['course_th', 'course_en', 'instructors', 'category', 'category_other', 'description'],
             3 => ['learning', 'activity_round', 'activity_phase', 'starts_at', 'ends_at', 'enrollment', 'enrollment_other', 'expected_students'],
+            4 => ['dean_pers_id', 'dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.draft', []);
@@ -623,7 +780,6 @@ class PortalController extends Controller
         DB::connection('course133')->transaction(function () use ($request, $id, $data) {
             $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
             abort_unless($courseRequest->status === 'UNDER_OFFICER_REVIEW', 409);
-            abort_unless($courseRequest->documents()->where('document_type', 'SIGNED_FORM')->where('mime_type', 'application/pdf')->exists(), 409);
 
             $actor = $this->actor($request);
             $passed = $data['decision'] === 'pass';
@@ -633,7 +789,17 @@ class PortalController extends Controller
                 $signaturePath = $request->file('signature_file')->store('temp_signatures', 'local');
                 $signatureAbsPath = Storage::disk('local')->path($signaturePath);
 
-                $signedDoc = $courseRequest->documents()->where('document_type', 'SIGNED_FORM')->latest('uploaded_at')->first();
+                $hasPriorPassedReview = $courseRequest->officerReviews()
+                    ->where('decision', 'PASSED')
+                    ->exists();
+
+                $signedDoc = $this->ensureSignedFormDocument(
+                    $hasPriorPassedReview
+                        ? $courseRequest->fresh($this->recordRelations())
+                        : $courseRequest,
+                    (int) $actor['pers_id'],
+                    $hasPriorPassedReview,
+                );
                 if ($signedDoc) {
                     $pdfAbsPath = Storage::disk('local')->path($signedDoc->storage_key);
 
@@ -644,7 +810,7 @@ class PortalController extends Controller
 
                         $pdf = new Fpdi();
                         $pageCount = $pdf->setSourceFile($pdfAbsPath);
-                        $continuedApprovalComment = null;
+                        $thaiTextItems = [];
                         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
                             $templateId = $pdf->importPage($pageNo);
                             $size = $pdf->getTemplateSize($templateId);
@@ -660,12 +826,12 @@ class PortalController extends Controller
                                 // 1. Keep the checkmark inside the officer checkbox.
                                 $pdf->SetLineWidth(0.4);
                                 $pdf->SetDrawColor(0, 0, 0);
-                                $pdf->Line(30.4 * $scaleX, 150 * $scaleY, 31.4 * $scaleX, 151.1 * $scaleY);
-                                $pdf->Line(31.4 * $scaleX, 151.1 * $scaleY, 32.9 * $scaleX, 148.6 * $scaleY);
+                                $pdf->Line(30.4 * $scaleX, 130 * $scaleY, 31.4 * $scaleX, 131.1 * $scaleY);
+                                $pdf->Line(31.4 * $scaleX, 131.1 * $scaleY, 32.9 * $scaleX, 128.6 * $scaleY);
 
                                 // 2. Center the signature on the signature line without touching the date row.
                                 $signatureBoxX = 44.5 * $scaleX;
-                                $signatureBoxY = 154.5 * $scaleY;
+                                $signatureBoxY = 134.5 * $scaleY;
                                 $signatureBoxWidth = 51.5 * $scaleX;
                                 $signatureBoxHeight = 10 * $scaleY;
                                 $signatureInfo = getimagesize($signatureAbsPath);
@@ -692,17 +858,37 @@ class PortalController extends Controller
                                     $officerNameFontSize -= 0.5;
                                     $pdf->SetFont('Sarabun', '', $officerNameFontSize);
                                 }
-                                $officerNameX = (62 * $scaleX) - ($pdf->GetStringWidth($encodedOfficerName) / 2);
-                                $pdf->Text($officerNameX, 170.4 * $scaleY, $encodedOfficerName);
-                                $pdf->SetFont('Sarabun', '', 9);
-                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
-                                $pdf->Text(43 * $scaleX, 181 * $scaleY, $dateStr);
+                                $thaiTextItems[] = [
+                                    'text' => $officerName,
+                                    'x' => 38.5,
+                                    'top' => 145.7,
+                                    'width' => 47,
+                                    'font_size' => $officerNameFontSize,
+                                    'align' => 'center',
+                                ];
+                                $thaiTextItems[] = [
+                                    'text' => $this->thaiBuddhistDate(now()),
+                                    'x' => 38.5,
+                                    'top' => 155.4,
+                                    'width' => 47,
+                                    'font_size' => 9,
+                                    'align' => 'center',
+                                ];
                             }
                         }
+                        $this->addUnicodeTextOverlay($pdf, $thaiTextItems, $size['width'], $size['height']);
                         $pdf->Output('F', $pdfAbsPath);
                     }
                 }
                 Storage::disk('local')->delete($signaturePath);
+            }
+
+            if (! $passed) {
+                $this->ensureSignedFormDocument(
+                    $courseRequest->fresh($this->recordRelations()),
+                    (int) $actor['pers_id'],
+                    true,
+                );
             }
 
             OfficerReview::create([
@@ -754,7 +940,7 @@ class PortalController extends Controller
                 $signaturePath = $request->file('signature_file')->store('temp_signatures', 'local');
                 $signatureAbsPath = Storage::disk('local')->path($signaturePath);
 
-                $signedDoc = $courseRequest->documents()->where('document_type', 'SIGNED_FORM')->latest('uploaded_at')->first();
+                $signedDoc = $this->ensureSignedFormDocument($courseRequest, (int) $actor['pers_id']);
                 if ($signedDoc) {
                     $pdfAbsPath = Storage::disk('local')->path($signedDoc->storage_key);
 
@@ -766,6 +952,7 @@ class PortalController extends Controller
                         $pdf = new Fpdi();
                         $pageCount = $pdf->setSourceFile($pdfAbsPath);
                         $continuedApprovalComment = null;
+                        $thaiTextItems = [];
                         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
                             $templateId = $pdf->importPage($pageNo);
                             $size = $pdf->getTemplateSize($templateId);
@@ -779,15 +966,15 @@ class PortalController extends Controller
                                 $scaleY = $size['height'] / 297;
 
                                 // Mark the approver decision checkbox.
-                                $checkboxX = $data['decision'] === 'approve' ? 114.8 : 135.4;
+                                $checkboxX = $data['decision'] === 'approve' ? 114.6 : 135.2;
                                 $pdf->SetLineWidth(0.4);
                                 $pdf->SetDrawColor(0, 0, 0);
-                                $pdf->Line($checkboxX * $scaleX, 149 * $scaleY, ($checkboxX + 1) * $scaleX, 150.1 * $scaleY);
-                                $pdf->Line(($checkboxX + 1) * $scaleX, 150.1 * $scaleY, ($checkboxX + 2.5) * $scaleX, 147.6 * $scaleY);
+                                $pdf->Line($checkboxX * $scaleX, 130 * $scaleY, ($checkboxX + 1) * $scaleX, 131.1 * $scaleY);
+                                $pdf->Line(($checkboxX + 1) * $scaleX, 131.1 * $scaleY, ($checkboxX + 2.5) * $scaleX, 128.6 * $scaleY);
 
                                 // Center the approver signature on its signature line.
                                 $signatureBoxX = 129 * $scaleX;
-                                $signatureBoxY = 164.5 * $scaleY;
+                                $signatureBoxY = 144.5 * $scaleY;
                                 $signatureBoxWidth = 51.5 * $scaleX;
                                 $signatureBoxHeight = 10 * $scaleY;
                                 $signatureInfo = getimagesize($signatureAbsPath);
@@ -807,7 +994,7 @@ class PortalController extends Controller
                                 if ($data['decision'] === 'reject') {
                                     $comment = trim((string) preg_replace('/\s+/u', ' ', $data['reason']));
                                     $commentMaxWidth = 51.5 * $scaleX;
-                                    $commentFontSize = 7.5;
+                                    $commentFontSize = 9;
                                     $pdf->SetFont('Sarabun', '', $commentFontSize);
                                     $remainingComment = $comment;
                                     $commentLines = [];
@@ -815,7 +1002,7 @@ class PortalController extends Controller
                                     for ($lineIndex = 0; $lineIndex < 2 && $remainingComment !== ''; $lineIndex++) {
                                         $encodedRemaining = iconv('UTF-8', 'CP874//IGNORE', $remainingComment);
                                         if ($pdf->GetStringWidth($encodedRemaining) <= $commentMaxWidth) {
-                                            $commentLines[] = $encodedRemaining;
+                                            $commentLines[] = $remainingComment;
                                             $remainingComment = '';
                                             break;
                                         }
@@ -841,15 +1028,21 @@ class PortalController extends Controller
                                             $fittedLength = $lastSpace;
                                             $fittedLine = rtrim(mb_substr($remainingComment, 0, $fittedLength));
                                         }
-                                        $commentLines[] = iconv('UTF-8', 'CP874//IGNORE', $fittedLine);
+                                        $commentLines[] = $fittedLine;
                                         $remainingComment = ltrim(mb_substr($remainingComment, $fittedLength));
                                     }
 
                                     $continuedApprovalComment = $remainingComment !== '' ? $remainingComment : null;
 
-                                    $commentStartY = count($commentLines) > 1 ? 158.5 : 161.5;
+                                    $commentStartY = count($commentLines) > 1 ? 140 : 143.5;
                                     foreach ($commentLines as $lineIndex => $commentLine) {
-                                        $pdf->Text(129 * $scaleX, ($commentStartY + ($lineIndex * 3.5)) * $scaleY, $commentLine);
+                                        $thaiTextItems[] = [
+                                            'text' => $commentLine,
+                                            'x' => 130,
+                                            'top' => $commentStartY - 5.5 + ($lineIndex * 3.5),
+                                            'width' => 50.5,
+                                            'font_size' => $commentFontSize,
+                                        ];
                                     }
                                     $pdf->SetFont('Sarabun', '', 9);
                                 }
@@ -864,23 +1057,33 @@ class PortalController extends Controller
                                     $approverNameFontSize -= 0.5;
                                     $pdf->SetFont('Sarabun', '', $approverNameFontSize);
                                 }
-                                $approverNameX = (146.5 * $scaleX) - ($pdf->GetStringWidth($encodedApproverName) / 2);
-                                $pdf->Text($approverNameX, 179.5 * $scaleY, $encodedApproverName);
-                                $pdf->SetFont('Sarabun', '', 9);
-                                $dateStr = iconv('UTF-8', 'CP874//IGNORE', $this->thaiBuddhistDate(now()));
-                                $pdf->Text(127.5 * $scaleX, 190 * $scaleY, $dateStr);
+                                $thaiTextItems[] = [
+                                    'text' => $approverName,
+                                    'x' => 123,
+                                    'top' => 155.7,
+                                    'width' => 47,
+                                    'font_size' => $approverNameFontSize,
+                                    'align' => 'center',
+                                ];
+                                $thaiTextItems[] = [
+                                    'text' => $this->thaiBuddhistDate(now()),
+                                    'x' => 129.75,
+                                    'top' => 165,
+                                    'width' => 47,
+                                    'font_size' => 9,
+                                    'align' => 'center',
+                                ];
                             }
                         }
 
                         if ($continuedApprovalComment !== null) {
                             $continuationX = 15 * $scaleX;
-                            $continuationY = 198 * $scaleY;
+                            $continuationY = 188 * $scaleY;
                             $continuationWidth = 180 * $scaleX;
-                            $continuationTitle = iconv('UTF-8', 'CP874//IGNORE', '* ข้อคิดเห็นกรณีไม่อนุมัติ (ต่อ):');
+                            $continuationTitleText = '* ข้อคิดเห็นกรณีไม่อนุมัติ (ต่อ):';
+                            $continuationTitle = iconv('UTF-8', 'CP874//IGNORE', $continuationTitleText);
 
                             $pdf->SetFont('Sarabun', '', 8);
-                            $pdf->SetTextColor(75, 85, 99);
-                            $pdf->Text($continuationX, $continuationY, $continuationTitle);
 
                             $titleWidth = $pdf->GetStringWidth($continuationTitle);
                             $firstLineMaxWidth = $continuationWidth - $titleWidth - (2 * $scaleX);
@@ -906,33 +1109,44 @@ class PortalController extends Controller
                                 $firstContinuationLine = rtrim(mb_substr($continuedApprovalComment, 0, $firstLineLength));
                             }
 
-                            $pdf->SetTextColor(17, 24, 39);
-                            $pdf->Text(
-                                $continuationX + $titleWidth + (2 * $scaleX),
-                                $continuationY,
-                                iconv('UTF-8', 'CP874//IGNORE', $firstContinuationLine)
-                            );
+                            $thaiTextItems[] = [
+                                'text' => $continuationTitleText,
+                                'x' => 15,
+                                'top' => 184.5,
+                                'width' => $titleWidth / $scaleX,
+                                'font_size' => 8,
+                                'color' => '#4b5563',
+                            ];
+                            $thaiTextItems[] = [
+                                'text' => $firstContinuationLine,
+                                'x' => 15 + ($titleWidth / $scaleX) + 2,
+                                'top' => 184.5,
+                                'width' => $firstLineMaxWidth / $scaleX,
+                                'font_size' => 8,
+                            ];
 
                             $remainingContinuation = ltrim(mb_substr($continuedApprovalComment, $firstLineLength));
                             if ($remainingContinuation !== '') {
-                                $pdf->SetXY($continuationX, $continuationY + (2 * $scaleY));
-                                $pdf->MultiCell(
-                                    $continuationWidth,
-                                    4.5 * $scaleY,
-                                    iconv('UTF-8', 'CP874//IGNORE', $remainingContinuation),
-                                    0,
-                                    'L'
-                                );
+                                $thaiTextItems[] = [
+                                    'text' => $remainingContinuation,
+                                    'x' => 15,
+                                    'top' => 189,
+                                    'width' => 180,
+                                    'font_size' => 8,
+                                    'wrap' => true,
+                                    'line_height' => 4.5,
+                                ];
                             }
                         }
 
+                        $this->addUnicodeTextOverlay($pdf, $thaiTextItems, $size['width'], $size['height']);
                         $pdf->Output('F', $pdfAbsPath);
                     }
                 }
                 Storage::disk('local')->delete($signaturePath);
             }
 
-            CourseApproval::create([
+            ApproverReview::create([
                 'request_id' => $courseRequest->request_id,
                 'approver_pers_id' => $actor['pers_id'],
                 'decision' => $approvalDecision,
@@ -998,9 +1212,13 @@ class PortalController extends Controller
         $record = $this->documentRecord($request, $id);
 
         if ($request->query('preview') === '1') {
-            return Pdf::loadView('portal.document-pdf', compact('record'))
-                ->setPaper('a4', 'portrait')
-                ->stream();
+            $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+
+            return $this->generatedPdfResponse(
+                $record,
+                $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber) : 'document.pdf',
+                true,
+            );
         }
 
         $downloadUrl = route('requests.document.download', ['id' => $id]);
@@ -1018,9 +1236,7 @@ class PortalController extends Controller
             ? $this->requestDocumentFilename($requestNumber)
             : "{$safeName}.pdf";
 
-        $response = Pdf::loadView('portal.document-pdf', compact('record'))
-            ->setPaper('a4', 'portrait')
-            ->download($filename);
+        $response = $this->generatedPdfResponse($record, $filename, false);
 
         if ($id === 'draft') {
             $request->session()->put('portal.draft.unsigned_pdf_downloaded_at', now()->toDateTimeString());
@@ -1062,12 +1278,27 @@ class PortalController extends Controller
             return $disk->response(
                 $document->storage_key,
                 $downloadName,
-                ['Content-Type' => 'application/pdf'],
+                [
+                    'Content-Type' => 'application/pdf',
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                    'Pragma' => 'no-cache',
+                    'Expires' => '0',
+                ],
                 'inline'
             );
         }
 
-        $response = $disk->download($document->storage_key, $downloadName);
+        $response = $disk->download(
+            $document->storage_key,
+            $downloadName,
+            $kind === 'signed'
+                ? [
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                    'Pragma' => 'no-cache',
+                    'Expires' => '0',
+                ]
+                : []
+        );
 
         if ($kind === 'signed'
             && $this->actor($request)['role'] === 'officer'
@@ -1119,6 +1350,7 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
+            'dean_pers_id' => isset($data['dean_pers_id']) ? (int) $data['dean_pers_id'] : null,
             'course_name_th' => $data['course_th'],
             'course_name_en' => $data['course_en'],
             'status' => $status,
@@ -1176,7 +1408,11 @@ class PortalController extends Controller
                 'additional_pending' => false,
         ])->values()->all();
         $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
-        $latestApproval = $courseRequest->approvals->sortByDesc('decided_at')->first();
+        $latestApproval = $courseRequest->approverReviews->sortByDesc('decided_at')->first();
+        $latestStatusHistory = $courseRequest->histories
+            ->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))
+            ->first();
+        $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
         $courseIdNotification = $courseRequest->notifications
             ->where('notification_type', 'COURSE_ID_RECORDED')
             ->sortByDesc('notification_id')
@@ -1199,7 +1435,9 @@ class PortalController extends Controller
             'RETURNED_FOR_REVISION' => $returnedByApprover
                 ? $latestApproval->comment
                 : $latestReview?->return_reason,
-            'REJECTED' => $latestApproval?->comment,
+            'REJECTED' => $latestStatusHistory?->change_source === 'DEAN'
+                ? $latestDeanReview?->comment
+                : $latestApproval?->comment,
             default => null,
         };
 
@@ -1215,6 +1453,11 @@ class PortalController extends Controller
             'subunit' => $courseRequest->target_subdept_id
                 ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id)
                 : null,
+            'dean_pers_id' => $courseRequest->dean_pers_id,
+            'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $courseRequest->dean_pers_id ? $this->personPosition((int) $courseRequest->dean_pers_id) : null,
+            'dean_decision' => $latestDeanReview?->decision,
+            'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
             'project_name' => $courseRequest->project_name,
             'project_type' => $courseRequest->project_type_code,
             'project_type_label' => $courseRequest->projectType?->project_type_name_th,
@@ -1262,6 +1505,7 @@ class PortalController extends Controller
             'course_id' => $courseRequest->course_id,
             'completion_notification_id' => $courseIdNotification?->notification_id,
             'reason' => $reason,
+            'decision_source' => $latestStatusHistory?->change_source,
             'returned_by' => $courseRequest->status === 'RETURNED_FOR_REVISION'
                 ? ($returnedByApprover ? 'APPROVER' : 'OFFICER')
                 : null,
@@ -1273,6 +1517,7 @@ class PortalController extends Controller
             'approval_comment' => $latestApproval?->comment,
             'approval_decided_at' => $this->thaiBuddhistDate($latestApproval?->decided_at),
             'signed_path' => $signed?->storage_key,
+            'document_name' => $this->requestDocumentFilename($courseRequest->request_no),
             'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no) : null,
             'additional_files' => $additionalFiles,
             'removed_additional_document_ids' => [],
@@ -1293,6 +1538,77 @@ class PortalController extends Controller
             'uploaded_by_pers_id' => $uploaderId,
             'uploaded_at' => now(),
         ]);
+    }
+
+    private function ensureSignedFormDocument(
+        CourseRequest $courseRequest,
+        int $uploaderId,
+        bool $forceFresh = false,
+    ): CourseDocument
+    {
+        if (! $forceFresh) {
+            $existing = $courseRequest->documents()
+                ->where('document_type', 'SIGNED_FORM')
+                ->latest('uploaded_at')
+                ->latest('document_id')
+                ->first();
+
+            if ($existing && Storage::disk('local')->exists($existing->storage_key)) {
+                return $existing;
+            }
+        }
+
+        $record = $this->toRecord($courseRequest);
+        $contents = $this->documentPdfRenderer->render($record);
+        $path = 'course-requests/' . now()->format('Y/m') . '/' . Str::uuid() . '.pdf';
+
+        abort_unless(Storage::disk('local')->put($path, $contents), 500, 'ไม่สามารถสร้างเอกสารสำหรับลงนามได้');
+
+        return CourseDocument::create([
+            'request_id' => $courseRequest->request_id,
+            'document_type' => 'SIGNED_FORM',
+            'storage_key' => $path,
+            'original_filename' => $this->requestDocumentFilename($courseRequest->request_no),
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => strlen($contents),
+            'uploaded_by_pers_id' => $uploaderId,
+            'uploaded_at' => now(),
+        ]);
+    }
+
+    private function activeDeanPersonIds(int $targetDepartmentId): array
+    {
+        if ($targetDepartmentId <= 0) {
+            return [];
+        }
+
+        $personIds = FacultyDean::query()
+            ->where('target_dept_id', $targetDepartmentId)
+            ->where('is_active', 'Y')
+            ->orderBy('faculty_dean_id')
+            ->pluck('dean_pers_id')
+            ->map(fn ($personId) => (int) $personId)
+            ->all();
+
+        if ($personIds === []) {
+            $fallbackPersonId = (int) config('course-workflow.dean.fallback_person_id', 0);
+            if ($fallbackPersonId > 0) {
+                return [$fallbackPersonId];
+            }
+        }
+
+        return array_values(array_filter($personIds, function (int $personId): bool {
+            $person = $this->personnelDirectory->findByPersonId($personId);
+
+            return $person !== null && $this->personnelDirectory->email($person) !== null;
+        }));
+    }
+
+    private function deanOptionsForTargetDepartment(int $targetDepartmentId): array
+    {
+        return collect($this->activeDeanPersonIds($targetDepartmentId))
+            ->mapWithKeys(fn (int $personId) => [$personId => $this->personName($personId)])
+            ->all();
     }
 
     private function addHistory(CourseRequest $courseRequest, string $status, ?int $personId, string $source): void
@@ -1341,6 +1657,30 @@ class PortalController extends Controller
         throw ValidationException::withMessages([
             'email' => 'ไม่พบอีเมล Google Workspace ของผู้ยื่นคำร้องใน SWU MIS API',
         ]);
+    }
+
+    private function personRecipient(int $personId, string $roleLabel): array
+    {
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        $email = $person ? $this->personnelDirectory->email($person) : null;
+
+        if ($person !== null && $email !== null) {
+            return ['pers_id' => $personId, 'email' => $email];
+        }
+
+        throw ValidationException::withMessages([
+            'email' => "ไม่พบอีเมล Google Workspace ของ{$roleLabel}ใน SWU MIS API",
+        ]);
+    }
+
+    private function personActor(int $personId, string $roleLabel): array
+    {
+        $recipient = $this->personRecipient($personId, $roleLabel);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+
+        return $recipient + [
+            'name' => $person ? $this->personnelDirectory->name($person) : $roleLabel,
+        ];
     }
 
     private function roleRecipients(string $roleCode): array
@@ -1479,6 +1819,13 @@ class PortalController extends Controller
         return "บุคลากร #$personId";
     }
 
+    private function personPosition(int $personId): string
+    {
+        $person = $this->personnelDirectory->findByPersonId($personId);
+
+        return $person !== null ? trim((string) $person->position) : '';
+    }
+
     private function departmentName(int $departmentId): string
     {
         return $this->departmentDirectory->name($departmentId);
@@ -1501,8 +1848,119 @@ class PortalController extends Controller
         return '—';
     }
 
+    private function generatedPdfResponse(array $record, string $filename, bool $inline)
+    {
+        $fallbackFilename = Str::ascii($filename);
+        if ($fallbackFilename === '' || $fallbackFilename === '.pdf') {
+            $fallbackFilename = 'document.pdf';
+        }
+
+        $response = response($this->documentPdfRenderer->render($record), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                $inline ? HeaderUtils::DISPOSITION_INLINE : HeaderUtils::DISPOSITION_ATTACHMENT,
+                $filename,
+                $fallbackFilename,
+            ),
+        ]);
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        $response->headers->set('Pragma', 'no-cache');
+        $response->headers->set('Expires', '0');
+
+        return $response;
+    }
+
+    private function addUnicodeTextOverlay(Fpdi $pdf, array $items, float $pageWidth, float $pageHeight): void
+    {
+        if ($items === []) {
+            return;
+        }
+
+        $scaleX = $pageWidth / 210;
+        $scaleY = $pageHeight / 297;
+        $fontCachePath = storage_path('fonts/tcpdf');
+        abort_unless(
+            is_dir($fontCachePath) || @mkdir($fontCachePath, 0755, true) || is_dir($fontCachePath),
+            500,
+            'ไม่สามารถเตรียมพื้นที่เก็บฟอนต์ภาษาไทยสำหรับ PDF ได้',
+        );
+        $fontName = \TCPDF_FONTS::addTTFfont(
+            resource_path('fonts/Sarabun-Regular.ttf'),
+            'TrueTypeUnicode',
+            '',
+            96,
+            $fontCachePath,
+        );
+        abort_unless(is_string($fontName) && $fontName !== '', 500, 'ไม่สามารถเตรียมฟอนต์ภาษาไทยสำหรับ PDF ได้');
+
+        $overlayPdf = new \TCPDF('P', 'mm', [$pageWidth, $pageHeight], true, 'UTF-8', false);
+        $overlayPdf->setPrintHeader(false);
+        $overlayPdf->setPrintFooter(false);
+        $overlayPdf->SetMargins(0, 0, 0);
+        $overlayPdf->SetAutoPageBreak(false);
+        $overlayPdf->setFontSubsetting(true);
+        $overlayPdf->AddPage();
+        $overlayPdf->AddFont($fontName, '', $fontCachePath.DIRECTORY_SEPARATOR.$fontName.'.php', true);
+        $overlayPdf->setCellPaddings(0, 0, 0, 0);
+        $overlayPdf->setCellMargins(0, 0, 0, 0);
+
+        foreach ($items as $item) {
+            $left = ((float) $item['x']) * $scaleX;
+            $top = ((float) $item['top']) * $scaleY;
+            $width = ((float) $item['width']) * $scaleX;
+            $fontSize = (float) $item['font_size'];
+            $align = strtolower((string) ($item['align'] ?? 'left'));
+            $align = match (substr($align, 0, 1)) {
+                'c' => 'center',
+                'r' => 'right',
+                default => 'left',
+            };
+            $color = $item['color'] ?? '#000000';
+            $lineHeight = ((float) ($item['line_height'] ?? max(4.2, $fontSize * 0.48))) * $scaleY;
+            $rgb = sscanf(ltrim((string) $color, '#'), '%02x%02x%02x');
+            $overlayPdf->SetTextColor($rgb[0] ?? 0, $rgb[1] ?? 0, $rgb[2] ?? 0);
+            $overlayPdf->SetFont($fontName, '', $fontSize);
+            $overlayPdf->SetXY($left, $top);
+
+            if ($item['wrap'] ?? false) {
+                $overlayPdf->MultiCell(
+                    $width,
+                    $lineHeight,
+                    (string) $item['text'],
+                    0,
+                    strtoupper(substr($align, 0, 1)),
+                    false,
+                    1,
+                    '',
+                    '',
+                    true,
+                    0,
+                    false,
+                    true,
+                    0,
+                    'T',
+                    false,
+                );
+            } else {
+                $overlayPdf->Cell(
+                    $width,
+                    $lineHeight,
+                    (string) $item['text'],
+                    0,
+                    0,
+                    strtoupper(substr($align, 0, 1)),
+                );
+            }
+        }
+
+        $overlay = $overlayPdf->Output('', 'S');
+        $pdf->setSourceFile(StreamReader::createByString($overlay));
+        $overlayTemplate = $pdf->importPage(1);
+        $pdf->useTemplate($overlayTemplate, 0, 0, $pageWidth, $pageHeight);
+    }
+
     private function recordRelations(): array
     {
-        return ['projectType', 'category', 'instructors', 'documents', 'officerReviews', 'approvals', 'notifications'];
+        return ['projectType', 'category', 'instructors', 'documents', 'deanReviews', 'officerReviews', 'approverReviews', 'notifications', 'histories'];
     }
 }

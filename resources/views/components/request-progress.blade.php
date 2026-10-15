@@ -1,15 +1,18 @@
-@props(['status', 'returnedBy' => null])
+@props(['status', 'returnedBy' => null, 'decisionSource' => null])
 @php
     $stage = match ($status) {
         'PENDING_SIGNED_DOCUMENT' => 0,
-        'UNDER_OFFICER_REVIEW' => 1,
-        'RETURNED_FOR_REVISION' => $returnedBy === 'APPROVER' ? 2 : 1,
-        default => 2,
+        'PENDING_DEAN_REVIEW' => 1,
+        'UNDER_OFFICER_REVIEW' => 2,
+        'RETURNED_FOR_REVISION' => $returnedBy === 'APPROVER' ? 3 : 2,
+        'REJECTED' => $decisionSource === 'DEAN' ? 1 : 3,
+        default => 3,
     };
     $finished = in_array($status, ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED']);
     $rejected = in_array($status, ['RETURNED_FOR_REVISION', 'REJECTED']);
     $steps = [
-        ['ยื่นคำร้องสำเร็จ', 'กรอกข้อมูลและอัปโหลดเอกสารเรียบร้อย', 'check'],
+        ['ยื่นคำร้องสำเร็จ', 'กรอกข้อมูลคำร้องเรียบร้อย', 'check'],
+        ['รับรองโดยส่วนงาน', 'ผู้รับรองของส่วนงานเป้าหมายพิจารณาคำร้อง', 'clipboard-check'],
         ['ตรวจสอบเอกสาร', 'เจ้าหน้าที่ตรวจสอบคำขอ', 'file-text'],
         ['อนุมัติสร้างรายวิชา', 'ผู้มีอำนาจพิจารณาคำร้อง', 'file-check'],
     ];

@@ -48,13 +48,23 @@ class CourseRequest extends Course133Model
         return $this->hasMany(OfficerReview::class, 'request_id');
     }
 
-    public function approvals(): HasMany
+    public function deanReviews(): HasMany
     {
-        return $this->hasMany(CourseApproval::class, 'request_id');
+        return $this->hasMany(DeanReview::class, 'request_id');
+    }
+
+    public function approverReviews(): HasMany
+    {
+        return $this->hasMany(ApproverReview::class, 'request_id');
     }
 
     public function notifications(): HasMany
     {
         return $this->hasMany(NotificationOutbox::class, 'request_id');
+    }
+
+    public function histories(): HasMany
+    {
+        return $this->hasMany(RequestStatusHistory::class, 'request_id');
     }
 }

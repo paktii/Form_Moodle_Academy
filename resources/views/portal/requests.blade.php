@@ -247,7 +247,9 @@ default => $statuses,
     <x-portal-modal :id="'native-pdf-preview-'.$record['id']" title="ตัวอย่าง PDF ที่อนุมัติแล้ว" class="native-pdf-preview-dialog">
         <iframe
             data-native-pdf-preview
-            data-pdf-url="{{ route('requests.attachment', [$record['id'], 'signed', 'preview' => 1]) }}"
+            data-pdf-url="{{ $record['signed_path']
+                ? route('requests.attachment', [$record['id'], 'signed', 'preview' => 1])
+                : route('requests.document', ['id' => $record['id'], 'preview' => 1]) }}"
             title="ตัวอย่าง PDF ที่อนุมัติแล้ว"></iframe>
     </x-portal-modal>
     <x-portal-modal :id="'course-'.$record['id']" :title="$record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข Course ID' : 'บันทึก Course ID'" class="course-modal">

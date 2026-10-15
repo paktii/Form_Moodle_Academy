@@ -17,7 +17,7 @@
 
     .request-progress {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         margin-bottom: 24px;
         padding: 24px;
         background: #fff;
@@ -88,14 +88,171 @@
         border-color: #e8c15a;
     }
 
+    .request-progress__step--current .request-progress__icon .portal-icon {
+        filter: brightness(0) saturate(100%) invert(79%) sepia(56%) saturate(596%) hue-rotate(354deg) brightness(93%) contrast(94%);
+        opacity: 1;
+    }
+
     .request-progress__step--returned .request-progress__icon {
         background: #fff1f2;
         border-color: #dc6c76;
     }
 
+    .request-progress__step--returned .request-progress__icon .portal-icon {
+        filter: brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3170%) hue-rotate(349deg) brightness(94%) contrast(90%);
+        opacity: 1;
+    }
+
     .request-progress__step--pending .portal-icon {
         filter: grayscale(1);
         opacity: .55;
+    }
+
+    .dean-review-page {
+        display: grid;
+        place-items: center;
+        max-width: 1186px;
+        margin: auto;
+        padding: 46px 36px 64px;
+    }
+
+    .dean-review-card {
+        width: 100%;
+        padding: 32px;
+    }
+
+    .dean-review-card__brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #e5e7eb;
+        color: var(--portal-navy);
+        font-size: 18px;
+        font-weight: 700;
+    }
+
+    .dean-review-card__brand img {
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+    }
+
+    .dean-review-card h1 {
+        margin-bottom: 8px;
+        font-size: 26px;
+    }
+
+    .dean-review-card__request-number {
+        margin-top: 24px;
+        padding: 12px 16px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        background: #f8f9fb;
+        color: #4b5563;
+        font-size: 14px;
+    }
+
+    .dean-review-card__request-number strong {
+        color: #111827;
+    }
+
+    .dean-review-card__details {
+        margin-top: 28px;
+    }
+
+    .dean-review-card__details .detail-field {
+        display: grid;
+        grid-template-rows: auto 1fr;
+    }
+
+    .dean-review-card__details .detail-field dd {
+        width: 100%;
+        height: 100%;
+    }
+
+    .dean-review-card .student-roster {
+        margin-top: 28px;
+        padding: 28px 0 0;
+        border: none;
+        border-top: 1px solid #e5e7eb;
+        border-radius: 0;
+    }
+
+    .dean-review-card .student-roster__heading h3 {
+        font-size: 16px;
+    }
+
+    .dean-review-card .student-roster .document-row,
+    .dean-review-attachments .document-row {
+        background: #eceff3;
+    }
+
+    .dean-review-attachments {
+        margin-top: 28px;
+        padding-top: 28px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .dean-review-attachments h2 {
+        margin-bottom: 16px;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .dean-review-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        margin-top: 28px;
+        padding-top: 28px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .dean-review-actions .portal-button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .dean-review-summary {
+        display: grid;
+        margin: 24px 0;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .dean-review-summary > div {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr);
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .dean-review-summary dt {
+        color: #6b7280;
+    }
+
+    .dean-review-summary dd {
+        margin: 0;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .dean-review-summary__list-item {
+        display: block;
+    }
+
+    .dean-review-result {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+        padding: 32px 0;
+        text-align: center;
+    }
+
+    .dean-review-result h1,
+    .dean-review-result p {
+        margin: 0;
     }
 
     .requester-detail__card {
@@ -197,6 +354,11 @@
         margin-bottom: 16px;
     }
 
+    .student-roster--empty .student-roster__heading {
+        align-items: center;
+        margin-bottom: 0;
+    }
+
     .pending-signed-document__heading h3,
     .student-roster__heading h3 {
         display: flex;
@@ -250,7 +412,114 @@
         font-size: 11px;
     }
 
+    @media (max-width: 900px) {
+        .dean-review-card__details .detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .dean-review-card__details .detail-field {
+            grid-column: 1 / -1;
+        }
+    }
+
     @media (max-width: 760px) {
+        .dean-review-page {
+            padding: clamp(20px, 6vw, 24px) clamp(12px, 4vw, 16px) 40px;
+        }
+
+        .dean-review-card {
+            padding: clamp(16px, 5vw, 20px);
+        }
+
+        .dean-review-card__brand {
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            font-size: clamp(15px, 4.2vw, 17px);
+        }
+
+        .dean-review-card__brand img {
+            width: clamp(36px, 11vw, 44px);
+            height: clamp(36px, 11vw, 44px);
+        }
+
+        .dean-review-card h1 {
+            font-size: clamp(20px, 5.8vw, 24px);
+            line-height: 1.35;
+        }
+
+        .dean-review-card > .muted {
+            font-size: clamp(11px, 3.3vw, 13px);
+            line-height: 1.5;
+        }
+
+        .dean-review-card__request-number {
+            margin-top: 20px;
+            padding: 10px 12px;
+            font-size: clamp(12px, 3.5vw, 13px);
+        }
+
+        .dean-review-card__details {
+            margin-top: 24px;
+        }
+
+        .dean-review-card__details .detail-grid {
+            gap: 16px;
+        }
+
+        .dean-review-card__details .detail-section + .detail-section {
+            margin-top: 20px;
+        }
+
+        .dean-review-card__details .detail-section h3,
+        .dean-review-card .student-roster__heading h3,
+        .dean-review-attachments h2 {
+            margin-bottom: 12px;
+            font-size: clamp(14px, 4vw, 16px);
+        }
+
+        .dean-review-card__details .detail-field dt {
+            margin-bottom: 6px;
+            font-size: clamp(12px, 3.5vw, 13px);
+        }
+
+        .dean-review-card__details .detail-field dd {
+            min-height: 40px;
+            padding: 10px;
+            font-size: clamp(12px, 3.5vw, 13px);
+        }
+
+        .dean-review-card .student-roster,
+        .dean-review-attachments,
+        .dean-review-actions {
+            margin-top: 24px;
+            padding-top: 24px;
+        }
+
+        .dean-review-attachments .document-row {
+            flex-wrap: nowrap;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .dean-review-attachments .document-row__name {
+            flex-basis: auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .dean-review-attachments .document-row__download {
+            width: 32px;
+            min-height: 32px;
+            margin-left: auto;
+            padding: 6px;
+        }
+
+        .dean-review-attachments .document-row__download-label {
+            display: none;
+        }
+
         .pending-signed-document__heading,
         .student-roster__heading {
             display: grid;
@@ -388,6 +657,19 @@
 
         .requester-detail__card {
             padding: 16px;
+        }
+
+        .dean-review-card {
+            padding: 16px;
+        }
+
+        .dean-review-summary > div {
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+
+        .dean-review-card form .portal-button {
+            width: 100%;
         }
 
         .request-progress {

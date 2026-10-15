@@ -3,7 +3,7 @@
     $labels = config('course-workflow.statuses');
     $label = $labels[$status] ?? $status;
     $variant = match ($status) {
-        'UNDER_OFFICER_REVIEW', 'PENDING_APPROVAL', 'รอตรวจสอบ', 'รออนุมัติ' => 'waiting',
+        'PENDING_DEAN_REVIEW', 'UNDER_OFFICER_REVIEW', 'PENDING_APPROVAL', 'รอตรวจสอบ', 'รออนุมัติ' => 'waiting',
         'PENDING_COURSE_ID', 'อนุมัติแล้ว' => 'approved',
         'COURSE_ID_RECORDED', 'เสร็จสมบูรณ์' => 'complete',
         'REJECTED', 'RETURNED_FOR_REVISION', 'ไม่อนุมัติ' => 'rejected',

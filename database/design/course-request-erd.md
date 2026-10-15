@@ -60,7 +60,8 @@ erDiagram
     COURSE_REQUEST ||--|{ COURSE_INSTRUCTOR : includes
     COURSE_REQUEST ||--o{ COURSE_DOCUMENT : has
     COURSE_REQUEST ||--o{ OFFICER_REVIEW : receives
-    COURSE_REQUEST ||--o{ COURSE_APPROVAL : receives
+    COURSE_REQUEST ||--o{ DEAN_REVIEW : receives
+    COURSE_REQUEST ||--o{ APPROVER_REVIEW : receives
     COURSE_REQUEST ||--o{ REQUEST_STATUS_HISTORY : records
     COURSE_REQUEST ||--o{ NOTIFICATION_OUTBOX : triggers
 
@@ -70,7 +71,8 @@ erDiagram
     OFFICER_API o|--o{ COURSE_INSTRUCTOR : "LR identifies"
     OFFICER_API ||--o{ COURSE_DOCUMENT : "LR uploads"
     OFFICER_API ||--o{ OFFICER_REVIEW : "LR reviews"
-    OFFICER_API ||--o{ COURSE_APPROVAL : "LR approves"
+    OFFICER_API ||--o{ DEAN_REVIEW : "LR certifies"
+    OFFICER_API ||--o{ APPROVER_REVIEW : "LR approves"
     OFFICER_API o|--o{ COURSE_REQUEST : "LR records_course_id"
     OFFICER_API o|--o{ REQUEST_STATUS_HISTORY : "LR changes"
     OFFICER_API o|--o{ NOTIFICATION_OUTBOX : "LR receives"
@@ -178,8 +180,17 @@ erDiagram
         datetime2 reviewed_at
     }
 
-    COURSE_APPROVAL {
-        bigint approval_id PK
+    DEAN_REVIEW {
+        bigint dean_review_id PK
+        bigint request_id FK
+        int dean_pers_id "LR: Officer.personId"
+        varchar decision
+        text comment
+        datetime2 decided_at
+    }
+
+    APPROVER_REVIEW {
+        bigint approver_review_id PK
         bigint request_id FK
         int approver_pers_id "LR: Officer.personId"
         varchar decision
@@ -218,7 +229,8 @@ erDiagram
 | `course133.course_request` | `course_instructor` | 1 : 1..N | FK; Laravel บังคับอย่างน้อย 1 คน |
 | `course133.course_request` | `course_document` | 1 : 0..N | FK |
 | `course133.course_request` | `officer_review` | 1 : 0..N | FK |
-| `course133.course_request` | `course_approval` | 1 : 0..N | FK |
+| `course133.course_request` | `dean_review` | 1 : 0..N | FK |
+| `course133.course_request` | `approver_review` | 1 : 0..N | FK |
 | `course133.project_type` | `course133.course_request` | 1 : 0..N | FK `project_type_code` |
 | `course133.course_category` | `course133.course_request` | 1 : 0..N | FK `category_code` |
 | `course133.course_request` | `request_status_history` | 1 : 0..N | FK |

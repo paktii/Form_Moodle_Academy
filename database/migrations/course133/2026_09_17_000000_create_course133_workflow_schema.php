@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS [course133].[officer_review];
 DROP TABLE IF EXISTS [course133].[course_document];
 DROP TABLE IF EXISTS [course133].[course_instructor];
 DROP TABLE IF EXISTS [course133].[course_request];
+DROP TABLE IF EXISTS [course133].[faculty_dean];
 DROP TABLE IF EXISTS [course133].[user_role_assignment];
 DROP TABLE IF EXISTS [course133].[course_category];
 DROP TABLE IF EXISTS [course133].[project_type];

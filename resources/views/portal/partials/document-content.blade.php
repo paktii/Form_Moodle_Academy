@@ -23,6 +23,7 @@ $enrollment = ($record['enrollment'] ?? '') === 'อื่น ๆ (ระบุ)
 $targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])
     ->filter(fn ($value) => filled($value))
     ->implode(', ');
+$deanApproved = ($record['dean_decision'] ?? null) === 'APPROVED';
 $officerPassed = ($record['officer_decision'] ?? null) === 'PASSED';
 $approved = ($record['approval_decision'] ?? null) === 'APPROVED';
 $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNED'], true);
@@ -167,17 +168,15 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
             <div class="document-signatures">
                 <div class="document-signature">
                     <h3>ผู้ขอสร้างรายวิชา / ผู้ประสานงาน</h3>
-                    <p>ลงชื่อ <span></span></p>
-                    <p>( <span>{{ $coordinatorName }}</span> )</p>
+                    <p>ชื่อ <span>{{ $coordinatorName }}</span></p>
                     <p>ตำแหน่ง <span>{{ $text('coordinator_position') }}</span></p>
-                    <p>วันที่ <span>{{ $thaiDate(now()) }}</span></p>
+                    <p>วันที่ยื่นคำร้อง <span>{{ $thaiDate($record['submitted_at'] ?? now()) }}</span></p>
                 </div>
                 <div class="document-signature">
                     <h3>หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ</h3>
-                    <p>ลงชื่อ <span></span></p>
-                    <p>( <span></span> )</p>
-                    <p>ตำแหน่ง <span></span></p>
-                    <p>วันที่ <span></span></p>
+                    <p>ลงชื่อ <span>{{ $deanApproved ? $text('dean_name') : '' }}</span></p>
+                    <p>ตำแหน่ง <span>{{ $deanApproved ? $text('dean_position') : '' }}</span></p>
+                    <p>วันที่ <span>{{ $deanApproved ? $thaiDate($record['dean_decided_at'] ?? null) : '' }}</span></p>
                 </div>
             </div>
         </section>

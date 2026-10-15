@@ -14,11 +14,13 @@
 
 @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 0;
 }
 
 * {
     box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
 }
 
 html,
@@ -81,7 +83,6 @@ body {
 .document-header__title h1 {
     position: relative;
     top: 1mm;
-    left: -6mm;
     padding: 0;
     margin: 0;
     font-size: 13pt;
@@ -108,7 +109,7 @@ body {
 }
 
 .document-section>h2 {
-    padding: 1.4mm 3mm;
+    padding: 2.4mm 3mm;
     margin: 0;
     color: #ffffff;
     font-size: 9.7pt;
@@ -127,7 +128,7 @@ body {
 .document-field {
     display: inline-block;
     width: 49%;
-    padding: 0 0 1.1mm;
+    padding: 0 0 4mm;
     margin-right: 2%;
     margin-left: 0;
     vertical-align: top;
@@ -217,8 +218,8 @@ body {
     border-bottom: 0.5pt dotted #6b7280;
 }
 
-.document-section--staff {
-    margin-top: 6mm;
+.document-section.document-section--staff {
+    margin-top: 8mm;
 }
 
 .document-staff-grid {

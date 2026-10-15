@@ -1,6 +1,8 @@
 # SQL Server 133 migration
 
-Migration ชุดนี้สร้าง schema `course133` จำนวน 11 ตารางในฐาน `academy_db1447` ผ่าน connection `course133` โดยข้อมูลบุคลากรและหน่วยงานอ่านจาก SWU MIS API
+Migration ชุดนี้สร้าง schema `course133` ในฐาน `academy_db1447` ผ่าน connection `course133` โดยข้อมูลบุคลากรและหน่วยงานอ่านจาก SWU MIS API
+
+ลิงก์รับรองของคณบดีมีอายุ 1 เดือนตาม `COURSE133_DEAN_REVIEW_LINK_MONTHS` อีเมลถึงคณบดี เจ้าหน้าที่ และผู้มีอำนาจพิจารณาใน environment `local`/`uat` จะถูกส่งไปยัง `COURSE133_TEST_EMAIL` ส่วนอีเมลแจ้งผู้ยื่นคำร้องจะส่งไปยังอีเมลของผู้ยื่นคนนั้นตาม workflow และ production จะใช้ผู้รับจริงทุกบทบาท
 
 คอลัมน์ `*_pers_id` และ `target_dept_id` ใช้ `int` ให้ตรงกับ `personId` และ `deptCd` จาก SWU MIS API แต่ไม่มี Foreign Key ไปยังข้อมูลภายนอก ข้อมูลหน่วยงานสำหรับตรวจสอบค่าที่ผู้ยื่นเลือกต้องมาจาก endpoint `Department` โดยตรงก่อนบันทึกรหัสหน่วยงานเป้าหมายลง Server 133
 
@@ -20,6 +22,13 @@ php artisan migrate:status --database=course133 --path=database/migrations/cours
 Migration มี guard และจะหยุดทันทีหาก connection ไม่ได้ชี้ไปยังฐานชื่อ `academy_db1447` หรือถ้าพบตาราง `course133` เดิม โดยไม่ลบหรือแทนที่ตารางเดิม
 
 หลัง migrate ระบบจะสร้าง role assignment จากค่า `COURSE133_*_PERS_ID` ชั่วคราวให้ทั้ง requester, officer และ approver ด้วย ส่วนข้อมูลคำร้อง อาจารย์ เอกสาร ผลตรวจ ผลอนุมัติ ประวัติ และคิวอีเมล จะถูกอ่าน/เขียนที่ `academy_db1447.course133` โดยตรง
+
+กำหนดหัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการของส่วนงานเป้าหมายใน `course133.faculty_dean` โดยใช้ `target_dept_id` จาก `deptCd` และ `dean_pers_id` จาก `personId` ของ SWU MIS API ตัวอย่าง:
+
+```sql
+INSERT INTO [course133].[faculty_dean] ([target_dept_id], [dean_pers_id], [is_active])
+VALUES (1000, 123456, 'Y');
+```
 
 ตั้งค่า `MAIL_*` เป็น SMTP จริง แล้วให้ Laravel scheduler ทำงานเพื่อส่งอีเมลจาก `notification_outbox`:
 

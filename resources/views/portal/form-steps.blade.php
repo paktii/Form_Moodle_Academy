@@ -103,12 +103,26 @@ $documentDownloadFilename = $requestCode !== ''
                             </label>
                         </div>
                         @else
+                        <section class="dean-selection">
+                            <div class="form-section__header">
+                                <h2>เลือกผู้รับรองของส่วนงานเป้าหมาย</h2>
+                            </div>
+                            <x-portal-searchable-select name="dean_pers_id" label="หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" />
+                            @error('dean_pers_id')
+                                <p class="field-error" role="alert">{{ $message }}</p>
+                            @enderror
+                            {{-- Temporarily hidden while the dean master is being prepared and the workflow is under review.
+                            @if(empty($deanOptions))
+                                <p class="field-error" role="alert">ยังไม่ได้กำหนดผู้รับรองสำหรับส่วนงาน/คณะ/สำนักเป้าหมาย กรุณาติดต่อผู้ดูแลระบบ</p>
+                            @endif
+                            --}}
+                        </section>
                         <section class="document-download">
                             <div class="form-section__header">
-                                <h2>ดาวน์โหลดเอกสารเพื่อลงนาม</h2><span class="muted">ทั้งหมด 1 ไฟล์</span>
+                                <h2>ตรวจสอบเอกสารคำร้อง</h2><span class="muted">ทั้งหมด 1 ไฟล์</span>
                             </div>
                             <div class="document-row"><x-portal-icon name="download" />
-                                <div class="document-row__name">{{ $documentDownloadFilename }}</div><div class="document-row__actions"><x-portal-button variant="secondary" class="document-row__icon-button" data-open-dialog="pdf-preview-dialog" aria-label="Preview เอกสาร" title="Preview เอกสาร"><x-portal-icon name="eye" /></x-portal-button><x-portal-button :href="route('requests.document.download', 'draft')" variant="secondary" class="document-row__icon-button" aria-label="ดาวน์โหลดเอกสาร" title="ดาวน์โหลดเอกสาร"><x-portal-icon name="download" /></x-portal-button></div>
+                                <div class="document-row__name">{{ $documentDownloadFilename }}</div><div class="document-row__actions"><x-portal-button variant="secondary" class="document-row__icon-button" data-open-dialog="pdf-preview-dialog" aria-label="Preview เอกสาร" title="Preview เอกสาร"><x-portal-icon name="eye" /></x-portal-button><x-portal-button :href="route('requests.document.download', 'draft')" variant="secondary" class="document-row__icon-button" :download="$documentDownloadFilename" aria-label="ดาวน์โหลดเอกสาร" title="ดาวน์โหลดเอกสาร"><x-portal-icon name="download" /></x-portal-button></div>
                             </div>
                         </section>
                         <section class="document-attachments">
@@ -144,8 +158,8 @@ $documentDownloadFilename = $requestCode !== ''
     </x-portal-modal>
     @if($step === 4)
     <x-portal-modal id="finish-dialog" title="ยืนยันการบันทึกคำร้อง">
-        <p data-finish-dialog-text style="text-align: center; font-size: 16px; line-height: 1.6;">คุณต้องการบันทึกคำร้องนี้ใช่หรือไม่?<br>หลังจากบันทึกแล้ว <span class="finish-dialog__mobile-line">ระบบจะนำคุณไปยังหน้ารายการคำร้อง</span><br class="finish-dialog__desktop-break">เพื่อรอการอัปโหลดเอกสารที่ลงนามแล้วในภายหลัง</p>
-        <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit" form="course-form" name="navigation" value="next" variant="primary"><span data-finish-confirm-label>ยืนยันการบันทึก</span></x-portal-button></div>
+        <p data-finish-dialog-text style="text-align: center; font-size: 16px; line-height: 1.6;">คุณต้องการส่งคำร้องนี้ให้ผู้รับรองที่เลือกใช่หรือไม่?<br>หลังจากบันทึกแล้ว <span class="finish-dialog__mobile-line">คำร้องจะอยู่ในสถานะรอคณบดีรับรอง</span></p>
+        <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit" form="course-form" name="navigation" value="next" variant="primary"><span data-finish-confirm-label>ยืนยันการส่งคำร้อง</span></x-portal-button></div>
     </x-portal-modal>
     @endif
 </x-portal-layout>

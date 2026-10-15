@@ -1,13 +1,23 @@
 <x-portal-layout title="รายละเอียดเอกสาร" tab-title="Request Details">
     <main class="portal-main requester-detail">
         <div class="detail-actions requester-detail__navigation"><x-portal-button :href="route('requests.index')" variant="secondary">ย้อนกลับ</x-portal-button><span class="muted">เลขที่คำร้อง: {{ $record['number'] }}</span></div>
-        @if($record['reason'] ?? null)<section class="reason-banner">
+        @if($record['reason'] ?? null)
+        @php
+            $reasonTitle = match (true) {
+                $record['status'] === 'RETURNED_FOR_REVISION' => 'ส่งกลับแก้ไข',
+                ($record['decision_source'] ?? null) === 'DEAN'
+                    || (($record['decision_source'] ?? null) === null && ($record['dean_decision'] ?? null) === 'REJECTED')
+                    => 'ไม่ผ่านการอนุมัติโดยคณบดี',
+                default => 'ไม่ผ่านการอนุมัติโดยผู้มีอำนาจพิจารณา',
+            };
+        @endphp
+        <section class="reason-banner">
             <div>
-                <h2>{{ $record['status'] === 'RETURNED_FOR_REVISION' ? 'ส่งกลับแก้ไข' : 'ไม่ผ่านการอนุมัติ' }}: {{ $record['reason'] }}</h2>
+                <h2>{{ $reasonTitle }}: {{ $record['reason'] }}</h2>
             </div>
             @if($record['status'] === 'RETURNED_FOR_REVISION')<x-portal-button data-open-dialog="edit-request-dialog" variant="danger-outline">แก้ไขคำร้อง</x-portal-button>@endif
         </section>@endif
-        <x-request-progress :status="$record['status']" :returned-by="$record['returned_by'] ?? null" />
+        <x-request-progress :status="$record['status']" :returned-by="$record['returned_by'] ?? null" :decision-source="$record['decision_source'] ?? null" />
         <article class="portal-card requester-detail__card">
             <div class="requester-detail__heading" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid #e5e7eb;">
                 <h2 style="font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.4;">{{ $record['project_name'] }}</h2>
@@ -18,8 +28,8 @@
                 <div class="requester-attachments__heading">
                     <h3><x-portal-icon name="paperclip" />เอกสารแนบประกอบคำร้อง</h3><span class="muted">ทั้งหมด {{ 1 + count($record['additional_files'] ?? []) + ($record['has_student_roster'] ? 1 : 0) }} ไฟล์</span>
                 </div>
-                <div class="document-row"><x-portal-icon name="file-code" /><span class="document-row__name">{{ $record['signed_name'] ?? $record['project_name'].'.pdf' }}</span>
-                    <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document.download', $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.($record['signed_name'] ?? $record['project_name'].'.pdf')"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>
+                <div class="document-row"><x-portal-icon name="file-code" /><span class="document-row__name">{{ $record['document_name'] }}</span>
+                    <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document.download', $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$record['document_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>
                 </div>
                 @foreach($record['additional_files'] ?? [] as $file)<div class="document-row"><x-portal-icon name="file-text" /><span class="document-row__name">{{ $file['additional_name'] }}</span><x-portal-button :href="route('requests.attachment', ['id' => $record['id'], 'kind' => 'additional', 'document' => $file['document_id']])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$file['additional_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button></div>@endforeach
             </section>

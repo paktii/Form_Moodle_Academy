@@ -29,6 +29,26 @@ class PersonnelDirectoryTest extends TestCase
         $this->assertSame('requester@g.swu.ac.th', $this->directory()->email($person));
     }
 
+    public function test_email_never_returns_a_non_google_workspace_domain(): void
+    {
+        $person = (object) [
+            'buasri_id' => 'requester@swu.ac.th',
+            'gafe_account' => 'requester@example.com',
+        ];
+
+        $this->assertNull($this->directory()->email($person));
+    }
+
+    public function test_email_uses_buasri_workspace_address_when_gafe_domain_is_not_allowed(): void
+    {
+        $person = (object) [
+            'buasri_id' => 'requester',
+            'gafe_account' => 'requester@example.com',
+        ];
+
+        $this->assertSame('requester@g.swu.ac.th', $this->directory()->email($person));
+    }
+
     public function test_coordinator_defaults_use_available_officer_api_fields(): void
     {
         $person = (object) [

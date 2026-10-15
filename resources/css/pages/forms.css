@@ -401,6 +401,10 @@
         display: none;
     }
 
+    .multi-upload.is-empty .multi-upload__list {
+        display: none;
+    }
+
     .multi-upload__item {
         display: flex;
         min-width: 0;

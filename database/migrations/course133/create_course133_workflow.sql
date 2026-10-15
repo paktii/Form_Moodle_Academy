@@ -37,15 +37,28 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
                     CONSTRAINT [UQ_role_assignment] UNIQUE ([pers_id], [role_id])
                 )
             ;
+            CREATE TABLE [course133].[faculty_dean]
+                (
+                    [faculty_dean_id] bigint IDENTITY PRIMARY KEY,
+                    [target_dept_id] int NOT NULL,
+                    [dean_pers_id] int NOT NULL,
+                    [is_active] char(1) NOT NULL DEFAULT ('Y'),
+                    [created_at] datetime2 NOT NULL DEFAULT (SYSDATETIME()),
+                    [updated_at] datetime2 NOT NULL DEFAULT (SYSDATETIME()),
+                    CONSTRAINT [UQ_faculty_dean_department_person] UNIQUE ([target_dept_id], [dean_pers_id]),
+                    CONSTRAINT [CK_faculty_dean_is_active] CHECK ([is_active] IN ('Y', 'N'))
+                )
+            ;
             CREATE TABLE [course133].[course_request]
                 (
                     [request_id]             bigint IDENTITY PRIMARY KEY                                                                                                                                                                                                                                    ,
                     [request_no]             varchar(30) NOT NULL UNIQUE                                                                                                                                                                                                                                    ,
                     [requester_pers_id]      int NOT NULL                                                                                                                                                                                                                                                   ,
                     [target_dept_id]         int NOT NULL                                                                                                                                                                                                                                                   ,
+                    [dean_pers_id]           int NULL                                                                                                                                                                                                                                                       ,
                     [course_name_th]         nvarchar(500) NOT NULL                                                                                                                                                                                                                                         ,
                     [course_name_en]         nvarchar(500) NOT NULL                                                                                                                                                                                                                                         ,
-                    [status]                 varchar(40) NOT NULL DEFAULT ('PENDING_SIGNED_DOCUMENT')                                                                                                                                                                                                                         ,
+                    [status]                 varchar(40) NOT NULL DEFAULT ('PENDING_DEAN_REVIEW')                                                                                                                                                                                                                           ,
                     [submitted_at]           datetime2 NULL                                                                                                                                                                                                                                                 ,
                     [unsigned_pdf_downloaded_at] datetime2 NULL                                                                                                                                                                                                                                             ,
                     [created_at]             datetime2 NOT NULL DEFAULT (SYSDATETIME())                                                                                                                                                                                                                     ,
@@ -73,7 +86,7 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
                     [recorded_by_pers_id]    int NULL                                                                                                                                                                                                                                                       ,
                     CONSTRAINT [FK_request_project_type] FOREIGN KEY ([project_type_code]) REFERENCES [course133].[project_type]([project_type_code])                                                                                                                                                       ,
                     CONSTRAINT [FK_request_category] FOREIGN KEY ([category_code]) REFERENCES [course133].[course_category]([category_code])                                                                                                                                                                ,
-                    CONSTRAINT [CK_request_status] CHECK ([status] IN ('PENDING_SIGNED_DOCUMENT','UNDER_OFFICER_REVIEW','RETURNED_FOR_REVISION','PENDING_APPROVAL','REJECTED','PENDING_COURSE_ID','COURSE_ID_RECORDED'))                                                                            ,
+                    CONSTRAINT [CK_request_status] CHECK ([status] IN ('PENDING_SIGNED_DOCUMENT','PENDING_DEAN_REVIEW','UNDER_OFFICER_REVIEW','RETURNED_FOR_REVISION','PENDING_APPROVAL','REJECTED','PENDING_COURSE_ID','COURSE_ID_RECORDED'))                                                     ,
                     CONSTRAINT [CK_request_students] CHECK ([expected_students] > 0)                                                                                                                                                                                                                        ,
                     CONSTRAINT [CK_request_learning_period] CHECK ([learning_mode] IN (N'เปิดแบบตามวงรอบ (Phase/Batch-based)', N'แบบเปิดตามกรอบระยะเวลาของโครงการ (Event / Project-based)') AND [starts_on] IS NOT NULL AND [ends_on] IS NOT NULL AND [ends_on] >= [starts_on]),
                     CONSTRAINT [CK_request_activity_details] CHECK ([learning_mode] <> N'เปิดแบบตามวงรอบ (Phase/Batch-based)' OR (NULLIF(LTRIM(RTRIM([activity_round])), N'') IS NOT NULL AND NULLIF(LTRIM(RTRIM([activity_phase])), N'') IS NOT NULL)),
@@ -146,7 +159,7 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
                     [changed_by_pers_id] int NULL                                                                        ,
                     [change_source]      varchar(30) NOT NULL                                                            ,
                     [changed_at]         datetime2 NOT NULL DEFAULT (SYSDATETIME())                                      ,
-                    CONSTRAINT [CK_history_source] CHECK ([change_source] IN ('REQUESTER','OFFICER','APPROVER','SYSTEM')),
+                    CONSTRAINT [CK_history_source] CHECK ([change_source] IN ('REQUESTER','DEAN','OFFICER','APPROVER','SYSTEM')),
                     CONSTRAINT [FK_history_request] FOREIGN KEY ([request_id]) REFERENCES [course133].[course_request]([request_id]) ON
                     DELETE
                         CASCADE );
@@ -185,6 +198,21 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
                     [request_id]   ,
                     [document_type],
                     [uploaded_at] DESC
+                )
+            ;
+            CREATE INDEX [IX_faculty_dean_active_department]
+            ON [course133].[faculty_dean]
+                (
+                    [target_dept_id],
+                    [is_active]
+                )
+            ;
+            CREATE INDEX [IX_request_dean_status]
+            ON [course133].[course_request]
+                (
+                    [dean_pers_id],
+                    [status],
+                    [created_at] DESC
                 )
             ;
             CREATE INDEX [IX_history_request]
@@ -299,6 +327,4 @@ IF DB_NAME() <> N'academy_db1447' THROW 50001       ,
             ;
             EXEC(N'CREATE VIEW [course133].[officer_work_queue] AS
 SELECT r.* FROM [course133].[course_request] r
-WHERE r.[status] = ''UNDER_OFFICER_REVIEW'' AND EXISTS (
- SELECT 1 FROM [course133].[course_document] d WHERE d.[request_id] = r.[request_id]
- AND d.[document_type] = ''SIGNED_FORM'' AND d.[mime_type] = ''application/pdf'')');
+WHERE r.[status] = ''UNDER_OFFICER_REVIEW''');

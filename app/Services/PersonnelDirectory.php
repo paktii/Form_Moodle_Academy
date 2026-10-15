@@ -42,15 +42,7 @@ class PersonnelDirectory
 
     public function email(object $person): ?string
     {
-        $account = trim((string) $person->gafe_account);
-
-        if ($account === '') {
-            $account = trim((string) $person->buasri_id);
-        }
-
-        $email = str_contains($account, '@') ? $account : $account.'@g.swu.ac.th';
-
-        return filter_var($email, FILTER_VALIDATE_EMAIL) ? strtolower($email) : null;
+        return $this->workspaceEmail($person);
     }
 
     public function name(object $person): string
@@ -82,17 +74,19 @@ class PersonnelDirectory
 
     private function workspaceEmail(object $person): ?string
     {
-        $account = trim((string) $person->gafe_account);
-        if ($account === '') {
-            return null;
+        foreach ([$person->gafe_account, $person->buasri_id] as $account) {
+            $account = trim((string) $account);
+            if ($account === '') {
+                continue;
+            }
+
+            $email = strtolower(str_contains($account, '@') ? $account : $account.'@g.swu.ac.th');
+            if (str_ends_with($email, '@g.swu.ac.th') && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
         }
 
-        $email = str_contains($account, '@') ? $account : $account.'@g.swu.ac.th';
-        $email = strtolower($email);
-
-        return str_ends_with($email, '@g.swu.ac.th') && filter_var($email, FILTER_VALIDATE_EMAIL)
-            ? $email
-            : null;
+        return null;
     }
 
     /** @param array<string, mixed> $record */

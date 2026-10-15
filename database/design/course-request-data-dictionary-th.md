@@ -51,7 +51,8 @@ erDiagram
     COURSE_REQUEST ||--o{ COURSE_INSTRUCTOR : includes
     COURSE_REQUEST ||--o{ COURSE_DOCUMENT : has
     COURSE_REQUEST ||--o{ OFFICER_REVIEW : receives
-    COURSE_REQUEST ||--o{ COURSE_APPROVAL : receives
+    COURSE_REQUEST ||--o{ DEAN_REVIEW : receives
+    COURSE_REQUEST ||--o{ APPROVER_REVIEW : receives
     COURSE_REQUEST ||--o{ REQUEST_STATUS_HISTORY : records
     COURSE_REQUEST ||--o{ NOTIFICATION_OUTBOX : triggers
 
@@ -61,7 +62,8 @@ erDiagram
     DBO_PERSONS o|--o{ COURSE_INSTRUCTOR : "LR identifies"
     DBO_PERSONS ||--o{ COURSE_DOCUMENT : "LR uploads"
     DBO_PERSONS ||--o{ OFFICER_REVIEW : "LR reviews"
-    DBO_PERSONS ||--o{ COURSE_APPROVAL : "LR approves"
+    DBO_PERSONS ||--o{ DEAN_REVIEW : "LR certifies"
+    DBO_PERSONS ||--o{ APPROVER_REVIEW : "LR approves"
     DBO_PERSONS o|--o{ COURSE_REQUEST : "LR records_course_id"
     DBO_PERSONS o|--o{ REQUEST_STATUS_HISTORY : "LR changes"
     DBO_PERSONS o|--o{ NOTIFICATION_OUTBOX : "LR receives"
@@ -170,8 +172,17 @@ erDiagram
         datetime2 reviewed_at
     }
 
-    COURSE_APPROVAL {
-        bigint approval_id PK
+    DEAN_REVIEW {
+        bigint dean_review_id PK
+        bigint request_id FK
+        int dean_pers_id "LR: Officer.personId"
+        varchar decision
+        text comment
+        datetime2 decided_at
+    }
+
+    APPROVER_REVIEW {
+        bigint approver_review_id PK
         bigint request_id FK
         varchar approver_pers_id
         varchar decision
@@ -254,6 +265,19 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `category_name_th` | varchar(150) | UK, NOT NULL | — | ชื่อหมวดหมู่ภาษาไทย |
 | `is_active` | bit | NOT NULL | `1` | เปิดให้เลือกในแบบฟอร์มหรือไม่ |
 
+## `course133.faculty_dean`
+
+Master ผู้รับรองของส่วนงานเป้าหมาย ใช้กรองรายชื่อในขั้นตอนที่ 4 โดยอ้างรหัสหน่วยงานและบุคลากรจาก SWU MIS API
+
+| Column | Type | Key / Null | Default | ความหมาย |
+|---|---|---|---|---|
+| `faculty_dean_id` | bigint identity | PK | auto | รหัสรายการ master |
+| `target_dept_id` | int | LR, NOT NULL | — | ส่วนงาน/คณะ/สำนักเป้าหมายจาก `Department.deptCd` |
+| `dean_pers_id` | int | LR, NOT NULL | — | หัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการจาก `Officer.personId` |
+| `is_active` | char(1) | NOT NULL | `Y` | เปิดให้เลือกในแบบฟอร์มหรือไม่ (`Y` = ใช้งาน, `N` = ไม่ใช้งาน) |
+| `created_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาสร้างรายการ |
+| `updated_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาแก้ไขล่าสุด |
+
 ## `course133.course_request`
 
 ตารางหลักของคำร้องและสถานะปัจจุบัน
@@ -266,6 +290,7 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `request_no` | varchar(30) | UK, NOT NULL | — | เลขคำร้องที่แสดงต่อผู้ใช้ |
 | `requester_pers_id` | int | LR, NOT NULL | — | ผู้ยื่นจาก `Officer.personId` |
 | `target_dept_id` | int | LR, NOT NULL | — | หน่วยงานเป้าหมายที่ผู้ยื่นเลือกจากข้อมูล `deptCd` ของ endpoint `Department` ใน SWU MIS API; เจ้าหน้าที่สำนักคอมพิวเตอร์ยังเป็นผู้รับตรวจคำร้องทุกหน่วยงาน |
+| `dean_pers_id` | int | LR, NULL | `NULL` | หัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการที่ผู้ยื่นเลือกจาก master ของหน่วยงานเป้าหมาย |
 | `course_name_th` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาไทย |
 | `course_name_en` | varchar(500) | NOT NULL | — | ชื่อรายวิชาภาษาอังกฤษ |
 | `status` | varchar(40) | NOT NULL | `DRAFT` | สถานะ workflow ปัจจุบัน |
@@ -337,13 +362,26 @@ Master หมวดหมู่รายวิชาสำหรับเรี�
 | `return_reason` | text | NULL | `NULL` | เหตุผลส่งกลับ ต้องมีเมื่อเป็น `RETURNED` และส่งให้ Requester |
 | `reviewed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาตรวจตามเวลา Asia/Bangkok |
 
-## `course133.course_approval`
+## `course133.dean_review`
+
+ผลรับรองของหัวหน้าส่วนงาน/คณบดี/ผู้อำนวยการ เก็บได้หลายรอบต่อคำร้อง
+
+| Column | Type | Key / Null | Default | ความหมาย |
+|---|---|---|---|---|
+| `dean_review_id` | bigint identity | PK | auto | รหัสการรับรอง |
+| `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
+| `dean_pers_id` | int | LR, NOT NULL | — | ผู้รับรองโดยอ้าง `Officer.personId` |
+| `decision` | varchar(20) | NOT NULL | — | `APPROVED` หรือ `REJECTED` |
+| `comment` | text | NULL | `NULL` | เหตุผลที่ส่งให้ Requester; บังคับเมื่อเป็น `REJECTED` |
+| `decided_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาพิจารณาตามเวลา Asia/Bangkok |
+
+## `course133.approver_review`
 
 ผลพิจารณาของผู้มีอำนาจ เก็บได้หลายรอบต่อคำร้อง
 
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
-| `approval_id` | bigint identity | PK | auto | รหัสการพิจารณา |
+| `approver_review_id` | bigint identity | PK | auto | รหัสการพิจารณา |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
 | `approver_pers_id` | int | LR, NOT NULL | — | ผู้พิจารณาโดยอ้าง `Officer.personId` |
 | `decision` | varchar(20) | NOT NULL | — | `APPROVED`, `REJECTED`, `RETURNED` |
@@ -360,7 +398,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `course_request.request_id` |
 | `status` | varchar(40) | NOT NULL | — | สถานะของคำร้อง ณ เหตุการณ์นี้ |
 | `changed_by_pers_id` | int | LR, NULL | `NULL` | ผู้เปลี่ยนโดยอ้าง `Officer.personId`; ว่างเมื่อระบบเปลี่ยนเอง |
-| `change_source` | varchar(30) | NOT NULL | — | `REQUESTER`, `OFFICER`, `APPROVER`, `SYSTEM` |
+| `change_source` | varchar(30) | NOT NULL | — | `REQUESTER`, `DEAN`, `OFFICER`, `APPROVER`, `SYSTEM` |
 | `changed_at` | datetime2 | NOT NULL | SYSDATETIME() | เวลาเปลี่ยนสถานะตามเวลา Asia/Bangkok |
 
 ## `course133.notification_outbox`
@@ -386,6 +424,7 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 |---|---|---|
 | `DRAFT` | กำลังกรอก ยังไม่ยื่น | Requester |
 | `PENDING_SIGNED_DOCUMENT` | ส่งข้อมูลแล้ว รอ PDF ลงนาม | Requester; Officer ยังไม่เห็น |
+| `PENDING_DEAN_REVIEW` | ผู้ยื่นส่งคำร้องแล้ว รอการรับรองจากส่วนงานเป้าหมาย | หัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการที่เลือก |
 | `UNDER_OFFICER_REVIEW` | มี PDF ลงนามแล้ว รอตรวจ | Officer |
 | `RETURNED_FOR_REVISION` | ถูกส่งกลับให้แก้ไข | Requester |
 | `PENDING_APPROVAL` | Officer ตรวจผ่าน | Approver |
@@ -406,7 +445,8 @@ Audit trail ของการเปลี่ยนสถานะ เพิ่�
 | `course_request` | `course_instructor` | 1:N | FK ในฐาน 133; Laravel บังคับอย่างน้อย 1 คน |
 | `course_request` | `course_document` | 1:N | FK ในฐาน 133 |
 | `course_request` | `officer_review` | 1:N | FK ในฐาน 133 |
-| `course_request` | `course_approval` | 1:N | FK ในฐาน 133 |
+| `course_request` | `dean_review` | 1:N | FK ในฐาน 133 |
+| `course_request` | `approver_review` | 1:N | FK ในฐาน 133 |
 | `course_request` | `request_status_history` | 1:N | FK ในฐาน 133 |
 | `course_request` | `notification_outbox` | 1:N | FK ในฐาน 133 |
 | SWU MIS API | คอลัมน์รหัสบุคลากร/หน่วยงานฐาน 133 | 1:N | Laravel ตรวจผ่าน endpoint `Officer` และ `Department` |
@@ -432,7 +472,8 @@ SSO/LDAP ยืนยัน Buasri ID
 - คำร้องจะเข้า `UNDER_OFFICER_REVIEW` หรือสถานะหลังจากนั้นไม่ได้ หากไม่มี `SIGNED_FORM` ที่เป็น PDF
 - `officer_work_queue` แสดงเฉพาะคำร้อง `UNDER_OFFICER_REVIEW` ที่มี signed PDF
 - `officer_review.return_reason` ต้องมีข้อความเมื่อ Officer ส่งกลับ
-- `course_approval.comment` ต้องมีข้อความเมื่อ Approver ปฏิเสธหรือส่งกลับ
+- `dean_review.comment` ต้องมีข้อความเมื่อคณบดีไม่รับรอง
+- `approver_review.comment` ต้องมีข้อความเมื่อ Approver ปฏิเสธหรือส่งกลับ
 - อาจารย์หลายคนเก็บใน `course_instructor` คนละแถว Laravel บังคับอย่างน้อย 1 คนต่อคำร้อง และใช้ `instructor_id` เรียงเมื่อจำเป็น
 - คอลัมน์ที่เป็นข้อมูลบังคับบนฟอร์ม รวมถึงข้อมูลผู้ประสานงาน ใช้ `NOT NULL`
 - `project_other`, `category_other` และ `enrollment_other` ว่างได้ตามปกติ แต่ต้องมีค่าเมื่อเลือก “อื่น ๆ (ระบุ)”

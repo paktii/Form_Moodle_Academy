@@ -8,6 +8,27 @@ Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')
     Route::post('/login', 'enter')->middleware('throttle:portal-login')->name('login.enter');
     Route::post('/logout', 'logout')->name('logout');
 
+    Route::get('/dean/reviews/{id}', 'deanReviewConfirmation')
+        ->whereNumber('id')
+        ->middleware('signed')->name('dean.review.confirm');
+    Route::post('/dean/reviews/{id}/confirm', 'deanReviewDecision')
+        ->whereNumber('id')
+        ->middleware('signed')->name('dean.review.decide');
+    Route::get('/dean/reviews/{id}/document', 'deanReviewDocument')
+        ->whereNumber('id')
+        ->middleware('signed')->name('dean.review.document');
+    Route::get('/dean/reviews/{id}/attachments/{document}', 'deanReviewAttachment')
+        ->whereNumber('id')->whereNumber('document')
+        ->middleware('signed')->name('dean.review.attachment');
+
+    // Keep links from messages sent before the single-detail-link flow was introduced usable.
+    Route::get('/dean/reviews/{id}/{decision}', 'deanReviewConfirmation')
+        ->whereNumber('id')->whereIn('decision', ['approve', 'reject'])
+        ->middleware('signed')->name('dean.review.legacy-confirm');
+    Route::post('/dean/reviews/{id}/{decision}/confirm', 'deanReviewDecision')
+        ->whereNumber('id')->whereIn('decision', ['approve', 'reject'])
+        ->middleware('signed')->name('dean.review.legacy-decide');
+
     Route::get('/', 'home')
         ->middleware('portal.role:user,officer,approver')
         ->name('requests.index');

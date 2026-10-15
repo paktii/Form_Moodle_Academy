@@ -17,15 +17,20 @@ function loadPdfJs() {
 
 async function renderPdfPreview(dialog) {
     const viewer = dialog.querySelector('[data-pdf-preview]');
-    if (!viewer || ['loading', 'ready'].includes(viewer.dataset.pdfState)) return;
+    if (!viewer || viewer.dataset.pdfState === 'loading') return;
 
     viewer.dataset.pdfState = 'loading';
     viewer.setAttribute('aria-busy', 'true');
 
     try {
+        const previewUrl = new URL(viewer.dataset.pdfUrl, window.location.href);
+        previewUrl.searchParams.set('_preview', Date.now().toString());
         const [pdfJs, response] = await Promise.all([
             loadPdfJs(),
-            fetch(viewer.dataset.pdfUrl, { credentials: 'same-origin' }),
+            fetch(previewUrl, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            }),
         ]);
         if (!response.ok) throw new Error(`PDF preview failed with status ${response.status}`);
 
@@ -65,8 +70,10 @@ function openDialog(id, trigger) {
     dialog.showModal();
     document.documentElement.classList.add('has-open-dialog');
     const nativePdfPreview = dialog.querySelector('[data-native-pdf-preview]');
-    if (nativePdfPreview && !nativePdfPreview.hasAttribute('src')) {
-        nativePdfPreview.src = nativePdfPreview.dataset.pdfUrl;
+    if (nativePdfPreview) {
+        const previewUrl = new URL(nativePdfPreview.dataset.pdfUrl, window.location.href);
+        previewUrl.searchParams.set('_preview', Date.now().toString());
+        nativePdfPreview.src = previewUrl.toString();
     }
     renderPdfPreview(dialog);
 }
@@ -184,25 +191,23 @@ document.addEventListener('click', async (event) => {
 });
 
 document.querySelector('[data-finish-request]')?.addEventListener('click', (event) => {
-    const fileInput = document.querySelector('input[name="signed_document"]');
-    if (fileInput?.files.length && !fileInput.checkValidity()) {
-        fileInput.reportValidity();
+    const form = document.getElementById('course-form');
+    const deanValue = form?.querySelector('input[name="dean_pers_id"]');
+    const deanInput = deanValue
+        ?.closest('[data-searchable-select]')
+        ?.querySelector('[data-searchable-select-input]');
+
+    if (deanValue && deanValue.value === '' && deanInput) {
+        deanInput.setCustomValidity('กรุณาเลือกหัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการ');
+        deanInput.reportValidity();
+        deanInput.focus();
         return;
     }
 
-    const dialog = document.getElementById('finish-dialog');
-    const title = document.getElementById('finish-dialog-title');
-    const message = dialog?.querySelector('[data-finish-dialog-text]');
-    const confirmLabel = dialog?.querySelector('[data-finish-confirm-label]');
-    const hasSignedDocument = Boolean(fileInput?.files.length);
-
-    if (title) title.textContent = hasSignedDocument ? 'ยืนยันการส่งคำร้อง' : 'ยืนยันการบันทึกคำร้อง';
-    if (message) {
-        message.innerHTML = hasSignedDocument
-            ? 'ระบบจะส่งคำร้องให้เจ้าหน้าที่ตรวจสอบ<br>คุณต้องการยืนยันการส่งใช่หรือไม่?'
-            : 'คุณต้องการบันทึกคำร้องนี้ใช่หรือไม่?<br>หลังจากบันทึกแล้ว <span class="finish-dialog__mobile-line">ระบบจะนำคุณไปยังหน้ารายการคำร้อง</span><br class="finish-dialog__desktop-break">เพื่อรอการอัปโหลดเอกสารที่ลงนามแล้วในภายหลัง';
+    if (form && !form.checkValidity()) {
+        form.reportValidity();
+        return;
     }
-    if (confirmLabel) confirmLabel.textContent = hasSignedDocument ? 'ยืนยันการส่ง' : 'ยืนยันการบันทึก';
 
     openDialog('finish-dialog', event.currentTarget);
 });
@@ -861,6 +866,7 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
         trigger.classList.toggle('is-disabled', full);
         trigger.setAttribute('aria-disabled', full ? 'true' : 'false');
         const hasFiles = list.children.length > 0;
+        upload.classList.toggle('is-empty', !hasFiles);
         if (emptyState) emptyState.hidden = hasFiles;
         attachmentContent?.classList.toggle('has-files', hasFiles);
     }
@@ -1428,4 +1434,71 @@ if (returnDialog) {
     });
 
     returnDialog.addEventListener('close', showEntry);
+}
+
+const deanRejectDialog = document.getElementById('dean-reject-dialog');
+if (deanRejectDialog) {
+    const entry = deanRejectDialog.querySelector('[data-dean-reject-entry]');
+    const confirmStep = deanRejectDialog.querySelector('[data-dean-reject-confirm]');
+    const confirmMessage = deanRejectDialog.querySelector('[data-dean-reject-confirm-message]');
+    const confirmAction = deanRejectDialog.querySelector('[data-dean-reject-confirm-action]');
+    const confirmBack = deanRejectDialog.querySelector('[data-dean-reject-confirm-back]');
+    const sendButton = deanRejectDialog.querySelector('[data-dean-reject-send]');
+    const cancelButton = deanRejectDialog.querySelector('[data-dean-reject-cancel]');
+    const form = deanRejectDialog.querySelector('form');
+    const textarea = form?.querySelector('textarea[name="reason"]');
+    let confirmationMode = null;
+
+    function showDeanRejectEntry() {
+        confirmationMode = null;
+        const heading = deanRejectDialog.querySelector('.modal-heading h2');
+        if (heading) heading.textContent = 'ยืนยันไม่รับรองคำร้อง';
+        if (entry) entry.hidden = false;
+        if (confirmStep) confirmStep.hidden = true;
+    }
+
+    function showDeanRejectConfirmation(mode) {
+        confirmationMode = mode;
+        const heading = deanRejectDialog.querySelector('.modal-heading h2');
+        if (heading) {
+            heading.textContent = mode === 'submit' ? 'ยืนยันไม่รับรองคำร้อง' : 'ยืนยันการยกเลิก';
+        }
+        if (entry) entry.hidden = true;
+        if (confirmStep) confirmStep.hidden = false;
+        if (confirmMessage) {
+            confirmMessage.innerHTML = mode === 'submit'
+                ? 'คุณต้องการไม่รับรองคำร้องนี้ใช่หรือไม่?<br>ระบบจะแจ้งผลพร้อมเหตุผลให้ผู้ยื่นคำร้องทราบ'
+                : 'คุณต้องการยกเลิกการไม่รับรองใช่หรือไม่?<br>เหตุผลที่ระบุไว้จะถูกลบออกทั้งหมด';
+        }
+        if (confirmAction) {
+            confirmAction.textContent = mode === 'submit' ? 'ยืนยันไม่รับรองคำร้อง' : 'ยืนยันยกเลิก';
+            confirmAction.className = mode === 'submit' ? 'portal-button portal-button--danger' : 'portal-button';
+        }
+        confirmAction?.focus();
+    }
+
+    sendButton?.addEventListener('click', () => {
+        if (!textarea?.checkValidity()) {
+            textarea?.reportValidity();
+            return;
+        }
+        showDeanRejectConfirmation('submit');
+    });
+
+    cancelButton?.addEventListener('click', () => showDeanRejectConfirmation('cancel'));
+    confirmBack?.addEventListener('click', showDeanRejectEntry);
+
+    confirmAction?.addEventListener('click', () => {
+        if (confirmationMode === 'submit') {
+            form?.requestSubmit();
+            return;
+        }
+        if (confirmationMode === 'cancel') {
+            form?.reset();
+            showDeanRejectEntry();
+            deanRejectDialog.close();
+        }
+    });
+
+    deanRejectDialog.addEventListener('close', showDeanRejectEntry);
 }

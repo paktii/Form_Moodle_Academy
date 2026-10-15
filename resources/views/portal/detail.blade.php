@@ -25,10 +25,10 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
         <section class="portal-card detail-card"><x-request-data :record="$record" :show-requester-unit="false" :split-target-unit="true" /></section>
         <section class="portal-card attachment-card">
             <h3>เอกสารแนบเพื่อตรวจสอบ</h3>
-            <div class="document-row"><x-portal-icon name="file-code" /><span class="document-row__name">{{ $record['signed_name'] ?? 'โครงการขออนุมัติ AI course.pdf' }}</span>
+            <div class="document-row"><x-portal-icon name="file-code" /><span class="document-row__name">{{ $record['document_name'] }}</span>
                 @if($role === 'officer')
-                <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document', $record['id'])" variant="secondary" class="document-row__download" :target="isset($record['signed_path']) ? null : '_blank'" :aria-label="(isset($record['signed_path']) ? 'ดาวน์โหลดไฟล์ ' : 'ดูเอกสาร ').($record['signed_name'] ?? 'โครงการขออนุมัติ AI course.pdf')"><x-portal-icon name="download" /><span class="document-row__download-label">{{ isset($record['signed_path']) ? 'ดาวน์โหลด' : 'ดูเอกสาร' }}</span></x-portal-button>
-                @elseif($role === 'approver' && isset($record['signed_path']))<a class="approver-document-download" href="{{ route('requests.attachment', [$record['id'], 'signed']) }}" aria-label="ดาวน์โหลดไฟล์ {{ $record['signed_name'] ?? 'โครงการขออนุมัติ AI course.pdf' }}"><x-portal-icon name="download" /><span>ดาวน์โหลด</span></a>@elseif(isset($record['signed_path']))<a href="{{ route('requests.attachment', [$record['id'], 'signed']) }}">ดาวน์โหลด</a>@else<a href="{{ route('requests.document', $record['id']) }}" target="_blank">ดูเอกสาร</a>@endif
+                <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document.download', $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$record['document_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>
+                @elseif($role === 'approver')<x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document.download', $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$record['document_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>@elseif(isset($record['signed_path']))<a href="{{ route('requests.attachment', [$record['id'], 'signed']) }}">ดาวน์โหลด</a>@else<a href="{{ route('requests.document', $record['id']) }}" target="_blank">ดูเอกสาร</a>@endif
             </div>
             @foreach($record['additional_files'] ?? [] as $file)<div class="document-row"><x-portal-icon name="file-text" /><span class="document-row__name">{{ $file['additional_name'] }}</span>@if($role === 'officer')<x-portal-button :href="route('requests.attachment', ['id' => $record['id'], 'kind' => 'additional', 'document' => $file['document_id']])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$file['additional_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>@elseif($role === 'approver')<a class="approver-document-download" href="{{ route('requests.attachment', ['id' => $record['id'], 'kind' => 'additional', 'document' => $file['document_id']]) }}" aria-label="ดาวน์โหลดไฟล์ {{ $file['additional_name'] }}"><x-portal-icon name="download" /><span>ดาวน์โหลด</span></a>@else<a href="{{ route('requests.attachment', ['id' => $record['id'], 'kind' => 'additional', 'document' => $file['document_id']]) }}">ดาวน์โหลด</a>@endif</div>@endforeach
             @if(! in_array($role, ['officer', 'approver'], true) && $record['has_student_roster'])
@@ -67,11 +67,13 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
             @elseif(! in_array($role, ['officer', 'approver'], true) && $record['requires_student_roster'])<p class="roster-empty">ยังไม่แนบรายชื่อผู้เรียน</p>@endif
         </section>
         @if(in_array($role, ['officer', 'approver'], true) && $record['requires_student_roster'])
-        <section class="portal-card student-roster" id="student-roster">
+        <section class="portal-card student-roster{{ $role === 'officer' && ! $record['has_student_roster'] ? ' student-roster--empty' : '' }}" id="student-roster">
             <div class="student-roster__heading">
                 <div>
-                    <h3><x-portal-icon name="user-plus" />รายชื่อผู้เรียน</h3>
-                    <p>@if($role === 'approver'){{ $record['has_student_roster'] ? 'รายชื่อผู้เรียนที่แนบมากับคำร้อง' : 'ยังไม่แนบรายชื่อผู้เรียน' }}@elseif($record['student_roster_reopen_requested'])ผู้ยื่นคำร้องขอแก้ไขรายชื่อ กรุณาตรวจสอบคำขอ@elseif($record['student_roster_needs_officer_attention'])แนบรายชื่อแล้ว กรุณาตรวจสอบและรับทราบ@elseif($record['student_roster_acknowledged'])รับทราบรายชื่อแล้ว สามารถเปิดให้ผู้ยื่นแก้ไขได้เมื่อจำเป็น@elseยังไม่แนบรายชื่อผู้เรียน@endif</p>
+                    <h3>รายชื่อผู้เรียน</h3>
+                    @if($role === 'approver' || $record['student_roster_reopen_requested'] || $record['student_roster_needs_officer_attention'] || $record['student_roster_acknowledged'])
+                    <p>@if($role === 'approver'){{ $record['has_student_roster'] ? 'รายชื่อผู้เรียนที่แนบมากับคำร้อง' : 'ยังไม่แนบรายชื่อผู้เรียน' }}@elseif($record['student_roster_reopen_requested'])ผู้ยื่นคำร้องขอแก้ไขรายชื่อ กรุณาตรวจสอบคำขอ@elseif($record['student_roster_needs_officer_attention'])แนบรายชื่อแล้ว กรุณาตรวจสอบและรับทราบ@elseif($record['student_roster_acknowledged'])รับทราบรายชื่อแล้ว สามารถเปิดให้ผู้ยื่นแก้ไขได้เมื่อจำเป็น@endif</p>
+                    @endif
                 </div>
                 <span class="roster-status {{ $record['student_roster_reopen_requested'] || $record['student_roster_needs_officer_attention'] ? 'roster-status--pending' : ($record['student_roster_acknowledged'] ? 'roster-status--complete' : 'roster-status--missing') }}">@if($record['student_roster_reopen_requested'])ขอแก้ไข@elseif($record['student_roster_needs_officer_attention']){{ $record['student_roster_is_old_file'] ? 'ไฟล์เก่า' : ($record['student_roster_is_update'] ? 'อัปเดตใหม่' : 'ไฟล์ใหม่') }}@elseif($record['student_roster_acknowledged'])รับทราบแล้ว@elseยังไม่แนบ@endif</span>
             </div>
@@ -113,7 +115,7 @@ $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
             <x-portal-button data-review-submit disabled>กรุณาเลือกผลการตรวจสอบ</x-portal-button>
             @else
             <p class="muted">สถานะผลการตรวจสอบ</p>
-            <p class="review-passed"><x-portal-icon name="clipboard-check" />ข้อมูลถูกต้องครบถ้วน โดย: เจ้าหน้าที่ตรวจสอบ</p>
+            <p class="review-passed"><x-portal-icon name="clipboard-check" />ข้อมูลถูกต้องครบถ้วน โดย: {{ $record['officer_name'] ?? '—' }}</p>
             <x-portal-button data-open-dialog="approve-dialog">อนุมัติการสร้างรายวิชา</x-portal-button>
             <x-portal-button variant="danger-outline" data-open-dialog="reject-dialog">ไม่อนุมัติการสร้างรายวิชา</x-portal-button>
             @endif
