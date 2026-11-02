@@ -19,7 +19,14 @@ class DocumentPdfRenderer
         $profilePath = $workingDirectory.DIRECTORY_SEPARATOR.'browser-profile';
 
         try {
-            File::put($htmlPath, view('portal.document-pdf', compact('record'))->render());
+            $view = match ($record['form_type_code'] ?? 'CC-ITED-06') {
+                'CC-ITED-01' => 'portal.website-document-pdf',
+                'CC-ITED-02' => 'portal.website-contact-change-document-pdf',
+                'CC-ITED-04' => 'portal.website-storage-document-pdf',
+                'CC-ITED-05' => 'portal.emeeting-document-pdf',
+                default => 'portal.document-pdf',
+            };
+            File::put($htmlPath, view($view, compact('record'))->render());
 
             $process = new Process([
                 $this->browserPath(),

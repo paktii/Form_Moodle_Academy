@@ -1,10 +1,9 @@
-<x-portal-layout title="รายละเอียดเอกสาร" tab-title="Request Details">
+<x-portal-layout title="รายละเอียดเอกสาร" tab-title="Request Details" description="ตรวจสอบรายละเอียดและติดตามขั้นตอนการดำเนินการของคำร้องขอรับบริการ">
     <main class="portal-main requester-detail">
         <div class="detail-actions requester-detail__navigation"><x-portal-button :href="route('requests.index')" variant="secondary">ย้อนกลับ</x-portal-button><span class="muted">เลขที่คำร้อง: {{ $record['number'] }}</span></div>
         @if($record['reason'] ?? null)
         @php
             $reasonTitle = match (true) {
-                $record['status'] === 'RETURNED_FOR_REVISION' => 'ส่งกลับแก้ไข',
                 ($record['decision_source'] ?? null) === 'DEAN'
                     || (($record['decision_source'] ?? null) === null && ($record['dean_decision'] ?? null) === 'REJECTED')
                     => 'ไม่ผ่านการอนุมัติโดยคณบดี',
@@ -13,11 +12,10 @@
         @endphp
         <section class="reason-banner">
             <div>
-                <h2>{{ $reasonTitle }}: {{ $record['reason'] }}</h2>
+                <h2><strong class="reason-banner__title">{{ $reasonTitle }}:</strong> {{ $record['reason'] }}</h2>
             </div>
-            @if($record['status'] === 'RETURNED_FOR_REVISION')<x-portal-button data-open-dialog="edit-request-dialog" variant="danger-outline">แก้ไขคำร้อง</x-portal-button>@endif
         </section>@endif
-        <x-request-progress :status="$record['status']" :returned-by="$record['returned_by'] ?? null" :decision-source="$record['decision_source'] ?? null" />
+        <x-request-progress :status="$record['status']" :decision-source="$record['decision_source'] ?? null" />
         <article class="portal-card requester-detail__card">
             <div class="requester-detail__heading" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid #e5e7eb;">
                 <h2 style="font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.4;">{{ $record['project_name'] }}</h2>
@@ -29,33 +27,10 @@
                     <h3><x-portal-icon name="paperclip" />เอกสารแนบประกอบคำร้อง</h3><span class="muted">ทั้งหมด {{ 1 + count($record['additional_files'] ?? []) + ($record['has_student_roster'] ? 1 : 0) }} ไฟล์</span>
                 </div>
                 <div class="document-row"><x-portal-icon name="file-code" /><span class="document-row__name">{{ $record['document_name'] }}</span>
-                    <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route('requests.document.download', $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$record['document_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>
+                    <x-portal-button :href="isset($record['signed_path']) ? route('requests.attachment', [$record['id'], 'signed']) : route(match ($record['form_type_code'] ?? 'CC-ITED-06') { 'CC-ITED-01' => 'website-requests.document.download', 'CC-ITED-02' => 'website-contact-change-requests.document.download', 'CC-ITED-04' => 'website-storage-requests.document.download', 'CC-ITED-05' => 'emeeting-requests.document.download', default => 'requests.document.download' }, $record['id'])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$record['document_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button>
                 </div>
                 @foreach($record['additional_files'] ?? [] as $file)<div class="document-row"><x-portal-icon name="file-text" /><span class="document-row__name">{{ $file['additional_name'] }}</span><x-portal-button :href="route('requests.attachment', ['id' => $record['id'], 'kind' => 'additional', 'document' => $file['document_id']])" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์ '.$file['additional_name']"><x-portal-icon name="download" /><span class="document-row__download-label">ดาวน์โหลด</span></x-portal-button></div>@endforeach
             </section>
-            @if($record['status'] === 'PENDING_SIGNED_DOCUMENT')
-            <section class="pending-signed-document" id="signed-document-upload">
-                <div class="pending-signed-document__heading">
-                    <div><h3><x-portal-icon name="file-check" />เอกสารที่ลงนามแล้ว</h3><p>เลือกไฟล์ PDF ที่ลงนามแล้วเพื่อส่งให้เจ้าหน้าที่ตรวจสอบ</p></div>
-                    <span class="roster-status roster-status--missing">ยังไม่อัปโหลด</span>
-                </div>
-                <form class="pending-signed-document__form" id="upload-form-{{ $record['id'] }}" method="post" action="{{ route('requests.upload', $record['id']) }}" enctype="multipart/form-data">
-                    @csrf
-                    <input type="hidden" name="redirect_to" value="detail">
-                    <div id="upload-step1-{{ $record['id'] }}">
-                        <x-portal-upload name="signed_document" :id="'signed-'.$record['id']" :compact="true" compact-label="อัปโหลดเอกสารที่ลงนามแล้ว" :required="true" />
-                        <x-portal-button type="button" data-upload-next="{{ $record['id'] }}" :data-confirm-dialog="'signed-upload-confirm-'.$record['id']">อัปโหลดเอกสาร</x-portal-button>
-                    </div>
-                </form>
-            </section>
-            <x-portal-modal :id="'signed-upload-confirm-'.$record['id']" title="ยืนยันการส่งเอกสาร">
-                <p class="upload-confirmation__message">ระบบจะส่งคำร้องให้เจ้าหน้าที่ตรวจสอบ<br>คุณต้องการยืนยันการส่งใช่หรือไม่?</p>
-                <div class="modal-actions upload-confirmation__actions">
-                    <x-portal-button type="button" variant="plain" data-close-dialog>ย้อนกลับ</x-portal-button>
-                    <x-portal-button type="submit" :form="'upload-form-'.$record['id']">ยืนยันการส่ง</x-portal-button>
-                </div>
-            </x-portal-modal>
-            @endif
             @if($record['requires_student_roster'])
             <section class="student-roster" id="student-roster">
                 <div class="student-roster__heading">
@@ -71,6 +46,9 @@
                     <x-portal-upload name="student_roster" :id="'student-roster-file-'.$record['id']" accept=".xls,.xlsx,.csv" :compact="true" :compact-label="$record['has_student_roster'] ? 'เลือกไฟล์รายชื่อใหม่' : 'อัปโหลดรายชื่อผู้เรียน'" :required="true" />
                     <x-portal-button type="submit" data-roster-confirm="{{ $record['id'] }}" :data-confirm-dialog="'student-roster-confirm-'.$record['id']">{{ $record['has_student_roster'] ? 'บันทึกไฟล์ใหม่' : 'บันทึกรายชื่อ' }}</x-portal-button>
                 </form>
+                @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-02')
+                <h3><x-portal-icon name="globe-code" />ผลการเปลี่ยนแปลงผู้ดูแลเว็บไซต์</h3>
+                <p>@if($record['status'] === 'COMPLETED')ดำเนินการเปลี่ยนแปลงผู้ดูแลเว็บไซต์เรียบร้อยแล้ว@elseif($record['status'] === 'REJECTED')<span class="muted">ไม่ได้รับอนุมัติ</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</p>
                 @else
                 <div class="student-roster__form">
                     <x-portal-button type="button" variant="secondary" data-open-dialog="student-roster-reopen-request" :disabled="$record['student_roster_reopen_requested']">{{ $record['student_roster_reopen_requested'] ? 'ส่งคำขอแก้ไขแล้ว' : 'ขอแก้ไขรายชื่อ' }}</x-portal-button>
@@ -99,17 +77,27 @@
             </x-portal-modal>
             @endif
             @endif
-            @if($record['course_id'] ?? null)<section class="course-result">
-                <h3>ผลการสร้างรายวิชา</h3>
-                <p>Course ID: <a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a></p>
-            </section>@endif
+            <section class="course-result">
+                @if(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-01')
+                <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
+                <dl class="course-result__list"><div class="course-result__row"><dt>ข้อมูลการจัดสรรพื้นที่เว็บไซต์</dt><dd class="allocated-domain-text">@if($record['allocated_domain'] ?? null){{ $record['allocated_domain'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
+                @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-04')
+                <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
+                <dl class="course-result__list">
+                    <div class="course-result__row"><dt>พื้นที่เว็บไซต์ที่เพิ่มให้</dt><dd>@if($record['granted_space_gb'] ?? null)1 GB@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div>
+                    <div class="course-result__row"><dt>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div>
+                </dl>
+                @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-02')
+                <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
+                <dl class="course-result__list"><div class="course-result__row"><dt>ข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
+                @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-05')
+                <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
+                <dl class="course-result__list"><div class="course-result__row"><dt>ข้อมูลการเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุม</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
+                @else
+                <h3><x-portal-icon name="globe-code" />ผลการสร้างรายวิชา</h3>
+                <dl class="course-result__list"><div class="course-result__row"><dt>Course ID</dt><dd>@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
+                @endif
+            </section>
         </article>
     </main>
-    @if($record['status'] === 'RETURNED_FOR_REVISION')
-    <x-portal-modal id="edit-request-dialog" title="ยืนยันการแก้ไขคำร้อง">
-        <p class="confirmation-message">คุณต้องการเปิดคำร้องนี้เพื่อแก้ไขข้อมูลใช่หรือไม่?</p>
-        <form action="{{ route('requests.edit', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">ยืนยันแก้ไขคำร้อง</x-portal-button></div>
-        </form>
-    </x-portal-modal>
-    @endif
 </x-portal-layout>

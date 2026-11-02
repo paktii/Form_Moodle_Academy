@@ -1,4 +1,4 @@
-@props(['title' => 'SWU Moodle Academy', 'tabTitle' => null, 'role' => 'user', 'login' => false])
+@props(['title' => 'SWU Moodle Academy', 'headerContext' => null, 'highlightHeaderContext' => false, 'tabTitle' => null, 'role' => 'user', 'login' => false, 'description' => null, 'showHeaderLogo' => false])
 <!doctype html>
 <html lang="th">
 
@@ -11,20 +11,39 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 
-<body class="portal-page {{ $login ? 'login-page' : '' }}">
-    @unless($login)
-    <x-portal-header :role="$role" />
-    @endunless
+<body class="portal-page {{ $login ? 'login-page' : '' }} {{ ! $login && $role === 'user' ? 'portal-page--requester' : '' }}">
     @php
         $globalErrors = $errors->has('form') ? $errors->get('form') : [];
+        $requesterShell = ! $login && $role === 'user';
     @endphp
-    @if(count($globalErrors) > 0 && !$login)
-    <div class="error-summary" role="alert" tabindex="-1">
-        <strong>กรุณาตรวจสอบข้อมูล</strong>
-        <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
+
+    @if($requesterShell)
+    <div class="requester-shell" data-requester-shell>
+        <x-requester-sidebar />
+        <button type="button" class="requester-sidebar-overlay" data-requester-sidebar-close aria-label="ปิดเมนู" tabindex="-1"></button>
+        <div class="requester-workspace">
+            <x-requester-page-header :title="$title" :context-title="$headerContext" :highlight-context="$highlightHeaderContext" :description="$description" />
+            @if(count($globalErrors) > 0)
+            <div class="error-summary" role="alert" tabindex="-1">
+                <strong>กรุณาตรวจสอบข้อมูล</strong>
+                <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
+            </div>
+            @endif
+            {{ $slot }}
+        </div>
     </div>
+    @else
+        @unless($login)
+        <x-requester-page-header :title="$title" :context-title="$headerContext" :description="$description" :role="$role" :show-menu="false" :show-account="true" :show-logo="$showHeaderLogo" />
+        @endunless
+        @if(count($globalErrors) > 0 && !$login)
+        <div class="error-summary" role="alert" tabindex="-1">
+            <strong>กรุณาตรวจสอบข้อมูล</strong>
+            <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
+        </div>
+        @endif
+        {{ $slot }}
     @endif
-    {{ $slot }}
     <x-portal-footer />
     @unless($login)
     <x-portal-modal id="logout-dialog" title="ยืนยันการออกจากระบบ">

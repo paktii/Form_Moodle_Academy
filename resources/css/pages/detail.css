@@ -1,4 +1,11 @@
 @layer components {
+    @media (min-width: 901px) {
+        .detail-page--officer {
+            max-width: 1440px;
+            padding-inline: 32px;
+        }
+    }
+
     .detail-heading {
         display: flex;
         align-items: center;
@@ -46,6 +53,36 @@
         margin-bottom: 4px;
     }
 
+    .result-notification-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .result-notification-option input {
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        margin-top: 2px;
+        accent-color: var(--portal-navy);
+    }
+
+    .result-notification-option span {
+        display: grid;
+        gap: 4px;
+    }
+
+    .result-notification-option small {
+        color: #667085;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
     .detail-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -87,6 +124,7 @@
     }
 
     .attachment-card .document-row,
+    .course-result .document-row,
     .detail-page .student-roster .document-row {
         background: #eceff3;
     }
@@ -94,6 +132,35 @@
     .attachment-card a {
         color: var(--portal-navy);
         font-size: 12px;
+    }
+
+    .detail-card__action {
+        flex-shrink: 0;
+        width: 111px;
+    }
+
+    .course-result__edit {
+        color: #0e2b5c;
+    }
+
+    .execution-detail-text {
+        display: inline-block;
+        vertical-align: top;
+        white-space: pre-line;
+    }
+
+    .execution-detail-row {
+        min-height: 76px;
+        font-size: 14px;
+    }
+
+    .execution-detail-row > .portal-icon {
+        align-self: flex-start;
+        margin-top: 4px;
+    }
+
+    .execution-detail-row .course-result__edit {
+        align-self: flex-start;
     }
 
     .approver-document-download > .portal-icon {
@@ -201,6 +268,18 @@
     .reason-banner h3 {
         font-weight: 600;
         margin-bottom: 8px;
+    }
+
+    .detail-page--officer .reason-banner__inline {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 500;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
+
+    [data-officer-approval-confirm-message] {
+        white-space: pre-line;
     }
 
     .reason-banner--message {
@@ -350,6 +429,17 @@
 
         .detail-page--officer .attachment-card .document-row__download-label,
         .detail-page--approver .attachment-card .document-row__download-label {
+            display: none;
+        }
+
+        .detail-page--officer .attachment-card .detail-card__action,
+        .detail-page--approver .attachment-card .detail-card__action {
+            width: 32px;
+            min-height: 32px;
+            padding: 6px;
+        }
+
+        .course-result__edit-label {
             display: none;
         }
 

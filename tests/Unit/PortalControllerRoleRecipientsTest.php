@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\PortalController;
 use App\Services\DepartmentDirectory;
+use App\Services\DocumentPdfRenderer;
 use App\Services\PersonnelDirectory;
 use App\Services\PortalIdentityService;
 use Illuminate\Support\Facades\DB;
@@ -16,10 +17,10 @@ class PortalControllerRoleRecipientsTest extends TestCase
     public function test_role_recipients_include_every_active_assignment(): void
     {
         $query = Mockery::mock();
-        $query->shouldReceive('table')->once()->with('course133.user_role_assignment as assignments')->andReturnSelf();
+        $query->shouldReceive('table')->once()->with('service_portal.user_role_assignment as assignments')->andReturnSelf();
         $query->shouldReceive('join')->once()->andReturnSelf();
         $query->shouldReceive('where')->once()->with('roles.role_code', 'OFFICER')->andReturnSelf();
-        $query->shouldReceive('where')->once()->with('assignments.is_active', true)->andReturnSelf();
+        $query->shouldReceive('where')->once()->with('assignments.is_active', 'Y')->andReturnSelf();
         $query->shouldReceive('orderBy')->once()->with('assignments.role_assignment_id')->andReturnSelf();
         $query->shouldReceive('pluck')->once()->with('assignments.pers_id')->andReturn(collect([101, 202]));
         DB::shouldReceive('connection')->once()->with('course133')->andReturn($query);
@@ -36,6 +37,7 @@ class PortalControllerRoleRecipientsTest extends TestCase
 
         $controller = new PortalController(
             Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
             $directory,
             Mockery::mock(PortalIdentityService::class),
         );

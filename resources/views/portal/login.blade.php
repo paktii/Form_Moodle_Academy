@@ -16,7 +16,6 @@
                     <div class="login-role-switcher__options">
                         <label><input type="radio" name="login_role" value="" @checked(old('login_role', '') === '')><span>อัตโนมัติ</span></label>
                         <label><input type="radio" name="login_role" value="officer" @checked(old('login_role') === 'officer')><span>เจ้าหน้าที่</span></label>
-                        <label><input type="radio" name="login_role" value="approver" @checked(old('login_role') === 'approver')><span>ผู้อนุมัติ</span></label>
                     </div>
                     <small>ตัวเลือกนี้แสดงเฉพาะในสภาพแวดล้อมสำหรับพัฒนา</small>
                     @error('login_role')<p class="login-role-switcher__error">{{ $message }}</p>@enderror

@@ -41,13 +41,11 @@ class PortalIdentityService
             'email' => $email,
             'label' => match ($role) {
                 'officer' => 'เจ้าหน้าที่',
-                'approver' => 'ผู้อนุมัติ',
                 default => 'บุคลากร',
             },
             'role' => $role,
             'available_roles' => collect(['user'])
                 ->when($roleCodes->contains('OFFICER'), fn ($roles) => $roles->push('officer'))
-                ->when($roleCodes->contains('APPROVER'), fn ($roles) => $roles->push('approver'))
                 ->all(),
         ];
     }
@@ -55,19 +53,15 @@ class PortalIdentityService
     private function roleCodesForPerson(int $personId)
     {
         return DB::connection('course133')
-            ->table('course133.user_role_assignment as assignments')
-            ->join('course133.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
+            ->table('service_portal.user_role_assignment as assignments')
+            ->join('service_portal.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
             ->where('assignments.pers_id', $personId)
-            ->where('assignments.is_active', true)
+            ->where('assignments.is_active', 'Y')
             ->pluck('roles.role_code');
     }
 
     private function roleFromCodes($roleCodes): string
     {
-        if ($roleCodes->contains('APPROVER')) {
-            return 'approver';
-        }
-
         if ($roleCodes->contains('OFFICER')) {
             return 'officer';
         }

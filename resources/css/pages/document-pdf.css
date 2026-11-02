@@ -14,7 +14,11 @@
 
 @page {
     size: A4 portrait;
-    margin: 0;
+    margin: 13mm 0 0;
+}
+
+@page :first {
+    margin-top: 0;
 }
 
 * {
@@ -25,16 +29,20 @@
 
 html,
 body {
+    width: 210mm;
+    max-width: 210mm;
     padding: 0;
     margin: 0;
     color: #111827;
     font-family: "Sarabun", sans-serif;
-    font-size: 8.4pt;
+    font-size: 10pt;
     line-height: 1.3;
 }
 
 .print-document {
-    width: 100%;
+    width: 210mm;
+    max-width: 210mm;
+    overflow-wrap: anywhere;
 }
 
 .document-sheet {
@@ -42,11 +50,11 @@ body {
 }
 
 .document-page-one {
-    page-break-after: always;
+    page-break-after: auto;
 }
 
 .document-page-two {
-    page-break-before: auto;
+    page-break-before: always;
 }
 
 .document-header {
@@ -93,7 +101,7 @@ body {
 .document-header__title p {
     padding: 0;
     margin: 1mm 0 0;
-    font-size: 8.4pt;
+    font-size: 10pt;
     text-align: right;
 }
 
@@ -105,14 +113,14 @@ body {
 }
 
 .document-section+.document-section {
-    margin-top: 4mm;
+    margin-top: 3mm;
 }
 
 .document-section>h2 {
     padding: 2.4mm 3mm;
     margin: 0;
     color: #ffffff;
-    font-size: 9.7pt;
+    font-size: 11pt;
     font-weight: 700;
     line-height: 1.4;
     background: #0e2b5c;
@@ -128,7 +136,7 @@ body {
 .document-field {
     display: inline-block;
     width: 49%;
-    padding: 0 0 4mm;
+    padding: 0 0 1.5mm;
     margin-right: 2%;
     margin-left: 0;
     vertical-align: top;
@@ -148,17 +156,18 @@ body {
 .document-field dt {
     padding: 0;
     margin: 0 0 0.4mm;
-    font-size: 8pt;
+    font-size: 10pt;
     font-weight: 700;
     line-height: 1.35;
 }
 
 .document-field dd {
+    max-width: 100%;
     min-height: 4.4mm;
     padding: 0.2mm 0.5mm;
     margin: 0;
-    overflow-wrap: break-word;
-    font-size: 8.4pt;
+    overflow-wrap: anywhere;
+    font-size: 10pt;
     line-height: 1.25;
     white-space: pre-wrap;
     border-bottom: 0.5pt dotted #6b7280;
@@ -171,7 +180,7 @@ body {
 .document-certification {
     padding: 4mm 4mm 1mm;
     margin: 0;
-    font-size: 9pt;
+    font-size: 8.5pt;
     line-height: 1.65;
     text-align: left;
     text-indent: 0;
@@ -187,7 +196,7 @@ body {
     display: inline-block;
     width: 46%;
     margin: 0 2%;
-    font-size: 9pt;
+    font-size: 10pt;
     text-align: center;
     vertical-align: top;
     page-break-inside: avoid;
@@ -197,7 +206,7 @@ body {
 .document-staff-card h3 {
     padding: 0;
     margin: 0 0 4mm;
-    font-size: 9.5pt;
+    font-size: 10pt;
     font-weight: 700;
     line-height: 1.4;
 }
@@ -207,7 +216,7 @@ body {
     width: 100%;
     padding: 0;
     margin: 3.5mm 0 0;
-    font-size: 9pt;
+    font-size: 10pt;
     white-space: nowrap;
 }
 
@@ -237,7 +246,7 @@ body {
     min-height: 55mm;
     padding: 4mm;
     margin: 0;
-    font-size: 9pt;
+    font-size: 10pt;
     vertical-align: top;
     border: 0.75pt solid #9ca3af;
     page-break-inside: avoid;
@@ -249,14 +258,42 @@ body {
     min-height: 7mm;
     padding: 0;
     margin: 3mm 0 0;
-    font-size: 9pt;
+    font-size: 10pt;
     line-height: 1.5;
 }
 
 .document-staff-card .document-staff-name {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    padding-left: 22%;
     margin-top: 0;
-    text-align: center;
     white-space: nowrap;
+}
+
+.document-staff-name .document-staff-signature-label {
+    display: none;
+}
+
+.document-staff-signature-label {
+    display: table-cell;
+    width: 22%;
+}
+
+.document-staff-name-field {
+    display: block;
+    width: 100%;
+    text-align: center;
+}
+
+.document-staff-name-line {
+    display: inline-block;
+    width: calc(100% - 14mm);
+    min-height: 5mm;
+    padding: 0.3mm 0.8mm;
+    overflow-wrap: break-word;
+    vertical-align: bottom;
+    border-bottom: 0.5pt dotted #6b7280;
 }
 
 .document-decisions>span {

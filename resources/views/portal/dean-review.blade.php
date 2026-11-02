@@ -3,7 +3,7 @@
         <section class="portal-card dean-review-card">
             <div class="dean-review-card__brand">
                 <img src="{{ asset('img/logo.png') }}" alt="มหาวิทยาลัยศรีนครินทรวิโรฒ">
-                <span>SWU Moodle Academy</span>
+                <span>{{ match ($record['form_type_code'] ?? 'CC-ITED-06') { 'CC-ITED-01' => 'ขอใช้พื้นที่สำหรับจัดทำเว็บไซต์', 'CC-ITED-02' => 'ขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์', 'CC-ITED-04' => 'ขอเพิ่มพื้นที่บนเว็บไซต์', 'CC-ITED-05' => 'ขอสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting', default => 'SWU Moodle Academy' } }}</span>
             </div>
             @if($alreadyProcessed)
                 <div class="dean-review-result" role="status">

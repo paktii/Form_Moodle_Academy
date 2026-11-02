@@ -55,6 +55,25 @@ class PortalDraftLifecycleTest extends TestCase
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }
 
+    public function test_website_form_routes_preserve_their_own_draft_and_disable_browser_cache(): void
+    {
+        $session = $this->app['session']->driver();
+        $session->put('portal.actor', $this->requester());
+        $session->put('portal.website_draft.website_name', 'เว็บไซต์ที่กำลังกรอก');
+
+        $request = Request::create('/request/website/create/2', 'GET');
+        $request->setLaravelSession($session);
+        $route = new Route(['GET'], '/request/website/create/{step}', fn () => null);
+        $route->name('website-requests.form');
+        $route->bind($request);
+        $request->setRouteResolver(fn () => $route);
+
+        $response = (new DiscardPortalDraftWhenLeavingForm)->handle($request, fn () => response('form'));
+
+        $this->assertSame('เว็บไซต์ที่กำลังกรอก', $session->get('portal.website_draft.website_name'));
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+    }
+
     private function requester(): array
     {
         return [

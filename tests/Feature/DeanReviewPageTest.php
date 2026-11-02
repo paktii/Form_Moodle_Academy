@@ -20,6 +20,7 @@ class DeanReviewPageTest extends TestCase
 
         $record = [
             'request_no' => 'CC-TEST-01',
+            'form_type_code' => 'CC-ITED-01',
             'document_name' => 'CC-TEST-01_FORM.pdf',
             'requires_student_roster' => true,
             'has_student_roster' => true,
@@ -48,6 +49,8 @@ class DeanReviewPageTest extends TestCase
         $this->assertStringNotContainsString('รายชื่อผู้เรียน', $html);
         $this->assertStringNotContainsString('roster-2026.xlsx', $html);
         $this->assertStringNotContainsString('http://localhost/attachment/roster', $html);
+        $this->assertStringContainsString('ขอใช้พื้นที่สำหรับจัดทำเว็บไซต์', $html);
+        $this->assertStringNotContainsString('บริการพื้นที่เว็บไซต์', $html);
 
         // Document PDF is excluded from attachments list
         $this->assertStringNotContainsString('CC-TEST-01_FORM.pdf', $html);

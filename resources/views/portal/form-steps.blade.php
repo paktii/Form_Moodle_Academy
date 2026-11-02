@@ -6,7 +6,7 @@ $documentDownloadFilename = $requestCode !== ''
     ? "CC-ITED-06_{$requestCode}.pdf"
     : (($data['project_name'] ?? 'โครงการขออนุมัติ').'.pdf');
 @endphp
-<x-portal-layout title="สร้างคำร้อง" :tab-title="'New Request · Step '.$step">
+<x-portal-layout :title="$formName.' / สร้างคำร้อง'" :tab-title="'New Request · Step '.$step">
     <main class="form-layout">
         <form id="course-form" action="{{ route('requests.save-step', $step) }}" method="post" enctype="multipart/form-data">
             @csrf
@@ -107,7 +107,7 @@ $documentDownloadFilename = $requestCode !== ''
                             <div class="form-section__header">
                                 <h2>เลือกผู้รับรองของส่วนงานเป้าหมาย</h2>
                             </div>
-                            <x-portal-searchable-select name="dean_pers_id" label="หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" />
+                            <x-portal-searchable-select name="dean_pers_id" label="หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" />
                             @error('dean_pers_id')
                                 <p class="field-error" role="alert">{{ $message }}</p>
                             @enderror
@@ -158,7 +158,7 @@ $documentDownloadFilename = $requestCode !== ''
     </x-portal-modal>
     @if($step === 4)
     <x-portal-modal id="finish-dialog" title="ยืนยันการบันทึกคำร้อง">
-        <p data-finish-dialog-text style="text-align: center; font-size: 16px; line-height: 1.6;">คุณต้องการส่งคำร้องนี้ให้ผู้รับรองที่เลือกใช่หรือไม่?<br>หลังจากบันทึกแล้ว <span class="finish-dialog__mobile-line">คำร้องจะอยู่ในสถานะรอคณบดีรับรอง</span></p>
+        <p data-finish-dialog-text style="text-align: center; font-size: 16px; line-height: 1.6;">คุณต้องการส่งคำร้องนี้ให้ผู้รับรองที่เลือกใช่หรือไม่?<br>หลังจากบันทึกแล้ว <span class="finish-dialog__mobile-line">คำร้องจะอยู่ในสถานะรอการรับรอง</span></p>
         <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit" form="course-form" name="navigation" value="next" variant="primary"><span data-finish-confirm-label>ยืนยันการส่งคำร้อง</span></x-portal-button></div>
     </x-portal-modal>
     @endif

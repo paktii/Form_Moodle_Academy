@@ -1,6 +1,40 @@
 const dialogTriggers = new WeakMap();
 let pdfJsPromise;
 
+const requesterShell = document.querySelector('[data-requester-shell]');
+const requesterSidebarToggle = requesterShell?.querySelector('[data-requester-sidebar-toggle]');
+const requesterSidebarCloseButtons = requesterShell?.querySelectorAll('[data-requester-sidebar-close]') ?? [];
+
+function setRequesterSidebar(open) {
+    if (!requesterShell || !requesterSidebarToggle) return;
+
+    requesterShell.classList.toggle('is-sidebar-open', open);
+    requesterSidebarToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.documentElement.classList.toggle('has-requester-sidebar', open);
+
+    if (open) {
+        requesterShell.querySelector('.requester-sidebar__close')?.focus();
+    }
+}
+
+requesterSidebarToggle?.addEventListener('click', () => {
+    setRequesterSidebar(!requesterShell.classList.contains('is-sidebar-open'));
+});
+
+requesterSidebarCloseButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        setRequesterSidebar(false);
+        requesterSidebarToggle?.focus();
+    });
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && requesterShell?.classList.contains('is-sidebar-open')) {
+        setRequesterSidebar(false);
+        requesterSidebarToggle?.focus();
+    }
+});
+
 function loadPdfJs() {
     if (!pdfJsPromise) {
         pdfJsPromise = Promise.all([
@@ -99,7 +133,7 @@ function updateDropzoneFile(input, event) {
     }
 
     const text = input.validationMessage || `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-    const iconUrl = document.querySelector('.portal-logo')?.src.replace('logo.png', 'icons/file-text.svg') || '/img/icons/file-text.svg';
+    const iconUrl = '/img/icons/file-text.svg';
     filename.innerHTML = `
         <img src="${iconUrl}" alt="" class="portal-icon file-upload__file-icon">
         <span class="file-upload__file-row">
@@ -114,23 +148,6 @@ document.addEventListener('change', (event) => {
     const input = event.target.closest('[data-dropzone] input[type="file"]');
     if (input) updateDropzoneFile(input, event);
 });
-
-function resetUploadDialog(dialog) {
-    const form = dialog.querySelector('form[id^="upload-form-"]');
-    if (!form) return;
-
-    form.reset();
-    const input = form.querySelector('input[type="file"]');
-    input?.setCustomValidity('');
-    input?.dispatchEvent(new Event('change'));
-
-    const step1 = form.querySelector('[id^="upload-step1-"]');
-    const step2 = form.querySelector('[id^="upload-step2-"]');
-    const cancelStep = form.querySelector('[id^="upload-cancel-step-"]');
-    if (step1) step1.hidden = false;
-    if (step2) step2.hidden = true;
-    if (cancelStep) cancelStep.hidden = true;
-}
 
 function resetCourseIdDialog(dialog) {
     const form = dialog.querySelector('form[id^="course-id-form-"]');
@@ -151,43 +168,6 @@ document.addEventListener('click', (event) => {
     }
     const closer = event.target.closest('[data-close-dialog]');
     if (closer) closer.closest('dialog')?.close();
-});
-
-document.addEventListener('click', async (event) => {
-    const downloadButton = event.target.closest('[data-request-pdf-download]');
-    if (!downloadButton) return;
-
-    event.preventDefault();
-    if (downloadButton.getAttribute('aria-busy') === 'true') return;
-
-    downloadButton.setAttribute('aria-busy', 'true');
-    try {
-        const response = await fetch(downloadButton.href, { credentials: 'same-origin' });
-        if (!response.ok) throw new Error(`PDF download failed with status ${response.status}`);
-
-        const blobUrl = URL.createObjectURL(await response.blob());
-        const disposition = response.headers.get('content-disposition') ?? '';
-        const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-        const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-        const temporaryLink = document.createElement('a');
-        temporaryLink.href = blobUrl;
-        temporaryLink.download = encodedName ? decodeURIComponent(encodedName) : (plainName ?? 'request.pdf');
-        document.body.append(temporaryLink);
-        temporaryLink.click();
-        temporaryLink.remove();
-        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
-
-        downloadButton.hidden = true;
-        const nextAction = downloadButton.parentElement?.querySelector('[data-request-upload]');
-        if (nextAction) {
-            nextAction.hidden = false;
-            nextAction.focus();
-        }
-    } catch {
-        window.location.assign(downloadButton.href);
-    } finally {
-        downloadButton.removeAttribute('aria-busy');
-    }
 });
 
 document.querySelector('[data-finish-request]')?.addEventListener('click', (event) => {
@@ -214,7 +194,6 @@ document.querySelector('[data-finish-request]')?.addEventListener('click', (even
 
 document.querySelectorAll('dialog').forEach((dialog) => {
     dialog.addEventListener('close', () => {
-        resetUploadDialog(dialog);
         resetCourseIdDialog(dialog);
         if (!document.querySelector('dialog[open]')) {
             document.documentElement.classList.remove('has-open-dialog');
@@ -242,60 +221,6 @@ document.addEventListener('click', (event) => {
 
         input.setCustomValidity('');
         openDialog(rosterConfirmButton.dataset.confirmDialog, rosterConfirmButton);
-        return;
-    }
-
-    const cancelButton = event.target.closest('[data-upload-cancel]');
-    if (cancelButton) {
-        const requestId = cancelButton.dataset.uploadCancel;
-        document.getElementById(`upload-step1-${requestId}`).hidden = true;
-        document.getElementById(`upload-cancel-step-${requestId}`).hidden = false;
-        return;
-    }
-
-    const cancelBackButton = event.target.closest('[data-upload-cancel-back]');
-    if (cancelBackButton) {
-        const requestId = cancelBackButton.dataset.uploadCancelBack;
-        document.getElementById(`upload-step1-${requestId}`).hidden = false;
-        document.getElementById(`upload-cancel-step-${requestId}`).hidden = true;
-        return;
-    }
-
-    const cancelConfirmButton = event.target.closest('[data-upload-cancel-confirm]');
-    if (cancelConfirmButton) {
-        cancelConfirmButton.closest('dialog')?.close();
-        return;
-    }
-
-    const nextButton = event.target.closest('[data-upload-next]');
-    if (nextButton) {
-        const requestId = nextButton.dataset.uploadNext;
-        const input = document.getElementById(`signed-${requestId}`);
-        if (!input?.files.length) {
-            input?.setCustomValidity('กรุณาเลือกไฟล์ PDF');
-            input?.reportValidity();
-            return;
-        }
-        if (!input.checkValidity()) {
-            input.reportValidity();
-            return;
-        }
-
-        input.setCustomValidity('');
-        if (nextButton.dataset.confirmDialog) {
-            openDialog(nextButton.dataset.confirmDialog, nextButton);
-            return;
-        }
-        document.getElementById(`upload-step1-${requestId}`).hidden = true;
-        document.getElementById(`upload-step2-${requestId}`).hidden = false;
-        return;
-    }
-
-    const backButton = event.target.closest('[data-upload-back]');
-    if (backButton) {
-        const requestId = backButton.dataset.uploadBack;
-        document.getElementById(`upload-step1-${requestId}`).hidden = false;
-        document.getElementById(`upload-step2-${requestId}`).hidden = true;
         return;
     }
 
@@ -356,7 +281,7 @@ document.addEventListener('click', (event) => {
 
 document.querySelector('[data-review-submit]')?.addEventListener('click', (event) => {
     const choice = document.querySelector('input[name="review_choice"]:checked')?.value;
-    openDialog(choice === 'return' ? 'return-dialog' : 'review-dialog', event.currentTarget);
+    openDialog(choice === 'reject' ? 'officer-reject-dialog' : 'review-dialog', event.currentTarget);
 });
 
 document.querySelectorAll('input[name="review_choice"]').forEach((input) => {
@@ -364,11 +289,147 @@ document.querySelectorAll('input[name="review_choice"]').forEach((input) => {
         const btn = document.querySelector('[data-review-submit]');
         if (btn) {
             btn.disabled = false;
-            btn.textContent = input.value === 'return'
-                ? 'ส่งกลับให้ผู้ยื่นคำร้องแก้ไข' : 'ส่งต่อผู้มีอำนาจพิจารณา';
+            btn.textContent = input.value === 'reject'
+                ? 'ไม่อนุมัติ' : 'อนุมัติ';
         }
     });
 });
+
+const officerApprovalDialog = document.getElementById('review-dialog');
+if (officerApprovalDialog) {
+    const form = officerApprovalDialog.querySelector('[data-officer-approval-form]');
+    const entry = officerApprovalDialog.querySelector('[data-officer-approval-entry]');
+    const confirmStep = officerApprovalDialog.querySelector('[data-officer-approval-confirm]');
+    const confirmMessage = officerApprovalDialog.querySelector('[data-officer-approval-confirm-message]');
+    const confirmAction = officerApprovalDialog.querySelector('[data-officer-approval-confirm-action]');
+    const confirmBack = officerApprovalDialog.querySelector('[data-officer-approval-confirm-back]');
+    const sendButton = officerApprovalDialog.querySelector('[data-officer-approval-send]');
+    const cancelButton = officerApprovalDialog.querySelector('[data-officer-approval-cancel]');
+    const executionDetail = officerApprovalDialog.querySelector('[data-officer-execution-detail]');
+    const heading = officerApprovalDialog.querySelector('.modal-heading h2');
+    let confirmationMode = null;
+
+    function showOfficerApprovalEntry() {
+        confirmationMode = null;
+        if (heading) heading.textContent = 'ยืนยันอนุมัติคำร้อง';
+        if (entry) entry.hidden = false;
+        if (confirmStep) confirmStep.hidden = true;
+    }
+
+    function showOfficerApprovalConfirmation(mode) {
+        confirmationMode = mode;
+        if (heading) heading.textContent = mode === 'submit' ? 'ยืนยันอนุมัติคำร้อง' : 'ยืนยันการยกเลิก';
+        if (entry) entry.hidden = true;
+        if (confirmStep) confirmStep.hidden = false;
+        if (confirmMessage) {
+            confirmMessage.textContent = mode === 'submit'
+                ? (executionDetail
+                    ? 'ระบบจะบันทึกข้อมูลการดำเนินการโดยใช้ชื่อจากบัญชีที่เข้าสู่ระบบ และแจ้งผู้ยื่นคำร้อง\nคุณต้องการยืนยันอนุมัติใช่หรือไม่?'
+                    : 'ระบบจะบันทึกผลอนุมัติโดยใช้ชื่อจากบัญชีที่เข้าสู่ระบบ\nคุณต้องการยืนยันอนุมัติใช่หรือไม่?')
+                : 'คุณต้องการยกเลิกการอนุมัติใช่หรือไม่? ข้อมูลที่กรอกไว้จะถูกล้างทั้งหมด';
+        }
+        if (confirmAction) {
+            confirmAction.textContent = mode === 'submit'
+                ? 'ยืนยันอนุมัติ'
+                : 'ยืนยันยกเลิก';
+            confirmAction.className = 'portal-button';
+        }
+        confirmAction?.focus();
+    }
+
+    sendButton?.addEventListener('click', () => {
+        if (!form?.reportValidity()) return;
+        showOfficerApprovalConfirmation('submit');
+    });
+
+    cancelButton?.addEventListener('click', () => showOfficerApprovalConfirmation('cancel'));
+    confirmBack?.addEventListener('click', showOfficerApprovalEntry);
+    confirmAction?.addEventListener('click', () => {
+        if (confirmationMode === 'submit') {
+            form?.requestSubmit();
+            return;
+        }
+        if (confirmationMode !== 'cancel') return;
+        form?.reset();
+        showOfficerApprovalEntry();
+        officerApprovalDialog.close();
+    });
+    officerApprovalDialog.addEventListener('close', showOfficerApprovalEntry);
+}
+
+const editResultDialog = document.getElementById('edit-result-dialog');
+if (editResultDialog) {
+    const form = editResultDialog.querySelector('[data-edit-result-form]');
+    const entry = editResultDialog.querySelector('[data-edit-result-entry]');
+    const confirmStep = editResultDialog.querySelector('[data-edit-result-confirm]');
+    const confirmMessage = editResultDialog.querySelector('[data-edit-result-confirm-message]');
+    const confirmAction = editResultDialog.querySelector('[data-edit-result-confirm-action]');
+    const confirmBack = editResultDialog.querySelector('[data-edit-result-confirm-back]');
+    const saveButton = editResultDialog.querySelector('[data-edit-result-save]');
+    const cancelButton = editResultDialog.querySelector('[data-edit-result-cancel]');
+    const closeButton = editResultDialog.querySelector('.modal-close');
+    const heading = editResultDialog.querySelector('.modal-heading h2');
+    let confirmationMode = null;
+
+    function showEditResultEntry() {
+        confirmationMode = null;
+        if (heading) heading.textContent = 'แก้ไขผลการดำเนินการ';
+        if (entry) entry.hidden = false;
+        if (confirmStep) confirmStep.hidden = true;
+    }
+
+    function showEditResultConfirmation(mode) {
+        confirmationMode = mode;
+        if (heading) heading.textContent = mode === 'submit'
+            ? 'ยืนยันการบันทึกการแก้ไข'
+            : 'ยืนยันการยกเลิก';
+        if (entry) entry.hidden = true;
+        if (confirmStep) confirmStep.hidden = false;
+        if (confirmMessage) {
+            confirmMessage.textContent = mode === 'submit'
+                ? 'คุณต้องการบันทึกการแก้ไขผลการดำเนินการใช่หรือไม่?'
+                : 'คุณต้องการยกเลิกการแก้ไขใช่หรือไม่? ข้อมูลที่แก้ไขจะไม่ถูกบันทึก';
+        }
+        if (confirmAction) {
+            confirmAction.textContent = mode === 'submit'
+                ? 'ยืนยันบันทึกการแก้ไข'
+                : 'ยืนยันยกเลิก';
+        }
+        confirmAction?.focus();
+    }
+
+    saveButton?.addEventListener('click', () => {
+        if (!form?.reportValidity()) return;
+        showEditResultConfirmation('submit');
+    });
+
+    cancelButton?.addEventListener('click', () => showEditResultConfirmation('cancel'));
+    closeButton?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showEditResultConfirmation('cancel');
+    });
+    confirmBack?.addEventListener('click', showEditResultEntry);
+    confirmAction?.addEventListener('click', () => {
+        if (confirmationMode === 'submit') {
+            form?.requestSubmit();
+            return;
+        }
+        if (confirmationMode !== 'cancel') return;
+        form?.reset();
+        showEditResultEntry();
+        editResultDialog.close();
+    });
+    editResultDialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        if (confirmationMode) {
+            showEditResultEntry();
+            return;
+        }
+        showEditResultConfirmation('cancel');
+    });
+    editResultDialog.addEventListener('close', showEditResultEntry);
+}
 
 document.querySelectorAll('[data-conditional]').forEach((conditional) => {
     const controls = conditional.matches('input, select, textarea')
@@ -386,6 +447,21 @@ document.querySelectorAll('[data-conditional]').forEach((conditional) => {
     radios.forEach((radio) => radio.addEventListener('change', update));
     update();
 });
+
+const websitePeriod = document.querySelector('[data-website-period]');
+if (websitePeriod) {
+    const updateWebsitePeriod = () => {
+        const scope = document.querySelector('input[name="site_scope_type"]:checked')?.value;
+        const isTemporary = scope === 'PROJECT' || scope === 'CONFERENCE';
+        websitePeriod.hidden = !isTemporary;
+        websitePeriod.querySelectorAll('input').forEach((input) => {
+            input.required = isTemporary;
+            input.disabled = !isTemporary;
+        });
+    };
+    document.querySelectorAll('input[name="site_scope_type"]').forEach((radio) => radio.addEventListener('change', updateWebsitePeriod));
+    updateWebsitePeriod();
+}
 
 const activityDetails = document.querySelector('[data-activity-details]');
 if (activityDetails) {
@@ -415,6 +491,7 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     const arrow = field.querySelector('[data-searchable-select-arrow]');
     const clear = field.querySelector('[data-searchable-select-clear]');
     const options = [...field.querySelectorAll('[data-searchable-select-option]')];
+    const showAllOnFocus = field.hasAttribute('data-searchable-select-show-all-on-focus');
     const dependencyName = field.dataset.searchableSelectDependsOn;
     const dependencyValue = dependencyName
         ? [...document.querySelectorAll('[data-searchable-select-value]')].find((candidate) => candidate.name === dependencyName)
@@ -497,8 +574,26 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
         setActive(-1);
     }
 
+    function showAvailableOptions() {
+        let resultCount = 0;
+        options.forEach((option) => {
+            option.hidden = !matchesDependency(option);
+            option.setAttribute('aria-selected', option.dataset.value === value.value ? 'true' : 'false');
+            if (!option.hidden) resultCount += 1;
+        });
+        empty.hidden = resultCount !== 0 || (dependencyValue && dependencyValue.value === '');
+        updateControls();
+        setActive(-1);
+    }
+
     input.addEventListener('focus', () => {
-        filterOptions();
+        if (showAllOnFocus && value.value !== '') showAvailableOptions();
+        else filterOptions();
+        openMenu();
+    });
+    input.addEventListener('click', () => {
+        if (!showAllOnFocus || value.value === '') return;
+        showAvailableOptions();
         openMenu();
     });
     input.addEventListener('input', () => {
@@ -759,7 +854,7 @@ document.querySelectorAll('[data-signature-pad]').forEach((signaturePad) => {
         confirmationMode = null;
         if (dialogTitle) dialogTitle.textContent = isApprovalSignature
             ? 'ยืนยันการอนุมัติ'
-            : (isRejectionSignature ? 'ยืนยันไม่อนุมัติการสร้างรายวิชา' : 'ยืนยันการส่งต่อเอกสาร');
+            : (isRejectionSignature ? 'ยืนยันไม่อนุมัติการสร้างรายวิชา' : 'ยืนยันอนุมัติคำร้อง');
         if (entry) entry.hidden = false;
         if (confirmStep) confirmStep.hidden = true;
     }
@@ -770,7 +865,7 @@ document.querySelectorAll('[data-signature-pad]').forEach((signaturePad) => {
             dialogTitle.textContent = mode === 'submit'
                 ? (isApprovalSignature
                     ? 'ยืนยันการอนุมัติ'
-                    : (isRejectionSignature ? 'ยืนยันไม่อนุมัติการสร้างรายวิชา' : 'ยืนยันการส่งต่อเอกสาร'))
+                    : (isRejectionSignature ? 'ยืนยันไม่อนุมัติการสร้างรายวิชา' : 'ยืนยันอนุมัติคำร้อง'))
                 : 'ยืนยันการยกเลิก';
         }
         if (entry) entry.hidden = true;
@@ -781,12 +876,12 @@ document.querySelectorAll('[data-signature-pad]').forEach((signaturePad) => {
                     ? 'ระบบจะอนุมัติเอกสารพร้อมลายเซ็นของคุณ คุณต้องการยืนยันการอนุมัติใช่หรือไม่?'
                     : (isRejectionSignature
                         ? 'ระบบจะบันทึกผลไม่อนุมัติพร้อมเหตุผลและลายเซ็นของคุณ คุณต้องการยืนยันไม่อนุมัติใช่หรือไม่?'
-                        : 'ระบบจะส่งเอกสารพร้อมลายเซ็นให้ผู้มีอำนาจพิจารณา คุณต้องการยืนยันการส่งต่อใช่หรือไม่?'))
+                        : 'ระบบจะบันทึกผลอนุมัติและส่งเอกสารพร้อมลายเซ็นให้ผู้มีอำนาจพิจารณา คุณต้องการยืนยันอนุมัติใช่หรือไม่?'))
                 : `คุณต้องการยกเลิกใช่หรือไม่? ${isRejectionSignature ? 'เหตุผลและ' : ''}ลายเซ็นที่วาดหรือไฟล์ที่เลือกจะถูกล้าง`;
         }
         if (confirmAction) {
             confirmAction.textContent = mode === 'submit'
-                ? (isApprovalSignature ? 'ยืนยันอนุมัติ' : (isRejectionSignature ? 'ยืนยันไม่อนุมัติ' : 'ยืนยันส่งต่อ'))
+                ? (isApprovalSignature ? 'ยืนยันอนุมัติ' : (isRejectionSignature ? 'ยืนยันไม่อนุมัติ' : 'ยืนยันอนุมัติ'))
                 : 'ยืนยันยกเลิก';
         }
         confirmAction?.focus();
@@ -947,6 +1042,12 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
 const requestList = document.querySelector('[data-request-list]');
 if (requestList) {
     const search = requestList.querySelector('[data-search]');
+    const formType = requestList.querySelector('[data-type-filter]');
+    const typeMenu = requestList.querySelector('[data-type-filter-menu]');
+    const typeMenuTrigger = typeMenu?.querySelector('[data-type-filter-trigger]');
+    const typeMenuOptions = typeMenu?.querySelector('[data-type-filter-options]');
+    const typeMenuLabel = typeMenu?.querySelector('[data-type-filter-label]');
+    const typeMenuItems = [...(typeMenu?.querySelectorAll('[data-type-filter-option]') ?? [])];
     const status = requestList.querySelector('[data-status-filter]');
     const statusMenu = requestList.querySelector('[data-status-filter-menu]');
     const statusMenuTrigger = statusMenu?.querySelector('[data-status-filter-trigger]');
@@ -976,6 +1077,21 @@ if (requestList) {
     let rosterUpdatesOnly = false;
     let newlyCompletedOnly = false;
     let newlyCompletedNotificationIds = new Set();
+
+    function closeTypeMenu() {
+        if (!typeMenuOptions || !typeMenuTrigger) return;
+        typeMenuOptions.hidden = true;
+        typeMenuTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncTypeMenu() {
+        if (!typeMenuLabel) return;
+        const selectedOption = [...formType.options].find((option) => option.value === formType.value);
+        typeMenuLabel.textContent = selectedOption?.textContent ?? '';
+        typeMenuItems.forEach((item) => {
+            item.setAttribute('aria-selected', String(item.dataset.value === formType.value));
+        });
+    }
 
     function closeStatusMenu() {
         if (!statusMenuOptions || !statusMenuTrigger) return;
@@ -1011,9 +1127,40 @@ if (requestList) {
         });
     }
 
+    if (typeMenu && typeMenuTrigger && typeMenuOptions) {
+        typeMenuTrigger.addEventListener('click', () => {
+            const willOpen = typeMenuOptions.hidden;
+            closeStatusMenu();
+            closeDateMenu();
+            typeMenuOptions.hidden = !willOpen;
+            typeMenuTrigger.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        typeMenuItems.forEach((item) => {
+            item.addEventListener('click', () => {
+                formType.value = item.dataset.value;
+                syncTypeMenu();
+                closeTypeMenu();
+                formType.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!typeMenu.contains(event.target)) closeTypeMenu();
+        });
+
+        typeMenu.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeTypeMenu();
+                typeMenuTrigger.focus();
+            }
+        });
+    }
+
     if (statusMenu && statusMenuTrigger && statusMenuOptions) {
         statusMenuTrigger.addEventListener('click', () => {
             const willOpen = statusMenuOptions.hidden;
+            closeTypeMenu();
             closeDateMenu();
             statusMenuOptions.hidden = !willOpen;
             statusMenuTrigger.setAttribute('aria-expanded', String(willOpen));
@@ -1047,6 +1194,7 @@ if (requestList) {
     if (dateMenu && dateMenuTrigger && dateMenuOptions) {
         dateMenuTrigger.addEventListener('click', () => {
             const willOpen = dateMenuOptions.hidden;
+            closeTypeMenu();
             closeStatusMenu();
             dateMenuOptions.hidden = !willOpen;
             dateMenuTrigger.setAttribute('aria-expanded', String(willOpen));
@@ -1085,37 +1233,56 @@ if (requestList) {
             // Keep the completion notice usable when browser storage is unavailable.
         }
 
-        const unseenNotificationIds = completionRows
+        let unseenNotificationIds = completionRows
             .map((row) => row.dataset.completionNotification)
             .filter((notificationId) => !seenNotificationIds.includes(notificationId));
 
-        if (unseenNotificationIds.length > 0) {
+        function updateCompletedBanner() {
+            const hasUnseenNotifications = unseenNotificationIds.length > 0;
             completedBannerCount.textContent = String(unseenNotificationIds.length);
-            completedBannerMessage.hidden = false;
-            completedBannerButton.hidden = false;
-            if (completedBanner) completedBanner.hidden = false;
-
-            completedBannerButton.addEventListener('click', () => {
-                try {
-                    window.localStorage.setItem(seenStorageKey, JSON.stringify([...new Set([...seenNotificationIds, ...unseenNotificationIds])]));
-                } catch {
-                    // The banner still dismisses for this page view if storage is unavailable.
-                }
-
-                completedBannerMessage.hidden = true;
-                completedBannerButton.hidden = true;
-                if (completedBanner) completedBanner.hidden = true;
-
-                rosterOnly = false;
-                rosterUpdatesOnly = false;
-                newlyCompletedOnly = true;
-                newlyCompletedNotificationIds = new Set(unseenNotificationIds);
-                status.value = '';
-                date.value = '';
-                search.value = '';
-                filterRows();
-            });
+            completedBannerMessage.hidden = !hasUnseenNotifications;
+            completedBannerButton.hidden = !hasUnseenNotifications;
+            if (completedBanner) completedBanner.hidden = !hasUnseenNotifications;
         }
+
+        function markCompletionNotificationsSeen(notificationIds) {
+            seenNotificationIds = [...new Set([...seenNotificationIds, ...notificationIds])];
+            unseenNotificationIds = unseenNotificationIds.filter((notificationId) => !notificationIds.includes(notificationId));
+
+            try {
+                window.localStorage.setItem(seenStorageKey, JSON.stringify(seenNotificationIds));
+            } catch {
+                // The banner still updates for this page view if storage is unavailable.
+            }
+
+            updateCompletedBanner();
+        }
+
+        completionRows.forEach((row) => {
+            const detailLink = row.querySelector('[data-default-actions] a');
+            const notificationId = row.dataset.completionNotification;
+
+            detailLink?.addEventListener('click', () => {
+                markCompletionNotificationsSeen([notificationId]);
+            });
+        });
+
+        completedBannerButton.addEventListener('click', () => {
+            const notificationIdsToShow = [...unseenNotificationIds];
+            markCompletionNotificationsSeen(notificationIdsToShow);
+
+            rosterOnly = false;
+            rosterUpdatesOnly = false;
+            newlyCompletedOnly = true;
+            newlyCompletedNotificationIds = new Set(notificationIdsToShow);
+            formType.value = '';
+            status.value = '';
+            date.value = '';
+            search.value = '';
+            filterRows();
+        });
+
+        updateCompletedBanner();
     }
 
     function pageSize() {
@@ -1137,6 +1304,7 @@ if (requestList) {
         const contentToSearch = row.dataset.searchContent || row.textContent;
 
         return contentToSearch.toLocaleLowerCase('th').includes(term)
+            && (!formType.value || row.dataset.formType === formType.value)
             && (!status.value || status.value.split(',').includes(row.dataset.status))
             && (!rosterOnly || row.dataset.missingRoster === 'true')
             && (!rosterUpdatesOnly || row.dataset.rosterUpdate === 'true')
@@ -1214,6 +1382,7 @@ if (requestList) {
 
     function filterRows() {
         currentPage = 1;
+        syncTypeMenu();
         syncStatusMenu();
         syncDateMenu();
         renderRows();
@@ -1233,6 +1402,7 @@ if (requestList) {
     }
 
     search.addEventListener('input', runStandardFilter);
+    formType.addEventListener('change', runStandardFilter);
     status.addEventListener('change', runStandardFilter);
     date.addEventListener('change', runStandardFilter);
     previousPage.addEventListener('click', () => selectPage(currentPage - 1));
@@ -1257,19 +1427,11 @@ if (requestList) {
         }
     });
     mobilePagination.addEventListener('change', filterRows);
-    requestList.querySelector('[data-filter-pending]')?.addEventListener('click', () => {
-        rosterOnly = false;
-        rosterUpdatesOnly = false;
-        newlyCompletedOnly = false;
-        status.value = 'PENDING_SIGNED_DOCUMENT';
-        date.value = '';
-        search.value = '';
-        filterRows();
-    });
     requestList.querySelector('[data-filter-officer-pending]')?.addEventListener('click', () => {
         rosterOnly = false;
         rosterUpdatesOnly = false;
         newlyCompletedOnly = false;
+        formType.value = '';
         status.value = 'UNDER_OFFICER_REVIEW';
         date.value = '';
         search.value = '';
@@ -1279,6 +1441,7 @@ if (requestList) {
         rosterOnly = false;
         rosterUpdatesOnly = false;
         newlyCompletedOnly = false;
+        formType.value = '';
         const pendingApprovalOption = [...status.options].find((option) =>
             option.value === 'PENDING_APPROVAL'
             && !option.hasAttribute('data-default-queue-status')
@@ -1288,19 +1451,11 @@ if (requestList) {
         search.value = '';
         filterRows();
     });
-    requestList.querySelector('[data-filter-course-id]')?.addEventListener('click', () => {
-        rosterOnly = false;
-        rosterUpdatesOnly = false;
-        newlyCompletedOnly = false;
-        status.value = 'PENDING_COURSE_ID';
-        date.value = '';
-        search.value = '';
-        filterRows();
-    });
     requestList.querySelector('[data-filter-roster]')?.addEventListener('click', () => {
         rosterOnly = true;
         rosterUpdatesOnly = false;
         newlyCompletedOnly = false;
+        formType.value = '';
         status.value = '';
         date.value = '';
         search.value = '';
@@ -1310,6 +1465,7 @@ if (requestList) {
         rosterOnly = false;
         rosterUpdatesOnly = true;
         newlyCompletedOnly = false;
+        formType.value = '';
         status.value = '';
         date.value = '';
         search.value = '';
@@ -1319,12 +1475,14 @@ if (requestList) {
         rosterOnly = false;
         rosterUpdatesOnly = false;
         newlyCompletedOnly = false;
+        formType.value = '';
         const defaultQueueStatus = status.querySelector('[data-default-queue-status]');
         status.value = defaultQueueStatus?.value ?? '';
         date.value = defaultQueueStatus ? '' : 'month';
         search.value = '';
         filterRows();
     });
+    syncTypeMenu();
     syncStatusMenu();
     syncDateMenu();
     renderRows();
@@ -1369,42 +1527,42 @@ window.addEventListener('pageshow', () => {
     });
 });
 
-const returnDialog = document.getElementById('return-dialog');
-if (returnDialog) {
-    const entry = returnDialog.querySelector('[data-return-entry]');
-    const confirmStep = returnDialog.querySelector('[data-return-confirm]');
-    const confirmMessage = returnDialog.querySelector('[data-return-confirm-message]');
-    const confirmAction = returnDialog.querySelector('[data-return-confirm-action]');
-    const confirmBack = returnDialog.querySelector('[data-return-confirm-back]');
-    const sendButton = returnDialog.querySelector('[data-return-send]');
-    const cancelButton = returnDialog.querySelector('[data-return-cancel]');
-    const form = returnDialog.querySelector('form');
+const officerRejectDialog = document.getElementById('officer-reject-dialog');
+if (officerRejectDialog) {
+    const entry = officerRejectDialog.querySelector('[data-officer-reject-entry]');
+    const confirmStep = officerRejectDialog.querySelector('[data-officer-reject-confirm]');
+    const confirmMessage = officerRejectDialog.querySelector('[data-officer-reject-confirm-message]');
+    const confirmAction = officerRejectDialog.querySelector('[data-officer-reject-confirm-action]');
+    const confirmBack = officerRejectDialog.querySelector('[data-officer-reject-confirm-back]');
+    const sendButton = officerRejectDialog.querySelector('[data-officer-reject-send]');
+    const cancelButton = officerRejectDialog.querySelector('[data-officer-reject-cancel]');
+    const form = officerRejectDialog.querySelector('form');
     const textarea = form?.querySelector('textarea[name="reason"]');
     let confirmationMode = null;
 
     function showEntry() {
         confirmationMode = null;
-        const h2 = returnDialog.querySelector('.modal-heading h2');
-        if (h2) h2.textContent = 'ยืนยันส่งกลับแก้ไข';
+        const h2 = officerRejectDialog.querySelector('.modal-heading h2');
+        if (h2) h2.textContent = 'ระบุเหตุผลที่ไม่อนุมัติ';
         if (entry) entry.hidden = false;
         if (confirmStep) confirmStep.hidden = true;
     }
 
     function showConfirmation(mode) {
         confirmationMode = mode;
-        const h2 = returnDialog.querySelector('.modal-heading h2');
+        const h2 = officerRejectDialog.querySelector('.modal-heading h2');
         if (h2) {
-            h2.textContent = mode === 'submit' ? 'ยืนยันส่งกลับแก้ไข' : 'ยืนยันการยกเลิก';
+            h2.textContent = mode === 'submit' ? 'ยืนยันไม่อนุมัติ' : 'ยืนยันการยกเลิก';
         }
         if (entry) entry.hidden = true;
         if (confirmStep) confirmStep.hidden = false;
         if (confirmMessage) {
             confirmMessage.innerHTML = mode === 'submit'
-                ? 'ระบบจะส่งคำร้องกลับไปยังผู้ยื่นคำร้องพร้อมเหตุผลที่ระบุไว้<br>คุณต้องการยืนยันการส่งกลับแก้ไขใช่หรือไม่?'
-                : 'คุณต้องการยกเลิกการส่งกลับแก้ไขใช่หรือไม่?<br>เหตุผลที่ระบุไว้จะถูกลบออกทั้งหมด';
+                ? 'ระบบจะบันทึกผลไม่อนุมัติและแจ้งผู้ยื่นคำร้องพร้อมเหตุผลที่ระบุไว้<br>คำร้องนี้จะสิ้นสุดและไม่สามารถแก้ไขได้ คุณต้องการยืนยันใช่หรือไม่?'
+                : 'คุณต้องการยกเลิกและกลับไปเลือกผลการตรวจสอบใช่หรือไม่?<br>เหตุผลที่ระบุไว้จะถูกลบออกทั้งหมด';
         }
         if (confirmAction) {
-            confirmAction.textContent = mode === 'submit' ? 'ยืนยันส่งกลับแก้ไข' : 'ยืนยันยกเลิก';
+            confirmAction.textContent = mode === 'submit' ? 'ยืนยันไม่อนุมัติ' : 'ยืนยันยกเลิก';
             confirmAction.className = mode === 'submit' ? 'portal-button portal-button--danger' : 'portal-button';
         }
         confirmAction?.focus();
@@ -1429,11 +1587,11 @@ if (returnDialog) {
         if (confirmationMode === 'cancel') {
             form?.reset();
             showEntry();
-            returnDialog.close();
+            officerRejectDialog.close();
         }
     });
 
-    returnDialog.addEventListener('close', showEntry);
+    officerRejectDialog.addEventListener('close', showEntry);
 }
 
 const deanRejectDialog = document.getElementById('dean-reject-dialog');

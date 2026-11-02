@@ -1,4 +1,4 @@
-@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null, 'optionParents' => [], 'dependsOn' => null, 'parentValue' => null, 'dependencyPlaceholder' => 'กรุณาเลือกหน่วยงานหลักก่อน'])
+@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null, 'optionParents' => [], 'dependsOn' => null, 'parentValue' => null, 'dependencyPlaceholder' => 'กรุณาเลือกหน่วยงานหลักก่อน', 'showAllOnFocus' => false])
 @php
     $inputId = $id ?? 'field-'.str_replace(['[', ']'], ['-', ''], $name);
     $listId = $inputId.'-options';
@@ -8,7 +8,7 @@
     $selectedParentValue = old($dependsOn, $parentValue);
     $dependencyDisabled = filled($dependsOn) && blank($selectedParentValue);
 @endphp
-<label class="form-label" for="{{ $inputId }}" data-searchable-select @if($dependsOn) data-searchable-select-depends-on="{{ $dependsOn }}" @endif>{{ $label }}@if($required)<span class="required-indicator" aria-hidden="true">*</span>@endif
+<label class="form-label" for="{{ $inputId }}" data-searchable-select @if($dependsOn) data-searchable-select-depends-on="{{ $dependsOn }}" @endif @if($showAllOnFocus) data-searchable-select-show-all-on-focus @endif>{{ $label }}@if($required)<span class="required-indicator" aria-hidden="true">*</span>@endif
     <div class="searchable-select">
         <input
             id="{{ $inputId }}"

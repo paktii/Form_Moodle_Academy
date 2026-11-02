@@ -4,7 +4,7 @@ namespace App\Models;
 
 class OfficerReview extends Course133Model
 {
-    protected $table = 'course133.officer_review';
+    protected $table = 'service_portal.officer_review';
 
     protected $primaryKey = 'officer_review_id';
 

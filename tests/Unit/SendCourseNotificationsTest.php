@@ -34,7 +34,7 @@ class SendCourseNotificationsTest extends TestCase
         $this->assertSame(45, $method->invoke(new SendCourseNotifications, 1));
     }
 
-    public function test_local_and_uat_non_requester_email_is_redirected_to_the_configured_test_recipient(): void
+    public function test_local_and_uat_email_is_redirected_to_the_configured_test_recipient(): void
     {
         config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
         $notification = new NotificationOutbox;
@@ -52,13 +52,12 @@ class SendCourseNotificationsTest extends TestCase
         }
     }
 
-    public function test_local_and_uat_requester_email_uses_the_actual_requester_recipient(): void
+    public function test_local_and_uat_requester_email_is_redirected_to_the_configured_test_recipient(): void
     {
         config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
         $method = new ReflectionMethod(SendCourseNotifications::class, 'recipientEmailFor');
         $requesterNotificationTypes = [
             'DEAN_REJECTED',
-            'REQUEST_RETURNED',
             'REQUEST_REJECTED',
             'COURSE_ID_RECORDED',
             'STUDENT_ROSTER_ACKNOWLEDGED',
@@ -74,9 +73,9 @@ class SendCourseNotificationsTest extends TestCase
                 $notification->recipient_email = 'requester@g.swu.ac.th';
 
                 $this->assertSame(
-                    'requester@g.swu.ac.th',
+                    'pakteema@g.swu.ac.th',
                     $method->invoke(new SendCourseNotifications, $notification),
-                    "Failed asserting requester recipient for {$notificationType} in {$environment}.",
+                    "Failed asserting test recipient for {$notificationType} in {$environment}.",
                 );
             }
         }

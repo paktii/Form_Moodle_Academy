@@ -6,6 +6,7 @@
 @import './pages/detail.css';
 @import './pages/request-detail.css';
 @import './pages/document.css';
+@import './pages/requester-shell.css';
 
 @font-face {
     font-family: 'Sarabun';
@@ -102,10 +103,89 @@
 }
 
 @layer components {
+    /* Shared responsive safeguards for every portal screen. Page-specific layout
+       remains in each page stylesheet; these rules only prevent common overflow
+       and interaction issues at tablet and mobile widths. */
+    .portal-page :where(main, section, article, form, fieldset, dl) {
+        min-width: 0;
+    }
+
+    .portal-page :where(h1, h2, h3, h4, p, li, dt, dd, legend, label, a, button, span) {
+        max-width: 100%;
+    }
+
+    .portal-page :where(.portal-card, .form-card, .detail-card, .requester-detail__card, .dean-review-card) {
+        min-width: 0;
+    }
+
+    .portal-page :where(.form-field, .filter-control, .searchable-select, .searchable-select__menu) {
+        min-width: 0;
+    }
+
+    @media (max-width: 900px) {
+        .portal-main {
+            width: 100%;
+            padding-inline: clamp(16px, 3vw, 24px);
+        }
+
+        .portal-modal,
+        #pdf-preview-dialog,
+        .native-pdf-preview-dialog {
+            max-width: calc(100vw - 24px);
+        }
+
+        .portal-page :where(.portal-card, .form-card__body, .requester-detail__card, .dean-review-card) {
+            max-width: 100%;
+        }
+    }
+
     @media (max-width: 760px) {
         .portal-page :where(h1, h2, h3, h4, p, li, dt, dd, legend, label) {
             min-width: 0;
             overflow-wrap: anywhere;
+        }
+
+        .portal-page :where(a, button, .status-badge, .document-row__name, .multi-upload__filename) {
+            overflow-wrap: anywhere;
+        }
+
+        .form-field,
+        .filter-control {
+            min-height: 44px;
+        }
+
+        .portal-button {
+            min-height: 40px;
+            padding-inline: clamp(12px, 4vw, 16px);
+        }
+
+        .icon-button {
+            width: 40px;
+            min-width: 40px;
+            height: 40px;
+        }
+
+        .portal-icon {
+            width: clamp(16px, 5vw, 20px);
+            height: clamp(16px, 5vw, 20px);
+        }
+
+        .portal-button .portal-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .document-row__actions .document-row__icon-button {
+            width: 40px;
+            min-width: 40px;
+            height: 40px;
+            padding: 0;
+        }
+
+        .modal-heading,
+        .modal-body,
+        .modal-actions {
+            min-width: 0;
         }
 
         .page-heading__title,
@@ -173,11 +253,32 @@
         }
     }
 
-    @media (max-width: 380px) {
-        .portal-title {
-            font-size: clamp(13px, 4vw, 15px);
+    @media (max-width: 480px) {
+        .portal-modal:not(#pdf-preview-dialog):not(.native-pdf-preview-dialog) .modal-actions {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            width: 100%;
         }
 
+        .portal-modal:not(#pdf-preview-dialog):not(.native-pdf-preview-dialog) .modal-actions .portal-button {
+            width: 100%;
+        }
+
+        .website-finish-dialog .modal-actions .portal-button[type="submit"] {
+            order: -1;
+        }
+
+        .document-row__actions {
+            max-width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .portal-footer__inner {
+            padding-inline: 12px;
+        }
+    }
+
+    @media (max-width: 380px) {
         .portal-button {
             padding-inline: 10px;
         }

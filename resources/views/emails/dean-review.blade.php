@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>คำร้องรอคณบดีรับรอง</title>
+    <title>คำร้องรอการรับรอง</title>
 </head>
 <body style="margin:0;padding:24px;background:#f3f4f6;font-family:'Sarabun','Noto Sans Thai',Tahoma,Arial,sans-serif;color:#111827;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-family:'Sarabun','Noto Sans Thai',Tahoma,Arial,sans-serif;">
@@ -13,7 +13,7 @@
                     <tr><td style="padding:24px 28px;background:#123365;color:#ffffff;font-size:20px;font-weight:700;">SWU Moodle Academy</td></tr>
                     <tr>
                         <td style="padding:28px;">
-                            <h1 style="margin:0 0 12px;font-size:22px;line-height:1.4;">มีคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy รอคณบดีรับรอง</h1>
+                            <h1 style="margin:0 0 12px;font-size:22px;line-height:1.4;">มีคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy รอการรับรอง</h1>
                             <p style="margin:0 0 24px;color:#4b5563;line-height:1.7;">กรุณาเปิดหน้ารายละเอียดเพื่อตรวจสอบข้อมูลและเลือกผลการรับรอง</p>
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:24px;border-collapse:collapse;">
                                 <tr><td style="padding:10px 0;color:#6b7280;width:180px;border-bottom:1px solid #e5e7eb;vertical-align:top;">เลขที่คำร้อง</td><td style="padding:10px 0;font-weight:600;border-bottom:1px solid #e5e7eb;">{{ $request->request_no }}</td></tr>

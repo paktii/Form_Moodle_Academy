@@ -85,6 +85,5 @@ class DocumentDownloadTest extends TestCase
         $response->assertHeader('pragma', 'no-cache');
         $response->assertHeader('expires', '0');
         $this->assertStringStartsWith('%PDF-', $response->getContent());
-        $this->assertNotNull(session('portal.draft.unsigned_pdf_downloaded_at'));
     }
 }

@@ -15,6 +15,22 @@
         border-radius: 4px;
     }
 
+    .requester-detail .reason-banner > div {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .requester-detail .reason-banner h2 {
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .requester-detail .reason-banner__title {
+        font-weight: 700;
+    }
+
     .request-progress {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -93,12 +109,12 @@
         opacity: 1;
     }
 
-    .request-progress__step--returned .request-progress__icon {
+    .request-progress__step--rejected .request-progress__icon {
         background: #fff1f2;
         border-color: #dc6c76;
     }
 
-    .request-progress__step--returned .request-progress__icon .portal-icon {
+    .request-progress__step--rejected .request-progress__icon .portal-icon {
         filter: brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3170%) hue-rotate(349deg) brightness(94%) contrast(90%);
         opacity: 1;
     }
@@ -335,9 +351,8 @@
         font-weight: 600;
     }
 
-    .pending-signed-document,
     .student-roster,
-    .course-result {
+    .requester-detail .course-result {
         scroll-margin-top: 24px;
         border: 1px solid #e5e7eb;
         border-radius: 4px;
@@ -345,7 +360,6 @@
         padding: 20px;
     }
 
-    .pending-signed-document__heading,
     .student-roster__heading {
         display: flex;
         align-items: flex-start;
@@ -359,7 +373,6 @@
         margin-bottom: 0;
     }
 
-    .pending-signed-document__heading h3,
     .student-roster__heading h3 {
         display: flex;
         align-items: center;
@@ -370,7 +383,7 @@
         font-weight: 600;
     }
 
-    .course-result h3 {
+    .requester-detail .course-result h3 {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -379,26 +392,51 @@
         font-size: 14px;
         font-weight: 600;
     }
-    .pending-signed-document__heading p,
+
+    .course-result__list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .course-result__row {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        align-items: start;
+        gap: 4px;
+    }
+
+    .course-result__row dt,
+    .course-result__row dd {
+        min-width: 0;
+        margin: 0;
+    }
+
+    .course-result__row dd {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .course-result__row dt::after {
+        content: ':';
+    }
+
     .student-roster__heading p {
         margin: 0;
         color: #667085;
         font-size: 13px;
     }
 
-    .pending-signed-document__heading .roster-status,
     .student-roster__heading .roster-status {
         flex: none;
         margin-top: 0;
         text-decoration: none;
     }
 
-    .pending-signed-document__form,
     .student-roster__form {
         margin-top: 16px;
     }
 
-    .pending-signed-document__form [id^="upload-step1-"]>.portal-button,
     .student-roster__form .portal-button {
         width: 100%;
         min-height: 44px;
@@ -423,6 +461,11 @@
     }
 
     @media (max-width: 760px) {
+        .course-result__row {
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+
         .dean-review-page {
             padding: clamp(20px, 6vw, 24px) clamp(12px, 4vw, 16px) 40px;
         }
@@ -520,7 +563,6 @@
             display: none;
         }
 
-        .pending-signed-document__heading,
         .student-roster__heading {
             display: grid;
             grid-template-columns: 1fr;
@@ -692,9 +734,8 @@
             overflow-wrap: anywhere;
         }
 
-        .pending-signed-document,
         .student-roster,
-        .course-result {
+        .requester-detail .course-result {
             padding: 16px 12px;
         }
     }

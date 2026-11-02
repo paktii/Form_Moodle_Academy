@@ -12,6 +12,7 @@ use App\Models\NotificationOutbox;
 use App\Models\OfficerReview;
 use App\Models\ProjectType;
 use App\Models\RequestStatusHistory;
+use App\Models\ServicePortal\WebsitePlatform;
 use App\Services\DepartmentDirectory;
 use App\Services\DocumentPdfRenderer;
 use App\Services\PersonnelDirectory;
@@ -54,7 +55,7 @@ class PortalController extends Controller
         $credentials = $request->validate([
             'buasri_id' => 'required|string|max:100',
             'password'  => 'required|string|max:255',
-            'login_role' => ['nullable', Rule::in(['officer', 'approver'])],
+            'login_role' => ['nullable', Rule::in(['officer'])],
         ]);
 
         $buasriId = Str::lower(Str::before(trim($credentials['buasri_id']), '@'));
@@ -90,7 +91,7 @@ class PortalController extends Controller
             }
 
             $matched['role'] = $requestedRole;
-            $matched['label'] = $requestedRole === 'officer' ? 'เจ้าหน้าที่' : 'ผู้อนุมัติ';
+            $matched['label'] = 'เจ้าหน้าที่';
         }
         unset($matched['available_roles']);
 
@@ -162,7 +163,7 @@ class PortalController extends Controller
 
         return $this->generatedPdfResponse(
             $record,
-            $this->requestDocumentFilename($courseRequest->request_no),
+            $this->requestDocumentFilename($courseRequest->request_no, $courseRequest->form_type_code),
             false,
         );
     }
@@ -172,10 +173,12 @@ class PortalController extends Controller
         $courseRequest = CourseRequest::query()->findOrFail($id);
         $courseDocument = $courseRequest->documents()
             ->whereKey($document)
-            ->whereIn('document_type', ['ADDITIONAL_DOCUMENT', 'STUDENT_ROSTER'])
+            ->whereIn('document_type_code', ['ADDITIONAL_DOCUMENT', 'STUDENT_ROSTER'])
             ->firstOrFail();
 
-        return Storage::disk('local')->download(
+        /** @var FilesystemAdapter $disk */
+        $disk = Storage::disk('local');
+        return $disk->download(
             $courseDocument->storage_key,
             $courseDocument->original_filename,
         );
@@ -259,23 +262,18 @@ class PortalController extends Controller
             $query->where('requester_pers_id', $this->actor($request)['pers_id'])
                   ->orderByDesc('created_at');
         } elseif ($role === 'officer') {
-            $query->whereIn('status', ['UNDER_OFFICER_REVIEW', 'PENDING_APPROVAL', 'PENDING_COURSE_ID', 'COURSE_ID_RECORDED', 'REJECTED'])
-                  ->orderByRaw("CASE WHEN [status] = 'UNDER_OFFICER_REVIEW' THEN 0 WHEN [status] = 'REJECTED' THEN 2 ELSE 1 END")
-                  ->orderByRaw("CASE WHEN [status] = 'UNDER_OFFICER_REVIEW' THEN [created_at] END ASC")
+            $query->whereIn('status_code', ['UNDER_OFFICER_REVIEW', 'COMPLETED', 'REJECTED'])
+                  ->orderByRaw("CASE WHEN [status_code] = 'UNDER_OFFICER_REVIEW' THEN 0 WHEN [status_code] = 'REJECTED' THEN 2 ELSE 1 END")
+                  ->orderByRaw("CASE WHEN [status_code] = 'UNDER_OFFICER_REVIEW' THEN [created_at] END ASC")
                   ->orderByDesc('created_at');
         } else {
-            $query->whereIn('status', ['PENDING_APPROVAL', 'PENDING_COURSE_ID', 'COURSE_ID_RECORDED', 'REJECTED'])
-          ->orderByRaw("CASE WHEN [status] = 'PENDING_APPROVAL' THEN 0 WHEN [status] = 'REJECTED' THEN 2 ELSE 1 END")
-                  ->orderByRaw("CASE WHEN [status] = 'PENDING_APPROVAL' THEN [created_at] END ASC")
+            $query->whereIn('status_code', ['COMPLETED', 'REJECTED'])
                   ->orderByDesc('created_at');
         }
 
-        $records = $query->get()->map(fn(CourseRequest $courseRequest) => $this->toRecord($courseRequest));
-        if ($role === 'officer') {
-            $records = $records->filter(fn(array $record) => $record['status'] !== 'PENDING_APPROVAL'
-                || $record['student_roster_needs_officer_attention']
-                || $record['student_roster_reopen_requested'])->values();
-        }
+        /** @var \Illuminate\Database\Eloquent\Collection<int, CourseRequest> $collection */
+        $collection = $query->get();
+        $records = $collection->map(fn(CourseRequest $courseRequest) => $this->toRecord($courseRequest));
         $statuses = config('course-workflow.statuses');
 
         return view('portal.requests', compact('records', 'role', 'statuses'));
@@ -297,15 +295,20 @@ class PortalController extends Controller
             $request->session()->put('portal.draft.request_no', $data['request_no']);
         }
         $deanOptions = $step === 4
-            ? $this->deanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            ? $this->websiteDeanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
             : [];
+        if ($step === 4 && empty($data['dean_pers_id']) && $deanOptions !== []) {
+            $data['dean_pers_id'] = (int) array_key_first($deanOptions);
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
 
         return view('portal.form-steps', [
             'step' => $step,
             'data' => $data,
+            'formName' => 'แบบฟอร์มขอสร้างรายวิชาในระบบ SWU Moodle Academy',
             'steps' => config('course-workflow.steps'),
-            'projectTypes' => ProjectType::query()->where('is_active', true)->orderByRaw("CASE WHEN project_type_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('project_type_code')->pluck('project_type_name_th', 'project_type_code'),
-            'categories' => CourseCategory::query()->where('is_active', true)->orderByRaw("CASE WHEN category_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('category_code')->pluck('category_name_th', 'category_code'),
+            'projectTypes' => ProjectType::query()->where('is_active', 'Y')->orderByRaw("CASE WHEN project_type_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('project_type_code')->pluck('project_type_name_th', 'project_type_code'),
+            'categories' => CourseCategory::query()->where('is_active', 'Y')->orderByRaw("CASE WHEN category_code = 'OTHER' THEN 1 ELSE 0 END")->orderBy('category_code')->pluck('category_name_th', 'category_code'),
             'departments' => $this->departmentDirectory->options(),
             'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
             'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
@@ -313,12 +316,835 @@ class PortalController extends Controller
         ]);
     }
 
+    public function websiteForm(Request $request, int $step = 1)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $personId = (int) $this->actor($request)['pers_id'];
+        $data = $request->session()->get('portal.website_draft', []);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            $defaults = $this->personnelDirectory->coordinatorDefaults($person);
+            $contactDefaults = [
+                'contact_first' => $defaults['coordinator_first'] ?? '',
+                'contact_last' => $defaults['coordinator_last'] ?? '',
+                'contact_position' => $defaults['coordinator_position'] ?? '',
+                'contact_phone' => $defaults['coordinator_phone'] ?? '',
+                'contact_email' => $defaults['coordinator_email'] ?? '',
+            ];
+            $data = array_replace($contactDefaults, $data);
+        }
+        $data['requester_unit'] = $this->personDepartmentName($personId);
+        $data['form_type_code'] = 'CC-ITED-01';
+
+        if ($step === 3 && empty($data['id']) && empty($data['request_no'])) {
+            $data['request_no'] = $this->nextRequestNumber();
+            $request->session()->put('portal.website_draft.request_no', $data['request_no']);
+        }
+
+        $deanOptions = $step === 3
+            ? $this->websiteDeanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            : [];
+        if ($step === 3 && empty($data['dean_pers_id']) && $deanOptions !== []) {
+            $data['dean_pers_id'] = (int) array_key_first($deanOptions);
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        return view('portal.website-form-steps', [
+            'step' => $step,
+            'data' => $data,
+            'formName' => 'แบบฟอร์มขอใช้พื้นที่สำหรับจัดทำเว็บไซต์',
+            'steps' => config('course-workflow.website_steps'),
+            'platforms' => WebsitePlatform::query()->where('is_active', 'Y')->where('platform_code', '<>', 'OTHER')->orderBy('sort_order')->pluck('platform_name_th', 'platform_code'),
+            'departments' => $this->departmentDirectory->options(),
+            'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
+            'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
+            'deanOptions' => $deanOptions,
+        ]);
+    }
+
+    public function websiteContactChangeForm(Request $request, int $step = 1)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $personId = (int) $this->actor($request)['pers_id'];
+        $data = $request->session()->get('portal.website_contact_change_draft', []);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            $defaults = $this->personnelDirectory->coordinatorDefaults($person);
+            $data = array_replace([
+                'new_contact_first' => $defaults['coordinator_first'] ?? '',
+                'new_contact_last' => $defaults['coordinator_last'] ?? '',
+                'new_contact_position' => $defaults['coordinator_position'] ?? '',
+                'new_contact_phone' => $defaults['coordinator_phone'] ?? '',
+                'new_contact_email' => $defaults['coordinator_email'] ?? '',
+            ], $data);
+        }
+        $data['requester_unit'] = $this->personDepartmentName($personId);
+        $data['form_type_code'] = 'CC-ITED-02';
+
+        if ($step === 3 && empty($data['id']) && empty($data['request_no'])) {
+            $data['request_no'] = $this->nextRequestNumber();
+            $request->session()->put('portal.website_contact_change_draft.request_no', $data['request_no']);
+        }
+
+        $deanOptions = $step === 3
+            ? $this->websiteDeanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            : [];
+        if ($step === 3 && empty($data['dean_pers_id']) && $deanOptions !== []) {
+            $data['dean_pers_id'] = (int) array_key_first($deanOptions);
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        return view('portal.website-contact-change-form-steps', [
+            'step' => $step,
+            'data' => $data,
+            'formName' => 'แบบฟอร์มขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์',
+            'steps' => config('course-workflow.website_contact_change_steps'),
+            'departments' => $this->departmentDirectory->options(),
+            'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
+            'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
+            'deanOptions' => $deanOptions,
+        ]);
+    }
+
+    public function saveWebsiteContactChangeStep(Request $request, int $step)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $activeDeanPersonIds = $step === 3
+            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_contact_change_draft.target_dept_id', 0))
+            : [];
+        $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
+        $rules = match ($step) {
+            1 => [
+                'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
+                'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
+                'website_name' => "$required|string|max:500",
+                'domain_url' => "$required|string|max:1000",
+            ],
+            2 => [
+                'current_contact_first' => "$required|string|max:100",
+                'current_contact_last' => "$required|string|max:100",
+                'new_contact_first' => "$required|string|max:100",
+                'new_contact_last' => "$required|string|max:100",
+                'new_contact_position' => "$required|string|max:200",
+                'new_contact_email' => "$required|email|max:254",
+                'new_contact_phone' => "$required|string|max:50",
+            ],
+            3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
+            default => [],
+        };
+        $rules['additional_documents'] = 'nullable|array|max:5';
+        $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
+        $rules['remove_additional'] = 'nullable|array';
+        $rules['remove_additional.*'] = 'integer|min:0';
+
+        $validated = $request->validate($rules, [
+            'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
+            'email' => 'กรุณาระบุอีเมลให้ถูกต้อง',
+            'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
+            'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
+            'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
+            'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
+        ]);
+
+        if ($step === 2 && $required === 'required') {
+            $currentContactName = Str::lower(Str::squish(
+                ($validated['current_contact_first'] ?? '').' '.($validated['current_contact_last'] ?? ''),
+            ));
+            $newContactName = Str::lower(Str::squish(
+                ($validated['new_contact_first'] ?? '').' '.($validated['new_contact_last'] ?? ''),
+            ));
+
+            if ($currentContactName === $newContactName) {
+                throw ValidationException::withMessages([
+                    'new_contact_first' => 'ผู้ดูแลเว็บไซต์คนใหม่ต้องไม่เป็นบุคคลเดียวกับผู้ดูแลเว็บไซต์เดิม',
+                ]);
+            }
+        }
+
+        $removeAdditional = $validated['remove_additional'] ?? [];
+        unset($validated['additional_documents'], $validated['remove_additional']);
+
+        if (isset($validated['target_dept_id'])) {
+            $validated['target_dept_id'] = (int) $validated['target_dept_id'];
+            $validated['unit'] = $this->departmentDirectory->name($validated['target_dept_id']);
+            if (isset($validated['target_subdept_id'])) {
+                $validated['target_subdept_id'] = (int) $validated['target_subdept_id'];
+                $validated['subunit'] = $this->departmentDirectory->subdepartmentName($validated['target_subdept_id']);
+            } else {
+                $validated['target_subdept_id'] = null;
+                $validated['subunit'] = null;
+            }
+        }
+
+        $existingDraft = $request->session()->get('portal.website_contact_change_draft', []);
+        if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+        }
+        $data = array_replace($existingDraft, $validated, ['form_type_code' => 'CC-ITED-02']);
+        if (isset($validated['dean_pers_id'])) {
+            $data['dean_pers_id'] = (int) $validated['dean_pers_id'];
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        $additionalFiles = $this->draftAdditionalFiles($existingDraft);
+        $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
+        $pendingFilesToDelete = [];
+        rsort($removeAdditional);
+        foreach (array_unique($removeAdditional) as $index) {
+            if (! isset($additionalFiles[$index])) continue;
+            $file = $additionalFiles[$index];
+            if (($file['additional_pending'] ?? false) === true) $pendingFilesToDelete[] = $file;
+            elseif (isset($file['document_id'])) $removedDocumentIds[] = (int) $file['document_id'];
+            unset($additionalFiles[$index]);
+        }
+        $additionalFiles = array_values($additionalFiles);
+        $incomingAdditional = array_values(array_filter((array) $request->file('additional_documents', [])));
+        if (count($additionalFiles) + count($incomingAdditional) > 5) {
+            throw ValidationException::withMessages(['additional_documents' => 'อัปโหลดเอกสารเพิ่มเติมได้ไม่เกิน 5 ไฟล์']);
+        }
+        foreach ($pendingFilesToDelete as $file) $this->deletePendingFile($file, 'additional');
+        foreach ($incomingAdditional as $file) $additionalFiles[] = $this->storeDraftFile($file, 'additional');
+        $data['additional_files'] = $additionalFiles;
+        $data['removed_additional_document_ids'] = array_values(array_unique($removedDocumentIds));
+        $request->session()->put('portal.website_contact_change_draft', $data);
+
+        if ($request->input('navigation') === 'back') {
+            $request->session()->forget("portal.website_contact_change_completed.$step");
+            return redirect()->route($step === 1 ? 'requests.index' : 'website-contact-change-requests.form', $step === 1 ? [] : $step - 1);
+        }
+        if ($step < 3) {
+            $request->session()->put("portal.website_contact_change_completed.$step", true);
+            return redirect()->route('website-contact-change-requests.form', $step + 1);
+        }
+        foreach ([1, 2] as $completed) {
+            if (! $request->session()->get("portal.website_contact_change_completed.$completed")) {
+                return redirect()->route('website-contact-change-requests.form', $completed)->withErrors(['form' => 'กรุณากรอกข้อมูลส่วนนี้ให้ครบก่อนส่งคำร้อง']);
+            }
+        }
+
+        $deletedAdditionalPaths = [];
+        try {
+            DB::connection('course133')->transaction(function () use ($request, $data, &$deletedAdditionalPaths) {
+                $actor = $this->actor($request);
+                $courseRequest = isset($data['id']) ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id']) : new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
+                abort_if($courseRequest->exists, 409);
+                $this->persistWebsiteContactChangeRequestData($courseRequest, $data, (int) $actor['pers_id'], 'PENDING_DEAN_REVIEW');
+                if ($courseRequest->exists && ! empty($data['removed_additional_document_ids'])) {
+                    $documents = $courseRequest->documents()->where('document_type_code', 'ADDITIONAL_DOCUMENT')->whereIn('document_id', $data['removed_additional_document_ids'])->get();
+                    foreach ($documents as $document) { $deletedAdditionalPaths[] = $document->storage_key; $document->delete(); }
+                }
+                foreach ($this->draftAdditionalFiles($data) as $additional) {
+                    if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) $this->createDocument($courseRequest, 'ADDITIONAL_DOCUMENT', $additional, 'additional', $actor['pers_id']);
+                }
+                $this->addHistory($courseRequest, 'PENDING_DEAN_REVIEW', $actor['pers_id'], 'REQUESTER');
+                $this->queueNotification($courseRequest, 'DEAN_REVIEW_REQUIRED', $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง'), $actor);
+            });
+        } catch (Throwable $exception) {
+            $this->deletePendingFiles($data);
+            throw $exception;
+        }
+        foreach ($deletedAdditionalPaths as $path) Storage::disk('local')->delete($path);
+        $request->session()->forget(['portal.website_contact_change_draft', 'portal.website_contact_change_completed']);
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอการรับรอง');
+    }
+
+    public function clearWebsiteContactChangeStep(Request $request, int $step)
+    {
+        $keys = match ($step) {
+            1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'domain_url'],
+            2 => ['current_contact_first', 'current_contact_last', 'new_contact_first', 'new_contact_last', 'new_contact_position', 'new_contact_email', 'new_contact_phone'],
+            3 => ['dean_pers_id', 'dean_name'],
+            default => [],
+        };
+        $draft = $request->session()->get('portal.website_contact_change_draft', []);
+        foreach ($keys as $key) unset($draft[$key]);
+        $request->session()->put('portal.website_contact_change_draft', $draft);
+        return back();
+    }
+
+    public function emeetingForm(Request $request, int $step = 1)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $personId = (int) $this->actor($request)['pers_id'];
+        $data = $request->session()->get('portal.emeeting_draft', []);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            $defaults = $this->personnelDirectory->coordinatorDefaults($person);
+            $data = array_replace([
+                'contact_first' => $defaults['coordinator_first'] ?? '',
+                'contact_last' => $defaults['coordinator_last'] ?? '',
+                'contact_position' => $defaults['coordinator_position'] ?? '',
+                'contact_phone' => $defaults['coordinator_phone'] ?? '',
+                'contact_email' => $defaults['coordinator_email'] ?? '',
+            ], $data);
+        }
+        $data['requester_unit'] = $this->personDepartmentName($personId);
+        $data['form_type_code'] = 'CC-ITED-05';
+
+        if ($step === 3 && empty($data['id']) && empty($data['request_no'])) {
+            $data['request_no'] = $this->nextRequestNumber();
+            $request->session()->put('portal.emeeting_draft.request_no', $data['request_no']);
+        }
+
+        $deanOptions = $step === 3
+            ? $this->websiteDeanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            : [];
+        if ($step === 3 && empty($data['dean_pers_id']) && $deanOptions !== []) {
+            $data['dean_pers_id'] = (int) array_key_first($deanOptions);
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        return view('portal.emeeting-form-steps', [
+            'step' => $step,
+            'data' => $data,
+            'formName' => 'แบบฟอร์มขอสิทธิ์ผู้ดูแลกรอบการประชุมของส่วนงานบนระบบ e-Meeting',
+            'steps' => config('course-workflow.emeeting_steps'),
+            'departments' => $this->departmentDirectory->options(),
+            'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
+            'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
+            'deanOptions' => $deanOptions,
+        ]);
+    }
+
+    public function saveEmeetingStep(Request $request, int $step)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $activeDeanPersonIds = $step === 3
+            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.emeeting_draft.target_dept_id', 0))
+            : [];
+        $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
+        $rules = match ($step) {
+            1 => [
+                'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
+                'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
+                'action_type' => [$required, Rule::in(['NEW_ACCESS', 'CHANGE_CONTACT'])],
+                'current_contact_first' => $required === 'required'
+                    ? ['nullable', 'required_if:action_type,CHANGE_CONTACT', 'string', 'max:100']
+                    : ['nullable', 'string', 'max:100'],
+                'current_contact_last' => $required === 'required'
+                    ? ['nullable', 'required_if:action_type,CHANGE_CONTACT', 'string', 'max:100']
+                    : ['nullable', 'string', 'max:100'],
+            ],
+            2 => [
+                'contact_first' => "$required|string|max:100",
+                'contact_last' => "$required|string|max:100",
+                'contact_position' => "$required|string|max:200",
+                'contact_email' => "$required|email|max:254",
+                'contact_phone' => "$required|string|max:50",
+            ],
+            3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
+            default => [],
+        };
+        $rules['additional_documents'] = 'nullable|array|max:5';
+        $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
+        $rules['remove_additional'] = 'nullable|array';
+        $rules['remove_additional.*'] = 'integer|min:0';
+
+        $existingDraft = $request->session()->get('portal.emeeting_draft', []);
+        $validated = $request->validate($rules, [
+            'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
+            'required_if' => 'กรุณากรอกข้อมูลผู้ดูแลกรอบการประชุมเดิมให้ครบถ้วน',
+            'email' => 'กรุณาระบุอีเมลให้ถูกต้อง',
+            'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
+            'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
+            'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
+            'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
+        ]);
+        $removeAdditional = $validated['remove_additional'] ?? [];
+        unset($validated['additional_documents'], $validated['remove_additional']);
+        if (isset($validated['target_dept_id'])) {
+            $validated['target_dept_id'] = (int) $validated['target_dept_id'];
+            $validated['unit'] = $this->departmentDirectory->name($validated['target_dept_id']);
+            if (isset($validated['target_subdept_id'])) {
+                $validated['target_subdept_id'] = (int) $validated['target_subdept_id'];
+                $validated['subunit'] = $this->departmentDirectory->subdepartmentName($validated['target_subdept_id']);
+            } else {
+                $validated['target_subdept_id'] = null;
+                $validated['subunit'] = null;
+            }
+        }
+        if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+        }
+        if ($step === 1 && ($validated['action_type'] ?? null) === 'NEW_ACCESS') {
+            unset($existingDraft['current_contact_first'], $existingDraft['current_contact_last']);
+        }
+        $data = array_replace($existingDraft, $validated, ['form_type_code' => 'CC-ITED-05']);
+        if (isset($validated['dean_pers_id'])) {
+            $data['dean_pers_id'] = (int) $validated['dean_pers_id'];
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        $additionalFiles = $this->draftAdditionalFiles($existingDraft);
+        $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
+        $pendingFilesToDelete = [];
+        rsort($removeAdditional);
+        foreach (array_unique($removeAdditional) as $index) {
+            if (! isset($additionalFiles[$index])) continue;
+            $file = $additionalFiles[$index];
+            if (($file['additional_pending'] ?? false) === true) $pendingFilesToDelete[] = $file;
+            elseif (isset($file['document_id'])) $removedDocumentIds[] = (int) $file['document_id'];
+            unset($additionalFiles[$index]);
+        }
+        $additionalFiles = array_values($additionalFiles);
+        $incomingAdditional = array_values(array_filter((array) $request->file('additional_documents', [])));
+        if (count($additionalFiles) + count($incomingAdditional) > 5) {
+            throw ValidationException::withMessages(['additional_documents' => 'อัปโหลดเอกสารเพิ่มเติมได้ไม่เกิน 5 ไฟล์']);
+        }
+        foreach ($pendingFilesToDelete as $file) $this->deletePendingFile($file, 'additional');
+        foreach ($incomingAdditional as $file) $additionalFiles[] = $this->storeDraftFile($file, 'additional');
+        $data['additional_files'] = $additionalFiles;
+        $data['removed_additional_document_ids'] = array_values(array_unique($removedDocumentIds));
+        $request->session()->put('portal.emeeting_draft', $data);
+
+        if ($request->input('navigation') === 'back') {
+            $request->session()->forget("portal.emeeting_completed.$step");
+            return redirect()->route($step === 1 ? 'requests.index' : 'emeeting-requests.form', $step === 1 ? [] : $step - 1);
+        }
+        if ($step < 3) {
+            $request->session()->put("portal.emeeting_completed.$step", true);
+            return redirect()->route('emeeting-requests.form', $step + 1);
+        }
+        foreach ([1, 2] as $completed) {
+            if (! $request->session()->get("portal.emeeting_completed.$completed")) {
+                return redirect()->route('emeeting-requests.form', $completed)->withErrors(['form' => 'กรุณากรอกข้อมูลส่วนนี้ให้ครบก่อนส่งคำร้อง']);
+            }
+        }
+
+        try {
+            DB::connection('course133')->transaction(function () use ($request, $data) {
+                $actor = $this->actor($request);
+                $courseRequest = new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
+                $this->persistEmeetingRequestData($courseRequest, $data, (int) $actor['pers_id'], 'PENDING_DEAN_REVIEW');
+                foreach ($this->draftAdditionalFiles($data) as $additional) {
+                    if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) $this->createDocument($courseRequest, 'ADDITIONAL_DOCUMENT', $additional, 'additional', $actor['pers_id']);
+                }
+                $this->addHistory($courseRequest, 'PENDING_DEAN_REVIEW', $actor['pers_id'], 'REQUESTER');
+                $this->queueNotification($courseRequest, 'DEAN_REVIEW_REQUIRED', $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง'), $actor);
+            });
+        } catch (Throwable $exception) {
+            $this->deletePendingFiles($data);
+            throw $exception;
+        }
+        $request->session()->forget(['portal.emeeting_draft', 'portal.emeeting_completed']);
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอการรับรอง');
+    }
+
+    public function clearEmeetingStep(Request $request, int $step)
+    {
+        $keys = match ($step) {
+            1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'action_type', 'current_contact_first', 'current_contact_last'],
+            2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
+            3 => ['dean_pers_id', 'dean_name'],
+            default => [],
+        };
+        $draft = $request->session()->get('portal.emeeting_draft', []);
+        foreach ($keys as $key) unset($draft[$key]);
+        $request->session()->put('portal.emeeting_draft', $draft);
+        return back();
+    }
+
+    public function websiteStorageForm(Request $request, int $step = 1)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $personId = (int) $this->actor($request)['pers_id'];
+        $data = $request->session()->get('portal.website_storage_draft', []);
+        $person = $this->personnelDirectory->findByPersonId($personId);
+        if ($person !== null) {
+            $defaults = $this->personnelDirectory->coordinatorDefaults($person);
+            $data = array_replace([
+                'contact_first' => $defaults['coordinator_first'] ?? '',
+                'contact_last' => $defaults['coordinator_last'] ?? '',
+                'contact_position' => $defaults['coordinator_position'] ?? '',
+                'contact_phone' => $defaults['coordinator_phone'] ?? '',
+                'contact_email' => $defaults['coordinator_email'] ?? '',
+            ], $data);
+        }
+        $data['requester_unit'] = $this->personDepartmentName($personId);
+        $data['form_type_code'] = 'CC-ITED-04';
+        $data['requested_space_gb'] = '1.00';
+
+        if ($step === 3 && empty($data['id']) && empty($data['request_no'])) {
+            $data['request_no'] = $this->nextRequestNumber();
+            $request->session()->put('portal.website_storage_draft.request_no', $data['request_no']);
+        }
+
+        $deanOptions = $step === 3
+            ? $this->websiteDeanOptionsForTargetDepartment((int) ($data['target_dept_id'] ?? 0))
+            : [];
+        if ($step === 3 && empty($data['dean_pers_id']) && $deanOptions !== []) {
+            $data['dean_pers_id'] = (int) array_key_first($deanOptions);
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        return view('portal.website-storage-form-steps', [
+            'step' => $step,
+            'data' => $data,
+            'formName' => 'แบบฟอร์มขอเพิ่มพื้นที่บนเว็บไซต์',
+            'steps' => config('course-workflow.website_storage_steps'),
+            'departments' => $this->departmentDirectory->options(),
+            'subdepartments' => $this->departmentDirectory->subdepartmentOptions(),
+            'subdepartmentParents' => $this->departmentDirectory->subdepartmentParents(),
+            'deanOptions' => $deanOptions,
+        ]);
+    }
+
+    public function saveWebsiteStorageStep(Request $request, int $step)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $activeDeanPersonIds = $step === 3
+            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_storage_draft.target_dept_id', 0))
+            : [];
+        $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
+        $rules = match ($step) {
+            1 => [
+                'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
+                'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
+                'website_name' => "$required|string|max:500",
+                'domain_url' => "$required|string|max:1000",
+            ],
+            2 => [
+                'contact_first' => "$required|string|max:100",
+                'contact_last' => "$required|string|max:100",
+                'contact_position' => "$required|string|max:200",
+                'contact_email' => "$required|email|max:254",
+                'contact_phone' => "$required|string|max:50",
+            ],
+            3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
+            default => [],
+        };
+        $rules['additional_documents'] = 'nullable|array|max:5';
+        $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
+        $rules['remove_additional'] = 'nullable|array';
+        $rules['remove_additional.*'] = 'integer|min:0';
+
+        $validated = $request->validate($rules, [
+            'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
+            'email' => 'กรุณาระบุอีเมลให้ถูกต้อง',
+            'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
+            'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
+            'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
+            'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
+        ]);
+
+        $removeAdditional = $validated['remove_additional'] ?? [];
+        unset($validated['additional_documents'], $validated['remove_additional']);
+
+        if (isset($validated['target_dept_id'])) {
+            $validated['target_dept_id'] = (int) $validated['target_dept_id'];
+            $validated['unit'] = $this->departmentDirectory->name($validated['target_dept_id']);
+            if (isset($validated['target_subdept_id'])) {
+                $validated['target_subdept_id'] = (int) $validated['target_subdept_id'];
+                $validated['subunit'] = $this->departmentDirectory->subdepartmentName($validated['target_subdept_id']);
+            } else {
+                $validated['target_subdept_id'] = null;
+                $validated['subunit'] = null;
+            }
+        }
+
+        $existingDraft = $request->session()->get('portal.website_storage_draft', []);
+        if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+        }
+        $data = array_replace($existingDraft, $validated, [
+            'form_type_code' => 'CC-ITED-04',
+            'requested_space_gb' => '1.00',
+        ]);
+        if (isset($validated['dean_pers_id'])) {
+            $data['dean_pers_id'] = (int) $validated['dean_pers_id'];
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        $additionalFiles = $this->draftAdditionalFiles($existingDraft);
+        $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
+        $pendingFilesToDelete = [];
+        rsort($removeAdditional);
+        foreach (array_unique($removeAdditional) as $index) {
+            if (! isset($additionalFiles[$index])) continue;
+            $file = $additionalFiles[$index];
+            if (($file['additional_pending'] ?? false) === true) $pendingFilesToDelete[] = $file;
+            elseif (isset($file['document_id'])) $removedDocumentIds[] = (int) $file['document_id'];
+            unset($additionalFiles[$index]);
+        }
+        $additionalFiles = array_values($additionalFiles);
+        $incomingAdditional = array_values(array_filter((array) $request->file('additional_documents', [])));
+        if (count($additionalFiles) + count($incomingAdditional) > 5) {
+            throw ValidationException::withMessages(['additional_documents' => 'อัปโหลดเอกสารเพิ่มเติมได้ไม่เกิน 5 ไฟล์']);
+        }
+        foreach ($pendingFilesToDelete as $file) $this->deletePendingFile($file, 'additional');
+        foreach ($incomingAdditional as $file) $additionalFiles[] = $this->storeDraftFile($file, 'additional');
+        $data['additional_files'] = $additionalFiles;
+        $data['removed_additional_document_ids'] = array_values(array_unique($removedDocumentIds));
+        $request->session()->put('portal.website_storage_draft', $data);
+
+        if ($request->input('navigation') === 'back') {
+            $request->session()->forget("portal.website_storage_completed.$step");
+            return redirect()->route($step === 1 ? 'requests.index' : 'website-storage-requests.form', $step === 1 ? [] : $step - 1);
+        }
+        if ($step < 3) {
+            $request->session()->put("portal.website_storage_completed.$step", true);
+            return redirect()->route('website-storage-requests.form', $step + 1);
+        }
+        foreach ([1, 2] as $completed) {
+            if (! $request->session()->get("portal.website_storage_completed.$completed")) {
+                return redirect()->route('website-storage-requests.form', $completed)->withErrors(['form' => 'กรุณากรอกข้อมูลส่วนนี้ให้ครบก่อนส่งคำร้อง']);
+            }
+        }
+
+        $deletedAdditionalPaths = [];
+        try {
+            DB::connection('course133')->transaction(function () use ($request, $data, &$deletedAdditionalPaths) {
+                $actor = $this->actor($request);
+                $courseRequest = isset($data['id']) ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id']) : new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
+                abort_if($courseRequest->exists, 409);
+                $this->persistWebsiteStorageRequestData($courseRequest, $data, (int) $actor['pers_id'], 'PENDING_DEAN_REVIEW');
+                if ($courseRequest->exists && ! empty($data['removed_additional_document_ids'])) {
+                    $documents = $courseRequest->documents()->where('document_type_code', 'ADDITIONAL_DOCUMENT')->whereIn('document_id', $data['removed_additional_document_ids'])->get();
+                    foreach ($documents as $document) { $deletedAdditionalPaths[] = $document->storage_key; $document->delete(); }
+                }
+                foreach ($this->draftAdditionalFiles($data) as $additional) {
+                    if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) $this->createDocument($courseRequest, 'ADDITIONAL_DOCUMENT', $additional, 'additional', $actor['pers_id']);
+                }
+                $this->addHistory($courseRequest, 'PENDING_DEAN_REVIEW', $actor['pers_id'], 'REQUESTER');
+                $this->queueNotification($courseRequest, 'DEAN_REVIEW_REQUIRED', $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง'), $actor);
+            });
+        } catch (Throwable $exception) {
+            $this->deletePendingFiles($data);
+            throw $exception;
+        }
+        foreach ($deletedAdditionalPaths as $path) Storage::disk('local')->delete($path);
+        $request->session()->forget(['portal.website_storage_draft', 'portal.website_storage_completed']);
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอการรับรอง');
+    }
+
+    public function clearWebsiteStorageStep(Request $request, int $step)
+    {
+        $keys = match ($step) {
+            1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'domain_url'],
+            2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
+            3 => ['dean_pers_id', 'dean_name'],
+            default => [],
+        };
+        $draft = $request->session()->get('portal.website_storage_draft', []);
+        foreach ($keys as $key) unset($draft[$key]);
+        $request->session()->put('portal.website_storage_draft', $draft);
+        return back();
+    }
+
+    public function saveWebsiteStep(Request $request, int $step)
+    {
+        abort_unless(in_array($step, [1, 2, 3], true), 404);
+
+        $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $activeDeanPersonIds = $step === 3
+            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_draft.target_dept_id', 0))
+            : [];
+        $deanRequired = $required === 'required'
+            && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient())
+                ? 'required'
+                : 'nullable';
+
+        $rules = match ($step) {
+            1 => [
+                'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
+                'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
+                'website_name' => "$required|string|max:500",
+                'site_scope_type' => [$required, Rule::in(['DEPARTMENT', 'PROJECT', 'CONFERENCE'])],
+                'service_starts_on' => ($required === 'required' ? 'required_if:site_scope_type,PROJECT,CONFERENCE|' : '').'nullable|date',
+                'service_ends_on' => ($required === 'required' ? 'required_if:site_scope_type,PROJECT,CONFERENCE|' : '').'nullable|date|after_or_equal:service_starts_on',
+                'domain_url' => "$required|string|max:1000",
+                'platform_code' => [$required, Rule::in(WebsitePlatform::query()->where('is_active', 'Y')->where('platform_code', '<>', 'OTHER')->pluck('platform_code')->all())],
+                'additional_detail' => 'nullable|string|max:5000',
+            ],
+            2 => [
+                'contact_first' => "$required|string|max:100",
+                'contact_last' => "$required|string|max:100",
+                'contact_position' => "$required|string|max:200",
+                'contact_email' => "$required|email|max:254",
+                'contact_phone' => "$required|string|max:50",
+            ],
+            3 => [
+                'dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)],
+            ],
+            default => [],
+        };
+        $rules['additional_documents'] = 'nullable|array|max:5';
+        $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
+        $rules['remove_additional'] = 'nullable|array';
+        $rules['remove_additional.*'] = 'integer|min:0';
+
+        $validated = $request->validate($rules, [
+            'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
+            'required_if' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
+            'email' => 'กรุณาระบุอีเมลให้ถูกต้อง',
+            'after_or_equal' => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+            'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
+            'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
+            'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
+            'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
+        ]);
+
+        $removeAdditional = $validated['remove_additional'] ?? [];
+        unset($validated['additional_documents'], $validated['remove_additional']);
+
+        if (isset($validated['target_dept_id'])) {
+            $validated['target_dept_id'] = (int) $validated['target_dept_id'];
+            $validated['unit'] = $this->departmentDirectory->name($validated['target_dept_id']);
+            if (isset($validated['target_subdept_id'])) {
+                $validated['target_subdept_id'] = (int) $validated['target_subdept_id'];
+                $validated['subunit'] = $this->departmentDirectory->subdepartmentName($validated['target_subdept_id']);
+            } else {
+                $validated['target_subdept_id'] = null;
+                $validated['subunit'] = null;
+            }
+        }
+        if (($validated['site_scope_type'] ?? null) === 'DEPARTMENT') {
+            $validated['service_starts_on'] = null;
+            $validated['service_ends_on'] = null;
+        }
+
+        $existingDraft = $request->session()->get('portal.website_draft', []);
+        if ($step === 1
+            && isset($validated['target_dept_id'])
+            && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+        }
+        $data = array_replace($existingDraft, $validated, ['form_type_code' => 'CC-ITED-01']);
+        if ($step <= 2) {
+        }
+        if (isset($validated['dean_pers_id'])) {
+            $data['dean_pers_id'] = (int) $validated['dean_pers_id'];
+            $data['dean_name'] = $this->personName($data['dean_pers_id']);
+        }
+
+        $additionalFiles = $this->draftAdditionalFiles($existingDraft);
+        $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
+        $pendingFilesToDelete = [];
+        rsort($removeAdditional);
+        foreach (array_unique($removeAdditional) as $index) {
+            if (! isset($additionalFiles[$index])) {
+                continue;
+            }
+            $file = $additionalFiles[$index];
+            if (($file['additional_pending'] ?? false) === true) {
+                $pendingFilesToDelete[] = $file;
+            } elseif (isset($file['document_id'])) {
+                $removedDocumentIds[] = (int) $file['document_id'];
+            }
+            unset($additionalFiles[$index]);
+        }
+        $additionalFiles = array_values($additionalFiles);
+        $incomingAdditional = array_values(array_filter((array) $request->file('additional_documents', [])));
+        if (count($additionalFiles) + count($incomingAdditional) > 5) {
+            throw ValidationException::withMessages(['additional_documents' => 'อัปโหลดเอกสารเพิ่มเติมได้ไม่เกิน 5 ไฟล์']);
+        }
+        foreach ($pendingFilesToDelete as $file) {
+            $this->deletePendingFile($file, 'additional');
+        }
+        foreach ($incomingAdditional as $file) {
+            $additionalFiles[] = $this->storeDraftFile($file, 'additional');
+        }
+        $data['additional_files'] = $additionalFiles;
+        $data['removed_additional_document_ids'] = array_values(array_unique($removedDocumentIds));
+        $request->session()->put('portal.website_draft', $data);
+
+        if ($request->input('navigation') === 'back') {
+            $request->session()->forget("portal.website_completed.$step");
+
+            return redirect()->route($step === 1 ? 'requests.index' : 'website-requests.form', $step === 1 ? [] : $step - 1);
+        }
+        if ($step < 3) {
+            $request->session()->put("portal.website_completed.$step", true);
+
+            return redirect()->route('website-requests.form', $step + 1);
+        }
+        foreach ([1, 2] as $completed) {
+            if (! $request->session()->get("portal.website_completed.$completed")) {
+                return redirect()->route('website-requests.form', $completed)->withErrors(['form' => 'กรุณากรอกข้อมูลส่วนนี้ให้ครบก่อนส่งคำร้อง']);
+            }
+        }
+
+        $deletedAdditionalPaths = [];
+        try {
+            DB::connection('course133')->transaction(function () use ($request, $data, &$deletedAdditionalPaths) {
+                $actor = $this->actor($request);
+                $courseRequest = isset($data['id'])
+                    ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id'])
+                    : new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
+
+                abort_if($courseRequest->exists, 409);
+
+                $this->persistWebsiteRequestData($courseRequest, $data, (int) $actor['pers_id'], 'PENDING_DEAN_REVIEW');
+
+                if ($courseRequest->exists && ! empty($data['removed_additional_document_ids'])) {
+                    $documents = $courseRequest->documents()
+                        ->where('document_type_code', 'ADDITIONAL_DOCUMENT')
+                        ->whereIn('document_id', $data['removed_additional_document_ids'])
+                        ->get();
+                    foreach ($documents as $document) {
+                        $deletedAdditionalPaths[] = $document->storage_key;
+                        $document->delete();
+                    }
+                }
+                foreach ($this->draftAdditionalFiles($data) as $additional) {
+                    if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) {
+                        $this->createDocument($courseRequest, 'ADDITIONAL_DOCUMENT', $additional, 'additional', $actor['pers_id']);
+                    }
+                }
+                $this->addHistory($courseRequest, 'PENDING_DEAN_REVIEW', $actor['pers_id'], 'REQUESTER');
+                $this->queueNotification(
+                    $courseRequest,
+                    'DEAN_REVIEW_REQUIRED',
+                    $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง'),
+                    $actor,
+                );
+            });
+        } catch (Throwable $exception) {
+            $this->deletePendingFiles($data);
+            throw $exception;
+        }
+
+        foreach ($deletedAdditionalPaths as $path) {
+            Storage::disk('local')->delete($path);
+        }
+        $request->session()->forget(['portal.website_draft', 'portal.website_completed']);
+
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอการรับรอง');
+    }
+
+    public function clearWebsiteStep(Request $request, int $step)
+    {
+        $keys = match ($step) {
+            1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'site_scope_type', 'service_starts_on', 'service_ends_on', 'domain_url', 'platform_code', 'additional_detail'],
+            2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
+            3 => ['dean_pers_id', 'dean_name'],
+            default => [],
+        };
+        $draft = $request->session()->get('portal.website_draft', []);
+        foreach ($keys as $key) {
+            unset($draft[$key]);
+        }
+        $request->session()->put('portal.website_draft', $draft);
+
+        return back();
+    }
+
     public function saveStep(Request $request, int $step)
     {
         abort_unless(in_array($step, [1, 2, 3, 4], true), 404);
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
         $activeDeanPersonIds = $step === 4
-            ? $this->activeDeanPersonIds((int) $request->session()->get('portal.draft.target_dept_id', 0))
+            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.draft.target_dept_id', 0))
             : [];
         $deanRequired = $required === 'required' && $activeDeanPersonIds !== [] ? 'required' : 'nullable';
 
@@ -327,7 +1153,7 @@ class PortalController extends Controller
                 'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
                 'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
                 'project_name' => "$required|string|max:500",
-                'project_type' => [$required, Rule::in(ProjectType::query()->where('is_active', true)->pluck('project_type_code')->all())],
+                'project_type' => [$required, Rule::in(ProjectType::query()->where('is_active', 'Y')->pluck('project_type_code')->all())],
                 'project_other' => ($required === 'required' ? 'required_if:project_type,OTHER|' : '') . 'nullable|string|max:500',
                 'coordinator_first' => "$required|string|max:100",
                 'coordinator_last' => "$required|string|max:100",
@@ -342,7 +1168,7 @@ class PortalController extends Controller
                 'instructors.*.first' => "$required|string|max:100",
                 'instructors.*.last' => "$required|string|max:100",
                 'instructors.*.email' => "$required|string|max:254",
-                'category' => [$required, Rule::in(CourseCategory::query()->where('is_active', true)->pluck('category_code')->all())],
+                'category' => [$required, Rule::in(CourseCategory::query()->where('is_active', 'Y')->pluck('category_code')->all())],
                 'category_other' => ($required === 'required' ? 'required_if:category,OTHER|' : '') . 'nullable|string|max:500',
                 'description' => "$required|string|max:5000",
             ],
@@ -409,7 +1235,6 @@ class PortalController extends Controller
         }
         $data = array_replace($existingDraft, $validated);
         if ($step <= 3) {
-            $data['unsigned_pdf_downloaded_at'] = null;
         }
         $data['requester_unit'] = $this->personDepartmentName((int) $this->actor($request)['pers_id']);
         if (isset($validated['category'])) {
@@ -479,14 +1304,10 @@ class PortalController extends Controller
                     ? CourseRequest::query()->lockForUpdate()->findOrFail($data['id'])
                     : new CourseRequest(['request_no' => $data['request_no'] ?? $this->nextRequestNumber()]);
 
-                if ($courseRequest->exists) {
-                    abort_unless((int) $courseRequest->requester_pers_id === (int) $actor['pers_id'], 403);
-                    abort_unless(in_array($courseRequest->status, ['RETURNED_FOR_REVISION', 'PENDING_SIGNED_DOCUMENT'], true), 409);
-                }
+                abort_if($courseRequest->exists, 409);
 
                 $status = 'PENDING_DEAN_REVIEW';
-                $courseRequest->fill($this->requestAttributes($data, $actor['pers_id'], $status));
-                $courseRequest->save();
+                $this->persistRequestData($courseRequest, $data, (int) $actor['pers_id'], $status);
 
                 $courseRequest->instructors()->delete();
                 foreach ($data['instructors'] as $instructor) {
@@ -499,7 +1320,7 @@ class PortalController extends Controller
 
                 if ($courseRequest->exists && ! empty($data['removed_additional_document_ids'])) {
                     $documents = $courseRequest->documents()
-                        ->where('document_type', 'ADDITIONAL_DOCUMENT')
+                        ->where('document_type_code', 'ADDITIONAL_DOCUMENT')
                         ->whereIn('document_id', $data['removed_additional_document_ids'])
                         ->get();
                     foreach ($documents as $document) {
@@ -508,7 +1329,7 @@ class PortalController extends Controller
                     }
                 }
                 $needsStudentRoster = $data['enrollment'] === 'ผู้ดูแลระบบนำเข้ารายชื่อ'
-                    && ! $courseRequest->documents()->where('document_type', 'STUDENT_ROSTER')->exists();
+                    && ! $courseRequest->documents()->where('document_type_code', 'STUDENT_ROSTER')->exists();
                 foreach ($this->draftAdditionalFiles($data) as $additional) {
                     if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) {
                         $storeAsStudentRoster = $needsStudentRoster && $this->isStudentRosterFile($additional);
@@ -545,7 +1366,7 @@ class PortalController extends Controller
 
         $request->session()->forget(['portal.draft', 'portal.completed']);
 
-        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอคณบดีรับรอง');
+        return redirect()->route('requests.index')->with('success', 'ส่งคำร้องเรียบร้อยแล้ว<br>คำร้องอยู่ในสถานะรอการรับรอง');
     }
 
     public function clearStep(Request $request, int $step)
@@ -573,61 +1394,12 @@ class PortalController extends Controller
         return redirect()->route('requests.index');
     }
 
-    public function edit(Request $request, int $id)
-    {
-        $courseRequest = $this->findAuthorized($request, $id, 'user');
-        abort_unless(in_array($courseRequest->status, ['RETURNED_FOR_REVISION', 'PENDING_SIGNED_DOCUMENT'], true), 409);
-
-        $draft = $this->toRecord($courseRequest);
-        foreach (['officer_decision', 'officer_name', 'officer_reviewed_at', 'approval_decision', 'approver_name', 'approval_comment', 'approval_decided_at'] as $field) {
-            $draft[$field] = null;
-        }
-        $request->session()->put('portal.draft', $draft);
-        foreach ([1, 2, 3] as $step) {
-            $request->session()->put("portal.completed.$step", true);
-        }
-
-        return redirect()->route('requests.form', 1);
-    }
-
     public function detail(Request $request, int $id, string $role = 'user')
     {
         $courseRequest = $this->findAuthorized($request, $id, $role);
         $record = $this->toRecord($courseRequest);
 
         return view($role === 'user' ? 'portal.request-detail' : 'portal.detail', compact('record', 'role'));
-    }
-
-    public function upload(Request $request, int $id)
-    {
-        $request->validate(['signed_document' => 'required|file|mimes:pdf|max:10240'], [
-            'required' => 'กรุณาเลือกเอกสารที่ลงนามแล้ว',
-            'mimes' => 'กรุณาเลือกไฟล์ PDF เท่านั้น',
-        ]);
-        $stored = $this->storeDraftFile($request->file('signed_document'), 'signed');
-
-        try {
-            DB::connection('course133')->transaction(function () use ($request, $id, $stored) {
-                $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
-                $actor = $this->actor($request);
-                abort_unless((int) $courseRequest->requester_pers_id === (int) $actor['pers_id'], 403);
-                abort_unless($courseRequest->status === 'PENDING_SIGNED_DOCUMENT', 409);
-
-                $this->createDocument($courseRequest, 'SIGNED_FORM', $stored, 'signed', $actor['pers_id']);
-                $courseRequest->update(['status' => 'UNDER_OFFICER_REVIEW', 'submitted_at' => now()]);
-                $this->addHistory($courseRequest, 'UNDER_OFFICER_REVIEW', $actor['pers_id'], 'REQUESTER');
-                $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $actor);
-            });
-        } catch (Throwable $exception) {
-            $this->deletePendingFiles($stored);
-            throw $exception;
-        }
-
-        $redirect = $request->input('redirect_to') === 'detail'
-            ? redirect()->route('requests.show', $id)
-            : redirect()->route('requests.index');
-
-        return $redirect->with('success', 'อัปโหลดเอกสารสำเร็จ<br>ส่งคำร้องให้เจ้าหน้าที่ตรวจสอบแล้ว');
     }
 
     public function uploadStudentRoster(Request $request, int $id)
@@ -648,7 +1420,7 @@ class PortalController extends Controller
                 abort_unless($courseRequest->enrollment_method === 'ผู้ดูแลระบบนำเข้ารายชื่อ', 409);
 
                 $existing = $courseRequest->documents()
-                    ->where('document_type', 'STUDENT_ROSTER')
+                ->where('document_type_code', 'STUDENT_ROSTER')
                     ->latest('uploaded_at')
                     ->latest('document_id')
                     ->first();
@@ -681,12 +1453,13 @@ class PortalController extends Controller
             $actor = $this->actor($request);
             $returnToOfficerList = $courseRequest->status === 'PENDING_APPROVAL';
             $studentRoster = $courseRequest->documents()
-                ->where('document_type', 'STUDENT_ROSTER')
+                ->where('document_type_code', 'STUDENT_ROSTER')
                 ->latest('uploaded_at')
                 ->latest('document_id')
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            /** @var CourseDocument $studentRoster */
             $studentRoster->update([
                 'roster_acknowledged_at' => now(),
                 'roster_acknowledged_by_pers_id' => $actor['pers_id'],
@@ -714,7 +1487,7 @@ class PortalController extends Controller
             abort_unless($courseRequest->enrollment_method === 'ผู้ดูแลระบบนำเข้ารายชื่อ', 409);
 
             $studentRoster = $courseRequest->documents()
-                ->where('document_type', 'STUDENT_ROSTER')
+                ->where('document_type_code', 'STUDENT_ROSTER')
                 ->latest('uploaded_at')
                 ->latest('document_id')
                 ->lockForUpdate()
@@ -724,7 +1497,7 @@ class PortalController extends Controller
 
             $alreadyRequested = NotificationOutbox::query()
                 ->where('request_id', $courseRequest->request_id)
-                ->where('notification_type', 'STUDENT_ROSTER_REOPEN_REQUESTED')
+                ->where('notification_type_code', 'STUDENT_ROSTER_REOPEN_REQUESTED')
                 ->where('created_at', '>=', $studentRoster->roster_acknowledged_at)
                 ->exists();
 
@@ -750,12 +1523,13 @@ class PortalController extends Controller
             $courseRequest = $this->findAuthorized($request, $id, 'officer');
             $actor = $this->actor($request);
             $studentRoster = $courseRequest->documents()
-                ->where('document_type', 'STUDENT_ROSTER')
+                ->where('document_type_code', 'STUDENT_ROSTER')
                 ->latest('uploaded_at')
                 ->latest('document_id')
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            /** @var CourseDocument $studentRoster */
             abort_if($studentRoster->roster_acknowledged_at === null, 409);
             $studentRoster->update([
                 'roster_acknowledged_at' => null,
@@ -769,12 +1543,108 @@ class PortalController extends Controller
             ->with('success', 'อนุญาตให้อัปโหลดรายชื่อใหม่แล้ว<br>แจ้งผู้ยื่นคำร้องเรียบร้อย');
     }
 
+    public function updateResult(Request $request, int $id)
+    {
+        $requestType = CourseRequest::query()->whereKey($id)->value('form_type_code');
+        abort_if($requestType === null, 404);
+
+        $isWebsiteRequest = $requestType === 'CC-ITED-01';
+        $isWebsiteContactChangeRequest = $requestType === 'CC-ITED-02';
+        $isWebsiteStorageRequest = $requestType === 'CC-ITED-04';
+        $isEmeetingRequest = $requestType === 'CC-ITED-05';
+        $requiresExecutionDetail = $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest;
+        $executionDetailMessage = match (true) {
+            $isWebsiteContactChangeRequest => 'กรุณาระบุข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์',
+            $isEmeetingRequest => 'กรุณาระบุข้อมูลการดำเนินการกำหนดหรือเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุม',
+            default => 'กรุณาระบุข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์',
+        };
+        $data = $request->validate([
+            'course_id' => ($isWebsiteRequest || $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? ['nullable'] : ['required', 'integer', 'min:1'],
+            'allocated_domain' => $isWebsiteRequest ? ['required', 'string', 'max:5000'] : ['nullable'],
+            'execution_detail' => $requiresExecutionDetail ? ['required', 'string', 'max:5000'] : ['nullable'],
+            'notify_requester' => ['nullable', 'boolean'],
+        ], [
+            'execution_detail.required' => $executionDetailMessage,
+        ]);
+
+        DB::connection('course133')->transaction(function () use ($request, $id, $data) {
+            $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
+            abort_unless($courseRequest->status === 'COMPLETED', 409);
+
+            $actor = $this->actor($request);
+
+            if ($courseRequest->form_type_code === 'CC-ITED-01') {
+                $courseRequest->websiteDetail()->update([
+                    'allocated_domain' => trim((string) $data['allocated_domain']),
+                ]);
+                $this->ensureSignedFormDocument(
+                    $courseRequest->fresh($this->recordRelations()),
+                    (int) $actor['pers_id'],
+                    true,
+                );
+            } elseif ($courseRequest->form_type_code === 'CC-ITED-02') {
+                $courseRequest->websiteContactChangeDetail()->update([
+                    'execution_detail' => trim((string) $data['execution_detail']),
+                ]);
+            } elseif ($courseRequest->form_type_code === 'CC-ITED-04') {
+                $courseRequest->websiteStorageDetail()->update([
+                    'execution_detail' => trim((string) $data['execution_detail']),
+                    'granted_space_gb' => 1,
+                ]);
+                $this->ensureSignedFormDocument(
+                    $courseRequest->fresh($this->recordRelations()),
+                    (int) $actor['pers_id'],
+                    true,
+                );
+            } elseif ($courseRequest->form_type_code === 'CC-ITED-05') {
+                $courseRequest->emeetingDetail()->update([
+                    'execution_detail' => trim((string) $data['execution_detail']),
+                ]);
+            } else {
+                $courseRequest->moodleCourseDetail()->update([
+                    'course_id' => (string) (int) $data['course_id'],
+                ]);
+            }
+
+            if ($request->boolean('notify_requester')) {
+                $this->queueNotification(
+                    $courseRequest,
+                    'REQUEST_RESULT_UPDATED',
+                    $this->requesterRecipient($courseRequest),
+                    $actor,
+                );
+            }
+        });
+
+        return redirect()->route('officer.show', $id)->with(
+            'success',
+            $request->boolean('notify_requester')
+                ? 'แก้ไขผลการดำเนินการและส่งอีเมลแจ้งผู้ยื่นคำร้องเรียบร้อยแล้ว'
+                : 'แก้ไขผลการดำเนินการเรียบร้อยแล้ว',
+        );
+    }
+
     public function review(Request $request, int $id)
     {
+        $requestType = CourseRequest::query()->whereKey($id)->value('form_type_code');
+        $isWebsiteRequest = $requestType === 'CC-ITED-01';
+        $isWebsiteContactChangeRequest = $requestType === 'CC-ITED-02';
+        $isWebsiteStorageRequest = $requestType === 'CC-ITED-04';
+        $isEmeetingRequest = $requestType === 'CC-ITED-05';
+        $requiresExecutionDetail = $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest;
+        $executionDetailMessage = match (true) {
+            $isWebsiteContactChangeRequest => 'กรุณาระบุข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์',
+            $isEmeetingRequest => 'กรุณาระบุข้อมูลการดำเนินการกำหนดหรือเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุม',
+            default => 'กรุณาระบุข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์',
+        };
         $data = $request->validate([
-            'decision' => ['required', Rule::in(['pass', 'return'])],
-            'reason' => 'required_if:decision,return|nullable|string|max:3000',
-            'signature_file' => 'required_if:decision,pass|nullable|image|mimes:png,jpeg,jpg|max:2048',
+            'decision' => ['required', Rule::in(['pass', 'reject'])],
+            'reason' => 'required_if:decision,reject|nullable|string|max:3000',
+            'course_id' => ($isWebsiteRequest || $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? 'nullable' : 'required_if:decision,pass|nullable|integer|min:1',
+            'allocated_domain' => $isWebsiteRequest ? 'required_if:decision,pass|nullable|string' : 'nullable',
+            'execution_detail' => $requiresExecutionDetail ? 'required_if:decision,pass|nullable|string|max:5000' : 'nullable',
+        ], [
+            'execution_detail.required_if' => $executionDetailMessage,
         ]);
 
         DB::connection('course133')->transaction(function () use ($request, $id, $data) {
@@ -783,14 +1653,11 @@ class PortalController extends Controller
 
             $actor = $this->actor($request);
             $passed = $data['decision'] === 'pass';
-            $status = $passed ? 'PENDING_APPROVAL' : 'RETURNED_FOR_REVISION';
+            $status = $passed ? 'COMPLETED' : 'REJECTED';
 
-            if ($passed && $request->hasFile('signature_file')) {
-                $signaturePath = $request->file('signature_file')->store('temp_signatures', 'local');
-                $signatureAbsPath = Storage::disk('local')->path($signaturePath);
-
+            if ($passed && ! in_array($courseRequest->form_type_code, ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05'], true)) {
                 $hasPriorPassedReview = $courseRequest->officerReviews()
-                    ->where('decision', 'PASSED')
+                    ->where('decision', 'APPROVED')
                     ->exists();
 
                 $signedDoc = $this->ensureSignedFormDocument(
@@ -823,28 +1690,20 @@ class PortalController extends Controller
                                 $scaleX = $size['width'] / 210;
                                 $scaleY = $size['height'] / 297;
 
-                                // 1. Keep the checkmark inside the officer checkbox.
+                                $isWebsiteRequest = $courseRequest->form_type_code === 'CC-ITED-01';
+                                $checkStartX = $isWebsiteRequest ? 20.2 : 30.4;
+                                $checkStartY = $isWebsiteRequest ? 213.7 : 130;
+                                $signatureBoxWidth = ($isWebsiteRequest ? 50 : 51.5) * $scaleX;
+                                $nameTop = 145.7;
+                                $dateTop = $isWebsiteRequest ? 236.2 : 155.4;
+
+                                // Keep the checkmark inside the officer checkbox.
                                 $pdf->SetLineWidth(0.4);
                                 $pdf->SetDrawColor(0, 0, 0);
-                                $pdf->Line(30.4 * $scaleX, 130 * $scaleY, 31.4 * $scaleX, 131.1 * $scaleY);
-                                $pdf->Line(31.4 * $scaleX, 131.1 * $scaleY, 32.9 * $scaleX, 128.6 * $scaleY);
+                                $pdf->Line($checkStartX * $scaleX, $checkStartY * $scaleY, ($checkStartX + 1) * $scaleX, ($checkStartY + 1.1) * $scaleY);
+                                $pdf->Line(($checkStartX + 1) * $scaleX, ($checkStartY + 1.1) * $scaleY, ($checkStartX + 2.5) * $scaleX, ($checkStartY - 1.4) * $scaleY);
 
-                                // 2. Center the signature on the signature line without touching the date row.
-                                $signatureBoxX = 44.5 * $scaleX;
-                                $signatureBoxY = 134.5 * $scaleY;
-                                $signatureBoxWidth = 51.5 * $scaleX;
-                                $signatureBoxHeight = 10 * $scaleY;
-                                $signatureInfo = getimagesize($signatureAbsPath);
-                                $signatureRatio = $signatureInfo && $signatureInfo[1] > 0
-                                    ? $signatureInfo[0] / $signatureInfo[1]
-                                    : 3;
-                                $signatureWidth = min($signatureBoxWidth, $signatureBoxHeight * $signatureRatio);
-                                $signatureHeight = min($signatureBoxHeight, $signatureWidth / $signatureRatio);
-                                $signatureX = $signatureBoxX + (($signatureBoxWidth - $signatureWidth) / 2);
-                                $signatureY = $signatureBoxY + ($signatureBoxHeight - $signatureHeight);
-                                $pdf->Image($signatureAbsPath, $signatureX, $signatureY, $signatureWidth, $signatureHeight);
-
-                                // 3. Stamp Date
+                                // Stamp the authenticated officer name in place of an uploaded signature.
                                 $pdf->AddFont('Sarabun', '', 'Sarabun-Regular.php');
                                 $pdf->SetFont('Sarabun', '', 9);
                                 $pdf->SetTextColor(0, 0, 0);
@@ -860,17 +1719,36 @@ class PortalController extends Controller
                                 }
                                 $thaiTextItems[] = [
                                     'text' => $officerName,
-                                    'x' => 38.5,
-                                    'top' => 145.7,
-                                    'width' => 47,
+                                    'x' => $isWebsiteRequest ? 49.5 : 44.5,
+                                    'top' => $isWebsiteRequest ? 234.2 : 137.2,
+                                    'width' => $isWebsiteRequest ? 50 : 51.5,
                                     'font_size' => $officerNameFontSize,
                                     'align' => 'center',
                                 ];
+                                if (! $isWebsiteRequest) {
+                                    $thaiTextItems[] = [
+                                        'text' => $officerName,
+                                        'x' => 38.5,
+                                        'top' => $nameTop,
+                                        'width' => 47,
+                                        'font_size' => $officerNameFontSize,
+                                        'align' => 'center',
+                                    ];
+                                } else {
+                                    $thaiTextItems[] = [
+                                        'text' => trim((string) $data['allocated_domain']),
+                                        'x' => 49,
+                                        'top' => 226.2,
+                                        'width' => 140,
+                                        'font_size' => 9,
+                                        'align' => 'left',
+                                    ];
+                                }
                                 $thaiTextItems[] = [
                                     'text' => $this->thaiBuddhistDate(now()),
-                                    'x' => 38.5,
-                                    'top' => 155.4,
-                                    'width' => 47,
+                                    'x' => $isWebsiteRequest ? 132 : 38.5,
+                                    'top' => $dateTop,
+                                    'width' => $isWebsiteRequest ? 58 : 47,
                                     'font_size' => 9,
                                     'align' => 'center',
                                 ];
@@ -880,10 +1758,9 @@ class PortalController extends Controller
                         $pdf->Output('F', $pdfAbsPath);
                     }
                 }
-                Storage::disk('local')->delete($signaturePath);
             }
 
-            if (! $passed) {
+            if (! $passed && ! in_array($courseRequest->form_type_code, ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05'], true)) {
                 $this->ensureSignedFormDocument(
                     $courseRequest->fresh($this->recordRelations()),
                     (int) $actor['pers_id'],
@@ -894,29 +1771,66 @@ class PortalController extends Controller
             OfficerReview::create([
                 'request_id' => $courseRequest->request_id,
                 'officer_pers_id' => $actor['pers_id'],
-                'decision' => $passed ? 'PASSED' : 'RETURNED',
-                'return_reason' => $passed ? null : $data['reason'],
+                'decision' => $passed ? 'APPROVED' : 'REJECTED',
+                'rejection_reason' => $passed ? null : $data['reason'],
                 'reviewed_at' => now(),
             ]);
-            $courseRequest->update(['status' => $status]);
-            $this->addHistory($courseRequest, $status, $actor['pers_id'], 'OFFICER');
             if ($passed) {
-                $this->queueRoleNotifications($courseRequest, 'APPROVAL_REQUIRED', 'APPROVER', $actor);
+                if ($courseRequest->form_type_code === 'CC-ITED-01') {
+                    $courseRequest->websiteDetail()->update([
+                        'allocated_domain' => trim((string) $data['allocated_domain']),
+                    ]);
+                } elseif ($courseRequest->form_type_code === 'CC-ITED-02') {
+                    $courseRequest->websiteContactChangeDetail()->update([
+                        'execution_detail' => trim((string) $data['execution_detail']),
+                    ]);
+                } elseif ($courseRequest->form_type_code === 'CC-ITED-04') {
+                    $courseRequest->websiteStorageDetail()->update([
+                        'execution_detail' => trim((string) $data['execution_detail']),
+                        'granted_space_gb' => 1,
+                    ]);
+                } elseif ($courseRequest->form_type_code === 'CC-ITED-05') {
+                    $courseRequest->emeetingDetail()->update([
+                        'execution_detail' => trim((string) $data['execution_detail']),
+                    ]);
+                } else {
+                    $courseRequest->moodleCourseDetail()->update([
+                        'course_id' => (string) (int) $data['course_id'],
+                    ]);
+                }
+                $courseRequest->update([
+                    'status_code' => $status,
+                    'completed_at' => now(),
+                    'completed_by_pers_id' => $actor['pers_id'],
+                ]);
             } else {
-                $this->queueNotification($courseRequest, 'REQUEST_RETURNED', $this->requesterRecipient($courseRequest), $actor);
+                $courseRequest->update(['status_code' => $status]);
+            }
+            $this->addHistory($courseRequest, $status, $actor['pers_id'], 'OFFICER');
+            if (in_array($courseRequest->form_type_code, ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05'], true)) {
+                $this->ensureSignedFormDocument(
+                    $courseRequest->fresh($this->recordRelations()),
+                    (int) $actor['pers_id'],
+                    true,
+                );
+            }
+            if ($passed) {
+                $this->queueNotification($courseRequest, 'REQUEST_COMPLETED_REQUESTER', $this->requesterRecipient($courseRequest), $actor);
+            } else {
+                $this->queueNotification($courseRequest, 'REQUEST_REJECTED', $this->requesterRecipient($courseRequest), $actor);
             }
         });
 
         return redirect()->route('officer.reviews')->with('success', $data['decision'] === 'pass'
-            ? 'ส่งเอกสารให้ผู้มีอำนาจพิจารณาแล้ว'
-            : 'ส่งเหตุผลกลับให้ผู้ยื่นคำร้องแล้ว');
+            ? ($isWebsiteRequest ? 'อนุมัติและบันทึกโดเมนที่จัดสรรเรียบร้อยแล้ว' : ($isWebsiteContactChangeRequest ? 'อนุมัติและบันทึกข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์เรียบร้อยแล้ว' : ($isEmeetingRequest ? 'อนุมัติและบันทึกข้อมูลการดำเนินการกำหนดหรือเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุมเรียบร้อยแล้ว' : 'อนุมัติและบันทึก Course ID เรียบร้อยแล้ว')))
+            : 'บันทึกผลไม่อนุมัติและแจ้งผู้ยื่นคำร้องแล้ว');
     }
 
     public function approve(Request $request, int $id)
     {
         $data = $request->validate([
-            'decision' => ['required', Rule::in(['approve', 'return', 'reject'])],
-            'reason' => 'required_if:decision,return,reject|nullable|string|max:3000',
+            'decision' => ['required', Rule::in(['approve', 'reject'])],
+            'reason' => 'required_if:decision,reject|nullable|string|max:3000',
             'signature_file' => 'required_if:decision,approve,reject|nullable|image|mimes:png,jpeg,jpg|max:2048',
         ]);
 
@@ -926,13 +1840,11 @@ class PortalController extends Controller
 
             $actor = $this->actor($request);
             $status = match ($data['decision']) {
-                'approve' => 'PENDING_COURSE_ID',
-                'return' => 'RETURNED_FOR_REVISION',
+                'approve' => 'UNDER_OFFICER_REVIEW',
                 'reject' => 'REJECTED',
             };
             $approvalDecision = match ($data['decision']) {
                 'approve' => 'APPROVED',
-                'return' => 'RETURNED',
                 'reject' => 'REJECTED',
             };
 
@@ -1156,8 +2068,7 @@ class PortalController extends Controller
             $courseRequest->update(['status' => $status]);
             $this->addHistory($courseRequest, $status, $actor['pers_id'], 'APPROVER');
             $notificationType = match ($data['decision']) {
-                'approve' => 'COURSE_ID_REQUIRED',
-                'return' => 'REQUEST_RETURNED',
+                'approve' => 'OFFICER_REVIEW_REQUIRED',
                 'reject' => 'REQUEST_REJECTED',
             };
             if ($data['decision'] === 'approve') {
@@ -1169,7 +2080,6 @@ class PortalController extends Controller
 
         $message = match ($data['decision']) {
             'approve' => 'อนุมัติคำร้องเรียบร้อยแล้ว',
-            'return' => 'ส่งคำร้องกลับให้ผู้ยื่นคำร้องแก้ไขแล้ว',
             'reject' => 'บันทึกผลไม่อนุมัติ และส่งเหตุผลให้ผู้ยื่นคำร้องแล้ว',
         };
 
@@ -1187,7 +2097,7 @@ class PortalController extends Controller
 
         $wasRecorded = DB::connection('course133')->transaction(function () use ($request, $id, $data): bool {
             $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
-            abort_unless(in_array($courseRequest->status, ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true), 409);
+            abort_unless($courseRequest->status === 'COURSE_ID_RECORDED', 409);
             $wasRecorded = $courseRequest->status === 'COURSE_ID_RECORDED';
             $actor = $this->actor($request);
 
@@ -1216,7 +2126,7 @@ class PortalController extends Controller
 
             return $this->generatedPdfResponse(
                 $record,
-                $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber) : 'document.pdf',
+                $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, $record['form_type_code'] ?? 'CC-ITED-06') : 'document.pdf',
                 true,
             );
         }
@@ -1233,23 +2143,134 @@ class PortalController extends Controller
         $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
         $requestCode = Str::afterLast($requestNumber, '-');
         $filename = $requestCode !== ''
-            ? $this->requestDocumentFilename($requestNumber)
+            ? $this->requestDocumentFilename($requestNumber, $record['form_type_code'] ?? 'CC-ITED-06')
             : "{$safeName}.pdf";
 
-        $response = $this->generatedPdfResponse($record, $filename, false);
+        return $this->generatedPdfResponse($record, $filename, false);
+    }
 
-        if ($id === 'draft') {
-            $request->session()->put('portal.draft.unsigned_pdf_downloaded_at', now()->toDateTimeString());
-        } elseif ($this->actor($request)['role'] === 'user') {
-            CourseRequest::query()
-                ->whereKey((int) $id)
-                ->where('requester_pers_id', (int) $this->actor($request)['pers_id'])
-                ->where('status', 'PENDING_SIGNED_DOCUMENT')
-                ->whereNull('unsigned_pdf_downloaded_at')
-                ->update(['unsigned_pdf_downloaded_at' => now()]);
+    public function websiteDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-01') === 'CC-ITED-01', 404);
+
+        if ($request->query('preview') === '1') {
+            $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+
+            return $this->generatedPdfResponse(
+                $record,
+                $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-01') : 'CC-ITED-01.pdf',
+                true,
+            );
         }
 
-        return $response;
+        $downloadUrl = route('website-requests.document.download', ['id' => $id]);
+
+        return view('portal.document', compact('record', 'downloadUrl'));
+    }
+
+    public function downloadWebsiteDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-01') === 'CC-ITED-01', 404);
+
+        $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+        $websiteName = (string) ($record['website_name'] ?? 'คำขอใช้พื้นที่เว็บไซต์');
+        $safeName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '-', $websiteName);
+        $filename = $requestNumber !== ''
+            ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-01')
+            : "{$safeName}.pdf";
+        return $this->generatedPdfResponse($record, $filename, false);
+    }
+
+    public function websiteContactChangeDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_contact_change_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-02') === 'CC-ITED-02', 404);
+
+        if ($request->query('preview') === '1') {
+            $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+            return $this->generatedPdfResponse($record, $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-02') : 'CC-ITED-02.pdf', true);
+        }
+
+        $downloadUrl = route('website-contact-change-requests.document.download', ['id' => $id]);
+        return view('portal.document', compact('record', 'downloadUrl'));
+    }
+
+    public function downloadWebsiteContactChangeDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_contact_change_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-02') === 'CC-ITED-02', 404);
+
+        $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+        $websiteName = (string) ($record['website_name'] ?? 'คำขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์');
+        $safeName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '-', $websiteName);
+        $filename = $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-02') : "{$safeName}.pdf";
+        return $this->generatedPdfResponse($record, $filename, false);
+    }
+
+    public function emeetingDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.emeeting_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-05') === 'CC-ITED-05', 404);
+
+        if ($request->query('preview') === '1') {
+            $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+            return $this->generatedPdfResponse($record, $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-05') : 'CC-ITED-05.pdf', true);
+        }
+
+        $downloadUrl = route('emeeting-requests.document.download', ['id' => $id]);
+        return view('portal.document', compact('record', 'downloadUrl'));
+    }
+
+    public function downloadEmeetingDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.emeeting_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-05') === 'CC-ITED-05', 404);
+
+        $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+        $filename = $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-05') : 'CC-ITED-05.pdf';
+        return $this->generatedPdfResponse($record, $filename, false);
+    }
+
+    public function websiteStorageDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_storage_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-04') === 'CC-ITED-04', 404);
+
+        if ($request->query('preview') === '1') {
+            $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+            return $this->generatedPdfResponse($record, $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-04') : 'CC-ITED-04.pdf', true);
+        }
+
+        $downloadUrl = route('website-storage-requests.document.download', ['id' => $id]);
+        return view('portal.document', compact('record', 'downloadUrl'));
+    }
+
+    public function downloadWebsiteStorageDocument(Request $request, string $id = 'draft')
+    {
+        $record = $id === 'draft'
+            ? $request->session()->get('portal.website_storage_draft', [])
+            : $this->documentRecord($request, $id);
+        abort_unless(($record['form_type_code'] ?? 'CC-ITED-04') === 'CC-ITED-04', 404);
+
+        $requestNumber = (string) ($record['request_no'] ?? $record['number'] ?? '');
+        $filename = $requestNumber !== '' ? $this->requestDocumentFilename($requestNumber, 'CC-ITED-04') : 'CC-ITED-04.pdf';
+        return $this->generatedPdfResponse($record, $filename, false);
     }
 
     public function attachment(Request $request, int $id, string $kind)
@@ -1261,7 +2282,16 @@ class PortalController extends Controller
             default => abort(404),
         };
         $courseRequest = $this->findAuthorized($request, $id, $this->actor($request)['role']);
-        $documents = $courseRequest->documents()->where('document_type', $type);
+        if ($kind === 'signed'
+            && in_array($courseRequest->status, ['COMPLETED', 'REJECTED'], true)
+            && in_array($courseRequest->form_type_code, ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05'], true)) {
+            return $this->generatedPdfResponse(
+                $this->toRecord($courseRequest),
+                $this->requestDocumentFilename($courseRequest->request_no, $courseRequest->form_type_code),
+                $request->boolean('preview'),
+            );
+        }
+        $documents = $courseRequest->documents()->where('document_type_code', $type);
         if (in_array($kind, ['additional', 'roster'], true) && $request->filled('document')) {
             $documents->where('document_id', $request->integer('document'));
         }
@@ -1271,7 +2301,7 @@ class PortalController extends Controller
         $disk = Storage::disk('local');
 
         $downloadName = $kind === 'signed'
-            ? $this->requestDocumentFilename($courseRequest->request_no)
+            ? $this->requestDocumentFilename($courseRequest->request_no, $courseRequest->form_type_code)
             : $document->original_filename;
 
         if ($kind === 'signed' && $request->boolean('preview')) {
@@ -1300,13 +2330,6 @@ class PortalController extends Controller
                 : []
         );
 
-        if ($kind === 'signed'
-            && $this->actor($request)['role'] === 'officer'
-            && $courseRequest->status === 'PENDING_COURSE_ID'
-            && $courseRequest->approved_pdf_downloaded_at === null) {
-            $courseRequest->update(['approved_pdf_downloaded_at' => now()]);
-        }
-
         return $response;
     }
 
@@ -1318,7 +2341,7 @@ class PortalController extends Controller
             abort_unless((int) $courseRequest->requester_pers_id === (int) $this->actor($request)['pers_id'], 403);
         } elseif ($role === 'officer') {
             $latestRoster = $courseRequest->documents
-                ->where('document_type', 'STUDENT_ROSTER')
+                ->where('document_type_code', 'STUDENT_ROSTER')
                 ->sortByDesc(fn ($document) => sprintf('%s-%020d', $document->uploaded_at?->format('Y-m-d H:i:s.u'), $document->document_id))
                 ->first();
             $canReviewLateRoster = $courseRequest->status === 'PENDING_APPROVAL'
@@ -1329,9 +2352,9 @@ class PortalController extends Controller
                         && $notification->created_at?->greaterThanOrEqualTo($latestRoster->roster_acknowledged_at)
                     ));
 
-            abort_unless(in_array($courseRequest->status, ['UNDER_OFFICER_REVIEW', 'PENDING_COURSE_ID', 'COURSE_ID_RECORDED', 'REJECTED'], true) || $canReviewLateRoster, 404);
+            abort_unless(in_array($courseRequest->status, ['UNDER_OFFICER_REVIEW', 'COMPLETED', 'REJECTED'], true) || $canReviewLateRoster, 404);
         } else {
-            abort_unless(in_array($courseRequest->status, ['PENDING_APPROVAL', 'PENDING_COURSE_ID', 'COURSE_ID_RECORDED', 'REJECTED'], true), 404);
+            abort_unless(in_array($courseRequest->status, ['PENDING_APPROVAL', 'COURSE_ID_RECORDED', 'REJECTED'], true), 404);
         }
 
         return $courseRequest;
@@ -1344,26 +2367,29 @@ class PortalController extends Controller
             : $this->toRecord($this->findAuthorized($request, (int) $id, $this->actor($request)['role']));
     }
 
-    private function requestAttributes(array $data, int $requesterId, string $status): array
+    private function persistRequestData(CourseRequest $courseRequest, array $data, int $requesterId, string $status): void
     {
-        return [
+        $courseRequest->fill([
+            'form_type_code' => 'CC-ITED-06',
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => isset($data['dean_pers_id']) ? (int) $data['dean_pers_id'] : null,
-            'course_name_th' => $data['course_th'],
-            'course_name_en' => $data['course_en'],
-            'status' => $status,
+            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_position_name' => $this->deanPositionName(
+                (int) $data['target_dept_id'],
+                (int) $data['dean_pers_id'],
+            ),
+            'request_title' => $data['project_name'],
+            'status_code' => $status,
             'submitted_at' => now(),
-            'unsigned_pdf_downloaded_at' => $data['unsigned_pdf_downloaded_at'] ?? null,
+        ])->save();
+
+        $courseRequest->moodleCourseDetail()->updateOrCreate(['request_id' => $courseRequest->request_id], [
             'project_name' => $data['project_name'],
             'project_type_code' => $data['project_type'],
             'project_other' => $data['project_type'] === 'OTHER' ? $data['project_other'] : null,
-            'coordinator_first_name' => $data['coordinator_first'],
-            'coordinator_last_name' => $data['coordinator_last'],
-            'coordinator_position' => $data['coordinator_position'],
-            'coordinator_phone' => $data['coordinator_phone'],
-            'coordinator_email' => $data['coordinator_email'],
+            'course_name_th' => $data['course_th'],
+            'course_name_en' => $data['course_en'],
             'category_code' => $data['category'],
             'category_other' => $data['category'] === 'OTHER' ? $data['category_other'] : null,
             'course_description' => $data['description'],
@@ -1376,12 +2402,217 @@ class PortalController extends Controller
             'enrollment_other' => $data['enrollment'] === 'อื่น ๆ (ระบุ)' ? ($data['enrollment_other'] ?? null) : null,
             'expected_students' => $data['expected_students'],
             'course_id' => null,
-            'recorded_by_pers_id' => null,
-        ];
+        ]);
+
+        $courseRequest->coordinatorContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'COORDINATOR',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['coordinator_first'].' '.$data['coordinator_last']),
+            'position_name' => $data['coordinator_position'],
+            'phone' => $data['coordinator_phone'],
+            'email' => $data['coordinator_email'],
+        ]);
+
+        $courseRequest->load('moodleCourseDetail.projectType', 'moodleCourseDetail.category', 'coordinatorContact');
+    }
+
+    private function persistWebsiteRequestData(CourseRequest $courseRequest, array $data, int $requesterId, string $status): void
+    {
+        $courseRequest->fill([
+            'form_type_code' => 'CC-ITED-01',
+            'requester_pers_id' => $requesterId,
+            'target_dept_id' => (int) $data['target_dept_id'],
+            'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
+            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_position_name' => $this->deanPositionName(
+                (int) $data['target_dept_id'],
+                (int) $data['dean_pers_id'],
+            ),
+            'request_title' => $data['website_name'],
+            'status_code' => $status,
+            'submitted_at' => now(),
+        ])->save();
+
+        $courseRequest->websiteDetail()->updateOrCreate(['request_id' => $courseRequest->request_id], [
+            'website_name' => $data['website_name'],
+            'domain_url' => filled($data['domain_url'] ?? null) ? trim($data['domain_url']) : null,
+            'site_scope_type' => $data['site_scope_type'],
+            'service_starts_on' => $data['service_starts_on'] ?? null,
+            'service_ends_on' => $data['service_ends_on'] ?? null,
+            'platform_code' => $data['platform_code'],
+            'additional_detail' => filled($data['additional_detail'] ?? null) ? trim($data['additional_detail']) : null,
+            'allocated_domain' => null,
+        ]);
+
+        $courseRequest->websiteContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'WEBSITE_CONTACT',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['contact_first'].' '.$data['contact_last']),
+            'position_name' => $data['contact_position'],
+            'phone' => $data['contact_phone'],
+            'email' => $data['contact_email'],
+        ]);
+
+        $courseRequest->load('websiteDetail.platform', 'websiteContact');
+    }
+
+    private function persistWebsiteContactChangeRequestData(CourseRequest $courseRequest, array $data, int $requesterId, string $status): void
+    {
+        $courseRequest->fill([
+            'form_type_code' => 'CC-ITED-02',
+            'requester_pers_id' => $requesterId,
+            'target_dept_id' => (int) $data['target_dept_id'],
+            'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
+            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_position_name' => $this->deanPositionName(
+                (int) $data['target_dept_id'],
+                (int) $data['dean_pers_id'],
+            ),
+            'request_title' => $data['website_name'],
+            'status_code' => $status,
+            'submitted_at' => now(),
+        ])->save();
+
+        $courseRequest->websiteContactChangeDetail()->updateOrCreate(['request_id' => $courseRequest->request_id], [
+            'website_name' => $data['website_name'],
+            'domain_url' => trim((string) $data['domain_url']),
+            'additional_detail' => null,
+        ]);
+        $courseRequest->currentWebsiteContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'CURRENT_WEBSITE_CONTACT',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['current_contact_first'].' '.$data['current_contact_last']),
+            'position_name' => null,
+            'phone' => null,
+            'email' => null,
+        ]);
+        $courseRequest->newWebsiteContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'NEW_WEBSITE_CONTACT',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['new_contact_first'].' '.$data['new_contact_last']),
+            'position_name' => $data['new_contact_position'],
+            'phone' => $data['new_contact_phone'],
+            'email' => $data['new_contact_email'],
+        ]);
+
+        $courseRequest->load('websiteContactChangeDetail', 'currentWebsiteContact', 'newWebsiteContact');
+    }
+
+    private function persistEmeetingRequestData(CourseRequest $courseRequest, array $data, int $requesterId, string $status): void
+    {
+        $courseRequest->fill([
+            'form_type_code' => 'CC-ITED-05',
+            'requester_pers_id' => $requesterId,
+            'target_dept_id' => (int) $data['target_dept_id'],
+            'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
+            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_position_name' => $this->deanPositionName(
+                (int) $data['target_dept_id'],
+                (int) $data['dean_pers_id'],
+            ),
+            'request_title' => $data['action_type'] === 'CHANGE_CONTACT'
+                ? 'เปลี่ยนแปลงสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting'
+                : 'ขอสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting',
+            'status_code' => $status,
+            'submitted_at' => now(),
+        ])->save();
+
+        $courseRequest->emeetingDetail()->updateOrCreate(['request_id' => $courseRequest->request_id], [
+            'action_type' => $data['action_type'],
+        ]);
+        if ($data['action_type'] === 'CHANGE_CONTACT') {
+            $courseRequest->currentEmeetingContact()->updateOrCreate([
+                'request_id' => $courseRequest->request_id,
+                'contact_role_code' => 'CURRENT_EMEETING_CONTACT',
+                'is_primary' => true,
+            ], [
+                'pers_id' => null,
+                'full_name' => trim($data['current_contact_first'].' '.$data['current_contact_last']),
+                'position_name' => null,
+                'phone' => null,
+                'email' => null,
+            ]);
+        }
+        $courseRequest->emeetingContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'EMEETING_CONTACT',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['contact_first'].' '.$data['contact_last']),
+            'position_name' => $data['contact_position'],
+            'phone' => $data['contact_phone'],
+            'email' => $data['contact_email'],
+        ]);
+
+        $courseRequest->load('emeetingDetail', 'currentEmeetingContact', 'emeetingContact');
+    }
+
+    private function persistWebsiteStorageRequestData(CourseRequest $courseRequest, array $data, int $requesterId, string $status): void
+    {
+        $courseRequest->fill([
+            'form_type_code' => 'CC-ITED-04',
+            'requester_pers_id' => $requesterId,
+            'target_dept_id' => (int) $data['target_dept_id'],
+            'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
+            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_position_name' => $this->deanPositionName(
+                (int) $data['target_dept_id'],
+                (int) $data['dean_pers_id'],
+            ),
+            'request_title' => $data['website_name'],
+            'status_code' => $status,
+            'submitted_at' => now(),
+        ])->save();
+
+        $courseRequest->websiteStorageDetail()->updateOrCreate(['request_id' => $courseRequest->request_id], [
+            'website_name' => $data['website_name'],
+            'domain_url' => trim((string) $data['domain_url']),
+            'requested_space_gb' => 1,
+            'additional_detail' => null,
+        ]);
+        $courseRequest->websiteContact()->updateOrCreate([
+            'request_id' => $courseRequest->request_id,
+            'contact_role_code' => 'WEBSITE_CONTACT',
+            'is_primary' => true,
+        ], [
+            'pers_id' => null,
+            'full_name' => trim($data['contact_first'].' '.$data['contact_last']),
+            'position_name' => $data['contact_position'],
+            'phone' => $data['contact_phone'],
+            'email' => $data['contact_email'],
+        ]);
+
+        $courseRequest->load('websiteStorageDetail', 'websiteContact');
     }
 
     private function toRecord(CourseRequest $courseRequest): array
     {
+        if ($courseRequest->form_type_code === 'CC-ITED-01') {
+            return $this->toWebsiteRecord($courseRequest);
+        }
+        if ($courseRequest->form_type_code === 'CC-ITED-02') {
+            return $this->toWebsiteContactChangeRecord($courseRequest);
+        }
+        if ($courseRequest->form_type_code === 'CC-ITED-04') {
+            return $this->toWebsiteStorageRecord($courseRequest);
+        }
+        if ($courseRequest->form_type_code === 'CC-ITED-05') {
+            return $this->toEmeetingRecord($courseRequest);
+        }
+
         $signed = $courseRequest->documents->where('document_type', 'SIGNED_FORM')->sortByDesc('uploaded_at')->first();
         $studentRosters = $courseRequest->documents
             ->where('document_type', 'STUDENT_ROSTER')
@@ -1408,13 +2639,14 @@ class PortalController extends Controller
                 'additional_pending' => false,
         ])->values()->all();
         $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
-        $latestApproval = $courseRequest->approverReviews->sortByDesc('decided_at')->first();
+        /** @var ApproverReview|null $latestApproval */
+        $latestApproval = null;
         $latestStatusHistory = $courseRequest->histories
             ->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))
             ->first();
         $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
         $courseIdNotification = $courseRequest->notifications
-            ->where('notification_type', 'COURSE_ID_RECORDED')
+            ->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')
             ->sortByDesc('notification_id')
             ->first();
         $studentRosterReopenRequested = $studentRoster?->roster_acknowledged_at !== null
@@ -1428,16 +2660,12 @@ class PortalController extends Controller
                 $notification->notification_type === 'STUDENT_ROSTER_REOPENED'
                 && $notification->created_at?->greaterThanOrEqualTo($studentRoster->uploaded_at)
             );
-        $returnedByApprover = $courseRequest->status === 'RETURNED_FOR_REVISION'
-            && $latestApproval?->decision === 'RETURNED'
-            && ($latestReview?->reviewed_at === null || $latestApproval->decided_at->greaterThanOrEqualTo($latestReview->reviewed_at));
         $reason = match ($courseRequest->status) {
-            'RETURNED_FOR_REVISION' => $returnedByApprover
-                ? $latestApproval->comment
-                : $latestReview?->return_reason,
-            'REJECTED' => $latestStatusHistory?->change_source === 'DEAN'
-                ? $latestDeanReview?->comment
-                : $latestApproval?->comment,
+            'REJECTED' => match ($latestStatusHistory?->change_source) {
+                'DEAN' => $latestDeanReview?->comment,
+                'OFFICER' => $latestReview?->rejection_reason,
+                default => $latestApproval?->comment,
+            },
             default => null,
         };
 
@@ -1455,9 +2683,10 @@ class PortalController extends Controller
                 : null,
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
-            'dean_position' => $courseRequest->dean_pers_id ? $this->personPosition((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $this->requestDeanPosition($courseRequest),
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'form_type_code' => 'CC-ITED-06',
             'project_name' => $courseRequest->project_name,
             'project_type' => $courseRequest->project_type_code,
             'project_type_label' => $courseRequest->projectType?->project_type_name_th,
@@ -1499,16 +2728,11 @@ class PortalController extends Controller
             'student_roster_is_update' => $studentRosterVersionCount > 1,
             'expected_students' => $courseRequest->expected_students,
             'status' => $courseRequest->status,
-            'unsigned_pdf_downloaded' => $courseRequest->unsigned_pdf_downloaded_at !== null,
-            'approved_pdf_downloaded' => $courseRequest->approved_pdf_downloaded_at !== null,
             'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
             'course_id' => $courseRequest->course_id,
             'completion_notification_id' => $courseIdNotification?->notification_id,
             'reason' => $reason,
             'decision_source' => $latestStatusHistory?->change_source,
-            'returned_by' => $courseRequest->status === 'RETURNED_FOR_REVISION'
-                ? ($returnedByApprover ? 'APPROVER' : 'OFFICER')
-                : null,
             'officer_decision' => $latestReview?->decision,
             'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
             'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
@@ -1524,6 +2748,343 @@ class PortalController extends Controller
         ];
     }
 
+    private function toWebsiteRecord(CourseRequest $courseRequest): array
+    {
+        $detail = $courseRequest->websiteDetail;
+        $contact = $courseRequest->websiteContact;
+        $contactParts = array_pad(preg_split('/\s+/u', trim((string) $contact?->full_name), 2) ?: [], 2, '');
+        $signed = $courseRequest->documents->where('document_type', 'SIGNED_FORM')->sortByDesc('uploaded_at')->first();
+        $additionalFiles = $courseRequest->documents
+            ->where('document_type', 'ADDITIONAL_DOCUMENT')
+            ->sortBy('uploaded_at')
+            ->map(fn ($document) => [
+                'document_id' => $document->document_id,
+                'additional_path' => $document->storage_key,
+                'additional_name' => $document->original_filename,
+                'additional_mime' => $document->mime_type,
+                'additional_size' => $document->file_size_bytes,
+                'additional_pending' => false,
+            ])->values()->all();
+        $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
+        $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
+        $latestStatusHistory = $courseRequest->histories
+            ->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))
+            ->first();
+        $completionNotification = $courseRequest->notifications
+            ->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')
+            ->sortByDesc('notification_id')
+            ->first();
+        $reason = match ($courseRequest->status) {
+            'REJECTED' => $latestStatusHistory?->change_source === 'OFFICER'
+                ? $latestReview?->rejection_reason
+                : $latestDeanReview?->comment,
+            default => null,
+        };
+        $scopeLabel = match ($detail?->site_scope_type) {
+            'DEPARTMENT' => 'เว็บไซต์ส่วนงาน',
+            'PROJECT' => 'เว็บไซต์โครงการ',
+            'CONFERENCE' => 'เว็บไซต์ประชุมวิชาการ',
+            default => null,
+        };
+
+        return [
+            'id' => $courseRequest->request_id,
+            'number' => $courseRequest->request_no,
+            'request_no' => $courseRequest->request_no,
+            'requester' => $this->personName((int) $courseRequest->requester_pers_id),
+            'proposer' => trim((string) $contact?->full_name),
+            'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
+            'target_dept_id' => $courseRequest->target_dept_id,
+            'unit' => $this->departmentName((int) $courseRequest->target_dept_id),
+            'target_subdept_id' => $courseRequest->target_subdept_id,
+            'subunit' => $courseRequest->target_subdept_id
+                ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id)
+                : null,
+            'dean_pers_id' => $courseRequest->dean_pers_id,
+            'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_decision' => $latestDeanReview?->decision,
+            'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'form_type_code' => 'CC-ITED-01',
+            'project_name' => $detail?->website_name,
+            'website_name' => $detail?->website_name,
+            'domain_url' => $detail?->domain_url,
+            'site_scope_type' => $detail?->site_scope_type,
+            'site_scope_label' => $scopeLabel,
+            'service_starts_on' => $detail?->service_starts_on?->format('Y-m-d'),
+            'service_ends_on' => $detail?->service_ends_on?->format('Y-m-d'),
+            'platform_code' => $detail?->platform_code,
+            'platform_label' => $detail?->platform?->platform_name_th,
+            'additional_detail' => $detail?->additional_detail,
+            'allocated_domain' => $detail?->allocated_domain,
+            'contact_first' => $contactParts[0],
+            'contact_last' => $contactParts[1],
+            'contact_position' => $contact?->position_name,
+            'contact_phone' => $contact?->phone,
+            'contact_email' => $contact?->email,
+            'requires_student_roster' => false,
+            'has_student_roster' => false,
+            'student_roster_versions' => [],
+            'student_roster_version_count' => 0,
+            'student_roster_needs_officer_attention' => false,
+            'student_roster_reopen_requested' => false,
+            'student_roster_acknowledged' => false,
+            'status' => $courseRequest->status,
+            'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
+            'completion_notification_id' => $completionNotification?->notification_id,
+            'reason' => $reason,
+            'decision_source' => $latestStatusHistory?->change_source,
+            'officer_decision' => $latestReview?->decision,
+            'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
+            'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
+            'approval_decision' => null,
+            'approver_name' => null,
+            'approval_comment' => null,
+            'approval_decided_at' => null,
+            'signed_path' => $signed?->storage_key,
+            'document_name' => $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-01'),
+            'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-01') : null,
+            'additional_files' => $additionalFiles,
+            'removed_additional_document_ids' => [],
+        ];
+    }
+
+    private function toWebsiteStorageRecord(CourseRequest $courseRequest): array
+    {
+        $detail = $courseRequest->websiteStorageDetail;
+        $contact = $courseRequest->websiteContact;
+        $contactParts = array_pad(preg_split('/\s+/u', trim((string) $contact?->full_name), 2) ?: [], 2, '');
+        $signed = $courseRequest->documents->where('document_type', 'SIGNED_FORM')->sortByDesc('uploaded_at')->first();
+        $additionalFiles = $courseRequest->documents->where('document_type', 'ADDITIONAL_DOCUMENT')->sortBy('uploaded_at')->map(fn ($document) => [
+            'document_id' => $document->document_id,
+            'additional_path' => $document->storage_key,
+            'additional_name' => $document->original_filename,
+            'additional_mime' => $document->mime_type,
+            'additional_size' => $document->file_size_bytes,
+            'additional_pending' => false,
+        ])->values()->all();
+        $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
+        $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
+        $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
+        $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
+        $reason = $courseRequest->status === 'REJECTED'
+            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
+            : null;
+
+        return [
+            'id' => $courseRequest->request_id,
+            'number' => $courseRequest->request_no,
+            'request_no' => $courseRequest->request_no,
+            'requester' => $this->personName((int) $courseRequest->requester_pers_id),
+            'proposer' => trim((string) $contact?->full_name),
+            'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
+            'target_dept_id' => $courseRequest->target_dept_id,
+            'unit' => $this->departmentName((int) $courseRequest->target_dept_id),
+            'target_subdept_id' => $courseRequest->target_subdept_id,
+            'subunit' => $courseRequest->target_subdept_id ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id) : null,
+            'dean_pers_id' => $courseRequest->dean_pers_id,
+            'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_decision' => $latestDeanReview?->decision,
+            'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'form_type_code' => 'CC-ITED-04',
+            'project_name' => $detail?->website_name,
+            'website_name' => $detail?->website_name,
+            'domain_url' => $detail?->domain_url,
+            'requested_space_gb' => $detail?->requested_space_gb,
+            'granted_space_gb' => $detail?->granted_space_gb,
+            'execution_detail' => $detail?->execution_detail,
+            'contact_first' => $contactParts[0],
+            'contact_last' => $contactParts[1],
+            'contact_position' => $contact?->position_name,
+            'contact_phone' => $contact?->phone,
+            'contact_email' => $contact?->email,
+            'requires_student_roster' => false,
+            'has_student_roster' => false,
+            'student_roster_versions' => [],
+            'student_roster_version_count' => 0,
+            'student_roster_needs_officer_attention' => false,
+            'student_roster_reopen_requested' => false,
+            'student_roster_acknowledged' => false,
+            'status' => $courseRequest->status,
+            'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
+            'completion_notification_id' => $completionNotification?->notification_id,
+            'reason' => $reason,
+            'decision_source' => $latestStatusHistory?->change_source,
+            'officer_decision' => $latestReview?->decision,
+            'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
+            'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
+            'approval_decision' => null,
+            'approver_name' => null,
+            'approval_comment' => null,
+            'approval_decided_at' => null,
+            'signed_path' => $signed?->storage_key,
+            'document_name' => $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-04'),
+            'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-04') : null,
+            'additional_files' => $additionalFiles,
+            'removed_additional_document_ids' => [],
+        ];
+    }
+
+    private function toEmeetingRecord(CourseRequest $courseRequest): array
+    {
+        $detail = $courseRequest->emeetingDetail;
+        $currentContact = $courseRequest->currentEmeetingContact;
+        $contact = $courseRequest->emeetingContact;
+        $currentParts = array_pad(preg_split('/\s+/u', trim((string) $currentContact?->full_name), 2) ?: [], 2, '');
+        $contactParts = array_pad(preg_split('/\s+/u', trim((string) $contact?->full_name), 2) ?: [], 2, '');
+        $signed = $courseRequest->documents->where('document_type', 'SIGNED_FORM')->sortByDesc('uploaded_at')->first();
+        $additionalFiles = $courseRequest->documents->where('document_type', 'ADDITIONAL_DOCUMENT')->sortBy('uploaded_at')->map(fn ($document) => [
+            'document_id' => $document->document_id,
+            'additional_path' => $document->storage_key,
+            'additional_name' => $document->original_filename,
+            'additional_mime' => $document->mime_type,
+            'additional_size' => $document->file_size_bytes,
+            'additional_pending' => false,
+        ])->values()->all();
+        $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
+        $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
+        $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
+        $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
+        $reason = $courseRequest->status === 'REJECTED'
+            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
+            : null;
+
+        return [
+            'id' => $courseRequest->request_id,
+            'number' => $courseRequest->request_no,
+            'request_no' => $courseRequest->request_no,
+            'requester' => $this->personName((int) $courseRequest->requester_pers_id),
+            'proposer' => trim((string) $contact?->full_name),
+            'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
+            'target_dept_id' => $courseRequest->target_dept_id,
+            'unit' => $this->departmentName((int) $courseRequest->target_dept_id),
+            'target_subdept_id' => $courseRequest->target_subdept_id,
+            'subunit' => $courseRequest->target_subdept_id ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id) : null,
+            'dean_pers_id' => $courseRequest->dean_pers_id,
+            'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_decision' => $latestDeanReview?->decision,
+            'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'form_type_code' => 'CC-ITED-05',
+            'project_name' => $detail?->action_type === 'CHANGE_CONTACT'
+                ? 'เปลี่ยนแปลงสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting'
+                : 'ขอสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting',
+            'action_type' => $detail?->action_type,
+            'execution_detail' => $detail?->execution_detail,
+            'current_contact_first' => $currentParts[0],
+            'current_contact_last' => $currentParts[1],
+            'contact_first' => $contactParts[0],
+            'contact_last' => $contactParts[1],
+            'contact_position' => $contact?->position_name,
+            'contact_phone' => $contact?->phone,
+            'contact_email' => $contact?->email,
+            'requires_student_roster' => false,
+            'has_student_roster' => false,
+            'student_roster_versions' => [],
+            'student_roster_version_count' => 0,
+            'student_roster_needs_officer_attention' => false,
+            'student_roster_reopen_requested' => false,
+            'student_roster_acknowledged' => false,
+            'status' => $courseRequest->status,
+            'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
+            'completion_notification_id' => $completionNotification?->notification_id,
+            'reason' => $reason,
+            'decision_source' => $latestStatusHistory?->change_source,
+            'officer_decision' => $latestReview?->decision,
+            'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
+            'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
+            'approval_decision' => null,
+            'approver_name' => null,
+            'approval_comment' => null,
+            'approval_decided_at' => null,
+            'signed_path' => $signed?->storage_key,
+            'document_name' => $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-05'),
+            'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-05') : null,
+            'additional_files' => $additionalFiles,
+            'removed_additional_document_ids' => [],
+        ];
+    }
+
+    private function toWebsiteContactChangeRecord(CourseRequest $courseRequest): array
+    {
+        $detail = $courseRequest->websiteContactChangeDetail;
+        $currentContact = $courseRequest->currentWebsiteContact;
+        $newContact = $courseRequest->newWebsiteContact;
+        $currentParts = array_pad(preg_split('/\s+/u', trim((string) $currentContact?->full_name), 2) ?: [], 2, '');
+        $newParts = array_pad(preg_split('/\s+/u', trim((string) $newContact?->full_name), 2) ?: [], 2, '');
+        $signed = $courseRequest->documents->where('document_type', 'SIGNED_FORM')->sortByDesc('uploaded_at')->first();
+        $additionalFiles = $courseRequest->documents->where('document_type', 'ADDITIONAL_DOCUMENT')->sortBy('uploaded_at')->map(fn ($document) => [
+            'document_id' => $document->document_id,
+            'additional_path' => $document->storage_key,
+            'additional_name' => $document->original_filename,
+            'additional_mime' => $document->mime_type,
+            'additional_size' => $document->file_size_bytes,
+            'additional_pending' => false,
+        ])->values()->all();
+        $latestReview = $courseRequest->officerReviews->sortByDesc('reviewed_at')->first();
+        $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
+        $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
+        $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
+        $reason = $courseRequest->status === 'REJECTED'
+            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
+            : null;
+
+        return [
+            'id' => $courseRequest->request_id,
+            'number' => $courseRequest->request_no,
+            'request_no' => $courseRequest->request_no,
+            'requester' => $this->personName((int) $courseRequest->requester_pers_id),
+            'proposer' => trim((string) $newContact?->full_name),
+            'requester_unit' => $this->personDepartmentName((int) $courseRequest->requester_pers_id),
+            'target_dept_id' => $courseRequest->target_dept_id,
+            'unit' => $this->departmentName((int) $courseRequest->target_dept_id),
+            'target_subdept_id' => $courseRequest->target_subdept_id,
+            'subunit' => $courseRequest->target_subdept_id ? $this->departmentDirectory->subdepartmentName((int) $courseRequest->target_subdept_id) : null,
+            'dean_pers_id' => $courseRequest->dean_pers_id,
+            'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
+            'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_decision' => $latestDeanReview?->decision,
+            'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'form_type_code' => 'CC-ITED-02',
+            'project_name' => $detail?->website_name,
+            'website_name' => $detail?->website_name,
+            'domain_url' => $detail?->domain_url,
+            'execution_detail' => $detail?->execution_detail,
+            'current_contact_first' => $currentParts[0],
+            'current_contact_last' => $currentParts[1],
+            'new_contact_first' => $newParts[0],
+            'new_contact_last' => $newParts[1],
+            'new_contact_position' => $newContact?->position_name,
+            'new_contact_phone' => $newContact?->phone,
+            'new_contact_email' => $newContact?->email,
+            'requires_student_roster' => false,
+            'has_student_roster' => false,
+            'student_roster_versions' => [],
+            'student_roster_version_count' => 0,
+            'student_roster_needs_officer_attention' => false,
+            'student_roster_reopen_requested' => false,
+            'student_roster_acknowledged' => false,
+            'status' => $courseRequest->status,
+            'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
+            'completion_notification_id' => $completionNotification?->notification_id,
+            'reason' => $reason,
+            'decision_source' => $latestStatusHistory?->change_source,
+            'officer_decision' => $latestReview?->decision,
+            'officer_name' => $latestReview ? $this->personName((int) $latestReview->officer_pers_id) : null,
+            'officer_reviewed_at' => $this->thaiBuddhistDate($latestReview?->reviewed_at),
+            'approval_decision' => null,
+            'approver_name' => null,
+            'approval_comment' => null,
+            'approval_decided_at' => null,
+            'signed_path' => $signed?->storage_key,
+            'document_name' => $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-02'),
+            'signed_name' => $signed ? $this->requestDocumentFilename($courseRequest->request_no, 'CC-ITED-02') : null,
+            'additional_files' => $additionalFiles,
+            'removed_additional_document_ids' => [],
+        ];
+    }
+
     private function createDocument(CourseRequest $courseRequest, string $type, array $data, string $prefix, int $uploaderId): CourseDocument
     {
         return CourseDocument::create([
@@ -1531,11 +3092,12 @@ class PortalController extends Controller
             'document_type' => $type,
             'storage_key' => $data[$prefix . '_path'],
             'original_filename' => $type === 'SIGNED_FORM'
-                ? $this->requestDocumentFilename($courseRequest->request_no)
+                ? $this->requestDocumentFilename($courseRequest->request_no, $courseRequest->form_type_code)
                 : $data[$prefix . '_name'],
             'mime_type' => $data[$prefix . '_mime'],
             'file_size_bytes' => $data[$prefix . '_size'],
             'uploaded_by_pers_id' => $uploaderId,
+            'version_no' => ((int) $courseRequest->documents()->where('document_type_code', $type)->max('version_no')) + 1,
             'uploaded_at' => now(),
         ]);
     }
@@ -1548,7 +3110,7 @@ class PortalController extends Controller
     {
         if (! $forceFresh) {
             $existing = $courseRequest->documents()
-                ->where('document_type', 'SIGNED_FORM')
+                ->where('document_type_code', 'SIGNED_FORM')
                 ->latest('uploaded_at')
                 ->latest('document_id')
                 ->first();
@@ -1568,10 +3130,11 @@ class PortalController extends Controller
             'request_id' => $courseRequest->request_id,
             'document_type' => 'SIGNED_FORM',
             'storage_key' => $path,
-            'original_filename' => $this->requestDocumentFilename($courseRequest->request_no),
+            'original_filename' => $this->requestDocumentFilename($courseRequest->request_no, $courseRequest->form_type_code),
             'mime_type' => 'application/pdf',
             'file_size_bytes' => strlen($contents),
             'uploaded_by_pers_id' => $uploaderId,
+            'version_no' => ((int) $courseRequest->documents()->where('document_type_code', 'SIGNED_FORM')->max('version_no')) + 1,
             'uploaded_at' => now(),
         ]);
     }
@@ -1611,11 +3174,66 @@ class PortalController extends Controller
             ->all();
     }
 
+    private function activeWebsiteDeanPersonIds(int $targetDepartmentId): array
+    {
+        if ($this->usesTestNotificationRecipient()) {
+            $departmentDeanPersonIds = $this->activeDeanPersonIds($targetDepartmentId);
+            $personId = (int) config('course-workflow.notifications.test_recipient_person_id', 0);
+            $expectedEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
+            $person = $personId > 0 ? $this->personnelDirectory->findByPersonId($personId) : null;
+            $actualEmail = $person !== null
+                ? strtolower(trim((string) $this->personnelDirectory->email($person)))
+                : '';
+
+            $departmentDeanPersonIds = array_values(array_filter(
+                $departmentDeanPersonIds,
+                fn (int $departmentDeanPersonId): bool => $departmentDeanPersonId !== $personId,
+            ));
+
+            if ($expectedEmail !== '' && hash_equals($expectedEmail, $actualEmail)) {
+                $departmentDeanPersonIds[] = $personId;
+            }
+
+            return array_values(array_unique($departmentDeanPersonIds));
+        }
+
+        return $this->activeDeanPersonIds($targetDepartmentId);
+    }
+
+    private function websiteDeanOptionsForTargetDepartment(int $targetDepartmentId): array
+    {
+        $personIds = $this->activeWebsiteDeanPersonIds($targetDepartmentId);
+
+        if ($this->usesTestNotificationRecipient()) {
+            $email = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
+            $testRecipientPersonId = (int) config('course-workflow.notifications.test_recipient_person_id', 0);
+
+            return collect($personIds)
+                ->mapWithKeys(fn (int $personId) => [
+                    $personId => $personId === $testRecipientPersonId
+                        ? trim($this->personName($personId).' ('.$email.')')
+                        : $this->personName($personId),
+                ])
+                ->all();
+        }
+
+        return collect($personIds)
+            ->mapWithKeys(fn (int $personId) => [$personId => $this->personName($personId)])
+            ->all();
+    }
+
+    private function usesTestNotificationRecipient(): bool
+    {
+        return app()->environment(['local', 'uat']);
+    }
+
     private function addHistory(CourseRequest $courseRequest, string $status, ?int $personId, string $source): void
     {
+        $previousStatus = $courseRequest->histories()->latest('changed_at')->value('to_status_code');
         RequestStatusHistory::create([
             'request_id' => $courseRequest->request_id,
-            'status' => $status,
+            'from_status_code' => $previousStatus,
+            'to_status_code' => $status,
             'changed_by_pers_id' => $personId,
             'change_source' => $source,
             'changed_at' => now(),
@@ -1686,10 +3304,10 @@ class PortalController extends Controller
     private function roleRecipients(string $roleCode): array
     {
         $personIds = DB::connection('course133')
-            ->table('course133.user_role_assignment as assignments')
-            ->join('course133.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
+            ->table('service_portal.user_role_assignment as assignments')
+            ->join('service_portal.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
             ->where('roles.role_code', $roleCode)
-            ->where('assignments.is_active', true)
+            ->where('assignments.is_active', 'Y')
             ->orderBy('assignments.role_assignment_id')
             ->pluck('assignments.pers_id');
 
@@ -1787,9 +3405,9 @@ class PortalController extends Controller
         return $number;
     }
 
-    private function requestDocumentFilename(string $requestNumber): string
+    private function requestDocumentFilename(string $requestNumber, string $formTypeCode = 'CC-ITED-06'): string
     {
-        return 'CC-ITED-06_' . Str::afterLast($requestNumber, '-') . '.pdf';
+        return $formTypeCode . '_' . Str::afterLast($requestNumber, '-') . '.pdf';
     }
 
     private function actor(Request $request): array
@@ -1804,7 +3422,6 @@ class PortalController extends Controller
     {
         return match ($role) {
             'officer' => 'officer.reviews',
-            'approver' => 'approver.reviews',
             default => 'requests.index',
         };
     }
@@ -1824,6 +3441,35 @@ class PortalController extends Controller
         $person = $this->personnelDirectory->findByPersonId($personId);
 
         return $person !== null ? trim((string) $person->position) : '';
+    }
+
+    private function deanPositionName(int $targetDepartmentId, int $personId): string
+    {
+        $position = FacultyDean::query()
+            ->where('target_dept_id', $targetDepartmentId)
+            ->where('dean_pers_id', $personId)
+            ->where('is_active', 'Y')
+            ->value('position_name');
+
+        return filled($position)
+            ? trim((string) $position)
+            : $this->personPosition($personId);
+    }
+
+    private function requestDeanPosition(CourseRequest $courseRequest): ?string
+    {
+        if (filled($courseRequest->dean_position_name)) {
+            return trim((string) $courseRequest->dean_position_name);
+        }
+
+        if (! $courseRequest->dean_pers_id) {
+            return null;
+        }
+
+        return $this->deanPositionName(
+            (int) $courseRequest->target_dept_id,
+            (int) $courseRequest->dean_pers_id,
+        );
     }
 
     private function departmentName(int $departmentId): string
@@ -1931,8 +3577,8 @@ class PortalController extends Controller
                     strtoupper(substr($align, 0, 1)),
                     false,
                     1,
-                    '',
-                    '',
+                    null,
+                    null,
                     true,
                     0,
                     false,
@@ -1961,6 +3607,6 @@ class PortalController extends Controller
 
     private function recordRelations(): array
     {
-        return ['projectType', 'category', 'instructors', 'documents', 'deanReviews', 'officerReviews', 'approverReviews', 'notifications', 'histories'];
+        return ['moodleCourseDetail.projectType', 'moodleCourseDetail.category', 'coordinatorContact', 'websiteDetail.platform', 'websiteContact', 'websiteContactChangeDetail', 'websiteStorageDetail', 'emeetingDetail', 'currentWebsiteContact', 'newWebsiteContact', 'currentEmeetingContact', 'emeetingContact', 'instructors', 'documents', 'deanReviews', 'officerReviews', 'notifications', 'histories'];
     }
 }

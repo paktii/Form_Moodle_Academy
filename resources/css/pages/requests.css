@@ -5,6 +5,13 @@
         background: #f3f4f6;
     }
 
+    @media (min-width: 901px) {
+        .list-page--officer {
+            max-width: 1440px;
+            padding-inline: 32px;
+        }
+    }
+
     .page-heading {
         display: flex;
         align-items: center;
@@ -20,6 +27,14 @@
         color: #111;
         font-size: 28px;
         font-weight: 700;
+    }
+
+    .list-page--officer .page-heading__title {
+        font-size: 20px;
+    }
+
+    .list-page--officer .page-heading__description {
+        font-size: 13px;
     }
 
     .page-heading__icon {
@@ -101,20 +116,24 @@
     }
 
     .date-filter-menu,
-    .status-filter-menu {
+    .status-filter-menu,
+    .type-filter-menu {
         position: relative;
         width: 200px;
     }
 
     .date-filter-menu > .filter-control,
-    .status-filter-menu > .filter-control {
+    .status-filter-menu > .filter-control,
+    .type-filter-menu > .filter-control {
         width: 100%;
     }
 
     .date-filter-menu__trigger,
     .date-filter-menu__options,
     .status-filter-menu__trigger,
-    .status-filter-menu__options {
+    .status-filter-menu__options,
+    .type-filter-menu__trigger,
+    .type-filter-menu__options {
         display: none;
     }
 
@@ -193,6 +212,108 @@
         font-size: 12px;
         color: #98a2b3;
         margin-top: 4px;
+    }
+
+    .request-form-type {
+        width: 120px;
+        color: #475467;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .request-table th.request-form-type {
+        color: #fff;
+    }
+
+    .request-card__mobile-form-type {
+        display: none;
+    }
+
+    @media (min-width: 601px) {
+        .list-page--officer .table-container {
+            overflow-x: hidden;
+        }
+
+        .request-table.request-table--officer {
+            min-width: 0;
+            max-width: 100%;
+            table-layout: fixed;
+        }
+
+        .request-table--officer th {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .request-table--officer th:nth-child(1) {
+            width: 13%;
+        }
+
+        .request-table--officer th:nth-child(2) {
+            width: 10%;
+        }
+
+        .request-table--officer th:nth-child(3) {
+            width: 19%;
+        }
+
+        .request-table--officer th:nth-child(4) {
+            width: 12%;
+        }
+
+        .request-table--officer th:nth-child(5) {
+            width: 20%;
+        }
+
+        .request-table--officer th:nth-child(6) {
+            width: 8%;
+        }
+
+        .request-table--officer th:nth-child(7) {
+            width: 7%;
+        }
+
+        .request-table--officer th:nth-child(8) {
+            width: 11%;
+        }
+
+        .request-table--officer .course-cell,
+        .request-table--officer .request-form-type {
+            width: auto;
+            min-width: 0;
+        }
+
+        .request-table--officer .requester-cell {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .request-table--officer .request-table__number,
+        .request-table--officer .request-form-type,
+        .request-table--officer .date-cell {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .request-table--officer .request-table__number {
+            white-space: nowrap;
+            overflow-wrap: normal;
+        }
+
+        .request-table--officer .table-actions {
+            width: auto;
+            white-space: normal;
+        }
+
+        .request-table--officer .request-actions-group,
+        .request-table--officer .table-actions .portal-button {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .request-table--officer .request-card__mobile-form-type {
+            display: none;
+        }
     }
 
     .date-cell {
@@ -489,7 +610,7 @@
         justify-content: space-between;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 1200px) {
         .filter-card {
             flex-wrap: wrap;
             gap: 12px;
@@ -505,13 +626,39 @@
         }
 
         .date-filter-menu,
-        .status-filter-menu {
+        .status-filter-menu,
+        .type-filter-menu {
             flex: 1;
             min-width: 160px;
         }
+    }
+
+    @media (max-width: 900px) {
 
         .request-table {
             min-width: 880px;
+        }
+    }
+
+    @media (min-width: 601px) and (max-width: 900px),
+           (min-width: 901px) and (max-width: 1366px) and (pointer: coarse) {
+        .list-page--officer .table-container {
+            overflow-x: auto;
+            overscroll-behavior-inline: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .request-table.request-table--officer {
+            min-width: 1080px;
+            max-width: none;
+        }
+
+        .request-table--officer th,
+        .request-table--officer .request-table__number,
+        .request-table--officer .request-form-type,
+        .request-table--officer .date-cell {
+            white-space: nowrap;
+            overflow-wrap: normal;
         }
     }
 
@@ -601,6 +748,12 @@
             min-width: 0;
         }
 
+        .type-filter-menu {
+            grid-column: 1 / -1;
+            width: 100%;
+            min-width: 0;
+        }
+
         .filter-control[data-date-filter] {
             grid-column: 1;
         }
@@ -612,12 +765,14 @@
         }
 
         .date-filter-menu__native,
-        .status-filter-menu__native {
+        .status-filter-menu__native,
+        .type-filter-menu__native {
             display: none;
         }
 
         .date-filter-menu__trigger,
-        .status-filter-menu__trigger {
+        .status-filter-menu__trigger,
+        .type-filter-menu__trigger {
             display: flex;
             align-items: center;
             min-width: 0;
@@ -632,14 +787,16 @@
         }
 
         .date-filter-menu__trigger > span,
-        .status-filter-menu__trigger > span {
+        .status-filter-menu__trigger > span,
+        .type-filter-menu__trigger > span {
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
         .date-filter-menu__options,
-        .status-filter-menu__options {
+        .status-filter-menu__options,
+        .type-filter-menu__options {
             position: absolute;
             z-index: 20;
             top: calc(100% + 4px);
@@ -654,12 +811,14 @@
         }
 
         .date-filter-menu__options:not([hidden]),
-        .status-filter-menu__options:not([hidden]) {
+        .status-filter-menu__options:not([hidden]),
+        .type-filter-menu__options:not([hidden]) {
             display: block;
         }
 
         .date-filter-menu__options button,
-        .status-filter-menu__options button {
+        .status-filter-menu__options button,
+        .type-filter-menu__options button {
             display: block;
             width: 100%;
             padding: 8px 12px;
@@ -675,7 +834,10 @@
         .date-filter-menu__options button[aria-selected='true'],
         .status-filter-menu__options button:hover,
         .status-filter-menu__options button:focus-visible,
-        .status-filter-menu__options button[aria-selected='true'] {
+        .status-filter-menu__options button[aria-selected='true'],
+        .type-filter-menu__options button:hover,
+        .type-filter-menu__options button:focus-visible,
+        .type-filter-menu__options button[aria-selected='true'] {
             background: #f3f4f6;
         }
 
@@ -789,8 +951,13 @@
         }
 
         .request-card__unit,
-        .request-card__course-id {
+        .request-card__course-id,
+        .request-card__form-type {
             display: none;
+        }
+
+        .course-cell .request-card__mobile-form-type {
+            display: block;
         }
 
         .request-card__actions {

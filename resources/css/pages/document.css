@@ -356,7 +356,9 @@
         -webkit-print-color-adjust: exact;
     }
 
-    .portal-header,
+    .requester-page-header,
+    .requester-sidebar,
+    .requester-sidebar-overlay,
     .portal-footer,
     .print-toolbar,
     .error-summary,

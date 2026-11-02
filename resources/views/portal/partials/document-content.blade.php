@@ -26,7 +26,7 @@ $targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])
 $deanApproved = ($record['dean_decision'] ?? null) === 'APPROVED';
 $officerPassed = ($record['officer_decision'] ?? null) === 'PASSED';
 $approved = ($record['approval_decision'] ?? null) === 'APPROVED';
-$rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNED'], true);
+$rejected = ($record['approval_decision'] ?? null) === 'REJECTED';
 @endphp
 
 <main class="print-document">
@@ -187,16 +187,16 @@ $rejected = in_array($record['approval_decision'] ?? null, ['REJECTED', 'RETURNE
                 <section class="document-staff-card">
                     <h3>1. เจ้าหน้าที่รับเอกสาร</h3>
                     <p><span class="document-checkbox {{ $officerPassed ? 'is-checked' : '' }}" aria-hidden="true"></span> ตรวจสอบเอกสารครบถ้วน</p>
-                    <p>ลงชื่อ <span class="document-line"></span></p>
-                    <p class="document-staff-name">( <span class="document-line">{{ $text('officer_name') }}</span> )</p>
+                    <p><span class="document-staff-signature-label">ลงชื่อ</span><span class="document-line"></span></p>
+                    <p class="document-staff-name"><span class="document-staff-signature-label"></span><span class="document-staff-name-field">( <span class="document-staff-name-line">{{ $text('officer_name') }}</span> )</span></p>
                     <p>วันที่ <span class="document-line">{{ $text('officer_reviewed_at') }}</span></p>
                 </section>
                 <section class="document-staff-card">
                     <h3>2. ผู้มีอำนาจพิจารณา</h3>
                     <p class="document-decisions"><span><span class="document-checkbox {{ $approved ? 'is-checked' : '' }}" aria-hidden="true"></span> อนุมัติ</span><span><span class="document-checkbox {{ $rejected ? 'is-checked' : '' }}" aria-hidden="true"></span> ไม่อนุมัติ</span></p>
                     <p>ข้อคิดเห็น <span class="document-line">{{ $text('approval_comment') }}</span></p>
-                    <p>ลงชื่อ <span class="document-line"></span></p>
-                    <p class="document-staff-name">( <span class="document-line">{{ $text('approver_name') }}</span> )</p>
+                    <p><span class="document-staff-signature-label">ลงชื่อ</span><span class="document-line"></span></p>
+                    <p class="document-staff-name"><span class="document-staff-signature-label"></span><span class="document-staff-name-field">( <span class="document-staff-name-line">{{ $text('approver_name') }}</span> )</span></p>
                     <p>วันที่ <span class="document-line">{{ $text('approval_decided_at') }}</span></p>
                 </section>
             </div>

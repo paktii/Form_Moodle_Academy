@@ -13,6 +13,18 @@ class DiscardPortalDraftWhenLeavingForm
         'requests.form',
         'requests.save-step',
         'requests.clear-step',
+        'website-requests.form',
+        'website-requests.save-step',
+        'website-requests.clear-step',
+        'website-contact-change-requests.form',
+        'website-contact-change-requests.save-step',
+        'website-contact-change-requests.clear-step',
+        'emeeting-requests.form',
+        'emeeting-requests.save-step',
+        'emeeting-requests.clear-step',
+        'website-storage-requests.form',
+        'website-storage-requests.save-step',
+        'website-storage-requests.clear-step',
     ];
 
     public function handle(Request $request, Closure $next): Response
@@ -20,9 +32,13 @@ class DiscardPortalDraftWhenLeavingForm
         $isRequester = $request->session()->get('portal.actor.role') === 'user';
         $preservesDraft = $this->preservesDraft($request);
 
-        if ($isRequester && $request->session()->has('portal.draft') && ! $preservesDraft) {
-            $this->deletePendingFiles($request->session()->get('portal.draft', []));
-            $request->session()->forget(['portal.draft', 'portal.completed']);
+        if ($isRequester && ! $preservesDraft) {
+            foreach (['portal.draft', 'portal.website_draft', 'portal.website_contact_change_draft', 'portal.emeeting_draft', 'portal.website_storage_draft'] as $draftKey) {
+                if ($request->session()->has($draftKey)) {
+                    $this->deletePendingFiles($request->session()->get($draftKey, []));
+                }
+            }
+            $request->session()->forget(['portal.draft', 'portal.completed', 'portal.website_draft', 'portal.website_completed', 'portal.website_contact_change_draft', 'portal.website_contact_change_completed', 'portal.emeeting_draft', 'portal.emeeting_completed', 'portal.website_storage_draft', 'portal.website_storage_completed']);
         }
 
         $response = $next($request);
@@ -43,7 +59,7 @@ class DiscardPortalDraftWhenLeavingForm
             return true;
         }
 
-        return in_array($routeName, ['requests.document', 'requests.document.download'], true)
+        return in_array($routeName, ['requests.document', 'requests.document.download', 'website-requests.document', 'website-requests.document.download', 'website-contact-change-requests.document', 'website-contact-change-requests.document.download', 'emeeting-requests.document', 'emeeting-requests.document.download', 'website-storage-requests.document', 'website-storage-requests.document.download'], true)
             && $request->route('id') === 'draft';
     }
 

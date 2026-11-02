@@ -12,6 +12,7 @@ return [
 
     'notifications' => [
         'test_recipient_email' => env('COURSE133_TEST_EMAIL', 'pakteema@g.swu.ac.th'),
+        'test_recipient_person_id' => (int) env('COURSE133_TEST_PERSON_ID', 713796),
         'schedule_lock_minutes' => max(1, (int) env('COURSE133_NOTIFICATION_LOCK_MINUTES', 5)),
         'stale_after_minutes' => max(1, (int) env('COURSE133_NOTIFICATION_STALE_MINUTES', 5)),
         'retry_delay_seconds' => max(1, (int) env('COURSE133_NOTIFICATION_RETRY_SECONDS', 30)),
@@ -32,16 +33,38 @@ return [
         4 => 'เลือกผู้รับรองและตรวจสอบเอกสาร',
     ],
 
+    'website_steps' => [
+        1 => 'ข้อมูลส่วนงานและเว็บไซต์',
+        2 => 'ข้อมูลผู้ดูแลเว็บไซต์และคำรับรอง',
+        3 => 'เลือกผู้รับรองและตรวจสอบเอกสาร',
+    ],
+
+    'website_contact_change_steps' => [
+        1 => 'ข้อมูลส่วนงานและเว็บไซต์',
+        2 => 'ข้อมูลผู้ดูแลเว็บไซต์และคำรับรอง',
+        3 => 'เลือกผู้รับรองและตรวจสอบเอกสาร',
+    ],
+
+    'emeeting_steps' => [
+        1 => 'ข้อมูลส่วนงานและประเภทการขอรับบริการ',
+        2 => 'ข้อมูลผู้ดูแลกรอบการประชุมและข้อตกลง',
+        3 => 'เลือกผู้รับรองและตรวจสอบเอกสาร',
+    ],
+
+    'website_storage_steps' => [
+        1 => 'ข้อมูลส่วนงานและเว็บไซต์',
+        2 => 'ข้อมูลผู้ดูแลเว็บไซต์',
+        3 => 'เลือกผู้รับรองและตรวจสอบเอกสาร',
+    ],
+
     'statuses' => [
 
-        'PENDING_SIGNED_DOCUMENT' => 'เอกสารไม่ครบ',
-        'PENDING_DEAN_REVIEW' => 'รอคณบดีรับรอง',
+        'PENDING_DEAN_REVIEW' => 'รอการรับรอง',
         'UNDER_OFFICER_REVIEW' => 'รออนุมัติ',
-        'RETURNED_FOR_REVISION' => 'ส่งกลับแก้ไข',
         'PENDING_APPROVAL' => 'รออนุมัติ',
         'REJECTED' => 'ไม่อนุมัติ',
-        'PENDING_COURSE_ID' => 'อนุมัติแล้ว',
         'COURSE_ID_RECORDED' => 'เสร็จสมบูรณ์',
+        'COMPLETED' => 'เสร็จสมบูรณ์',
     ],
 
 ];

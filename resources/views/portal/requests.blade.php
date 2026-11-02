@@ -1,61 +1,45 @@
 @php
 $isUser = $role === 'user';
-$title = $isUser ? 'สถานะเอกสาร' : ($role === 'officer' ? 'เอกสารรอการตรวจสอบและลงนาม' : 'ขั้นตอนการลงนามอนุมัติ');
+$title = $isUser ? 'สถานะเอกสาร' : ($role === 'officer' ? 'คำร้องแบบฟอร์มขอรับบริการ' : 'ขั้นตอนการลงนามอนุมัติ');
 $tabTitle = $isUser ? 'My Requests' : ($role === 'officer' ? 'Officer Queue' : 'Approval Queue');
+$description = match ($role) {
+    'officer' => null,
+    'approver' => 'ผู้บริหารพิจารณาอนุมัติสร้างรายวิชาในระบบ SWU Moodle Academy',
+    default => 'ติดตามขั้นตอนและประวัติการส่งเอกสารของคำร้องขอรับบริการทั้งหมดของคุณ',
+};
 $detailRoute = $isUser ? 'requests.show' : ($role === 'officer' ? 'officer.show' : 'approver.show');
-$pending = $records->where('status', 'PENDING_SIGNED_DOCUMENT')->count();
-$completedRequests = $isUser ? $records->filter(fn ($record) => $record['status'] === 'COURSE_ID_RECORDED' && filled($record['completion_notification_id'] ?? null)) : collect();
+$completedRequests = $isUser ? $records->filter(fn ($record) => $record['status'] === 'COMPLETED' && filled($record['completion_notification_id'] ?? null)) : collect();
 $pendingOfficerReviews = $role === 'officer' ? $records->where('status', 'UNDER_OFFICER_REVIEW')->count() : 0;
-$pendingCourseIds = $role === 'officer' ? $records->where('status', 'PENDING_COURSE_ID')->count() : 0;
 $pendingApprovals = $role === 'approver' ? $records->where('status', 'PENDING_APPROVAL')->count() : 0;
 $missingRosters = $records->filter(fn ($record) => ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false))->count();
 $rosterUpdates = $records->filter(fn ($record) => $record['student_roster_needs_officer_attention'] ?? false)->count();
 $officerNotificationMessages = collect([
     $pendingOfficerReviews ? "{$pendingOfficerReviews} คำร้องสถานะรออนุมัติ" : null,
-    $pendingCourseIds ? "{$pendingCourseIds} คำร้องที่ต้องบันทึก Course ID" : null,
     $rosterUpdates ? "{$rosterUpdates} คำร้องที่มีรายชื่อผู้เรียนใหม่หรือมีการอัปเดต" : null,
 ])->filter()->implode(' และ ');
 $filterStatuses = match ($role) {
 'officer' => [
 'UNDER_OFFICER_REVIEW' => 'รออนุมัติ',
-'PENDING_COURSE_ID' => 'อนุมัติแล้ว',
 'COURSE_ID_RECORDED' => 'เสร็จสมบูรณ์',
+'COMPLETED' => 'เสร็จสมบูรณ์',
 'REJECTED' => 'ไม่อนุมัติ',
 ],
 'approver' => [
 'PENDING_APPROVAL' => 'รออนุมัติ',
-'PENDING_COURSE_ID' => 'อนุมัติแล้ว',
 'REJECTED' => 'ไม่อนุมัติ',
 'COURSE_ID_RECORDED' => 'เสร็จสมบูรณ์',
 ],
 default => $statuses,
 };
 @endphp
-<x-portal-layout :title="$title" :tab-title="$tabTitle" :role="$role">
-    <main class="portal-main list-page {{ $isUser ? 'list-page--user' : '' }}" data-request-list>
-        <div class="page-heading">
-            <div>
-                <h2 class="page-heading__title">{{ $title }}</h2>@if($isUser)<p class="page-heading__description">ติดตามขั้นตอนและประวัติการส่งเอกสารขอสร้างรายวิชาของคุณ</p>@elseif($role === 'approver')<p class="page-heading__description">ผู้บริหารพิจารณาอนุมัติสร้างรายวิชาในระบบ SWU Moodle Academy</p>@elseif($role === 'officer')<p class="page-heading__description">เจ้าหน้าที่ตรวจสอบความถูกต้องของเอกสารและคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy</p>@endif
-            </div>
-            @if($isUser)<x-portal-button :href="route('requests.create')" variant="danger"><x-portal-icon name="plus" />สร้างคำร้องใหม่</x-portal-button>@endif
-        </div>
-        @if($isUser && ($pending || $missingRosters || $completedRequests->isNotEmpty()))
-        <div class="notification-banner" aria-label="รายการแจ้งเตือน" @if(!$pending && !$missingRosters) hidden data-completed-only-banner @endif>
-            <span>แจ้งเตือน: @if($pending)คุณมี {{ $pending }} คำร้องที่ต้องอัปโหลดเอกสารที่ลงนามแล้ว@endif @if($pending && $missingRosters) และ @endif @if($missingRosters) {{ $missingRosters }} คำร้องที่ยังไม่แนบรายชื่อผู้เรียน@endif @if($completedRequests->isNotEmpty())<span hidden data-completed-banner-message>@if($pending || $missingRosters) และ @endifมี <strong data-completed-banner-count></strong> คำร้องเสร็จสมบูรณ์แล้ว สามารถดู Course ID ได้</span>@endif</span>
+<x-portal-layout :title="$title" :tab-title="$tabTitle" :role="$role" :description="$description" :show-header-logo="$role === 'officer'">
+    <main @class(['portal-main', 'list-page', 'list-page--user' => $isUser, 'list-page--officer' => $role === 'officer']) data-request-list>
+        @if($isUser && ($missingRosters || $completedRequests->isNotEmpty()))
+        <div class="notification-banner" aria-label="รายการแจ้งเตือน" @if(!$missingRosters) hidden data-completed-only-banner @endif>
+            <span>แจ้งเตือน: @if($missingRosters) {{ $missingRosters }} คำร้องที่ยังไม่แนบรายชื่อผู้เรียน@endif @if($completedRequests->isNotEmpty())<span hidden data-completed-banner-message>@if($missingRosters) และ @endifมี <strong data-completed-banner-count></strong> คำร้องเสร็จสมบูรณ์แล้ว</span>@endif</span>
             <div class="notification-banner__actions">
-                @if($pending)<x-portal-button variant="secondary" data-filter-pending>ดูเอกสาร</x-portal-button>@endif
                 @if($missingRosters)<x-portal-button variant="secondary" data-filter-roster>แนบรายชื่อ</x-portal-button>@endif
                 @if($completedRequests->isNotEmpty())<x-portal-button variant="secondary" data-filter-newly-completed hidden>ดูคำร้อง</x-portal-button>@endif
-            </div>
-        </div>
-        @endif
-        @if($role === 'officer' && ($pendingOfficerReviews || $pendingCourseIds || $rosterUpdates))
-        <div class="notification-banner" aria-label="รายการแจ้งเตือน">
-            <span>แจ้งเตือน: คุณมี {{ $officerNotificationMessages }} กรุณาตรวจสอบและดำเนินการ</span>
-            <div class="notification-banner__actions notification-banner__actions--officer">
-                @if($pendingOfficerReviews)<x-portal-button variant="secondary" data-filter-officer-pending>ตรวจสอบคำร้อง</x-portal-button>@endif
-                @if($pendingCourseIds)<x-portal-button variant="secondary" data-filter-course-id>บันทึก Course ID</x-portal-button>@endif
-                @if($rosterUpdates)<x-portal-button variant="secondary" data-filter-roster-updates>ตรวจสอบรายชื่อ</x-portal-button>@endif
             </div>
         </div>
         @endif
@@ -67,12 +51,46 @@ default => $statuses,
             </div>
         </div>
         @endif
+        @if($role === 'officer')
+        <div class="page-heading">
+            <div>
+                <h2 class="page-heading__title">เอกสารรอการตรวจสอบและลงนาม</h2>
+                <p class="page-heading__description">ตรวจสอบความถูกต้องของเอกสารและคำร้อง</p>
+            </div>
+        </div>
+        @endif
+        @if($role === 'officer' && ($pendingOfficerReviews || $rosterUpdates))
+        <div class="notification-banner" aria-label="รายการแจ้งเตือน">
+            <span>แจ้งเตือน: คุณมี {{ $officerNotificationMessages }} กรุณาตรวจสอบและดำเนินการ</span>
+            <div class="notification-banner__actions notification-banner__actions--officer">
+                @if($pendingOfficerReviews)<x-portal-button variant="secondary" data-filter-officer-pending>ตรวจสอบคำร้อง</x-portal-button>@endif
+                @if($rosterUpdates)<x-portal-button variant="secondary" data-filter-roster-updates>ตรวจสอบรายชื่อ</x-portal-button>@endif
+            </div>
+        </div>
+        @endif
         <section class="filter-card" aria-label="ค้นหาและกรองคำร้อง">
             <label class="search-control"><x-portal-icon name="search" /><input type="search" data-search placeholder="ค้นหาเลขที่คำร้อง, ชื่อโครงการ หรือ ส่วนงาน" aria-label="ค้นหาคำร้อง"></label>
+            <div class="type-filter-menu" data-type-filter-menu>
+                <select class="filter-control type-filter-menu__native" data-type-filter aria-label="กรองประเภทคำร้อง">
+                    <option value="">ประเภทคำร้องทั้งหมด</option>
+                    @foreach(['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06'] as $formTypeCode)
+                    <option value="{{ $formTypeCode }}">{{ $formTypeCode }}</option>
+                    @endforeach
+                </select>
+                <button type="button" class="filter-control type-filter-menu__trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="request-type-filter-options" data-type-filter-trigger>
+                    <span data-type-filter-label>ประเภทคำร้องทั้งหมด</span>
+                </button>
+                <div id="request-type-filter-options" class="type-filter-menu__options" role="listbox" hidden data-type-filter-options>
+                    <button type="button" role="option" aria-selected="true" data-type-filter-option data-value="">ประเภทคำร้องทั้งหมด</button>
+                    @foreach(['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06'] as $formTypeCode)
+                    <button type="button" role="option" aria-selected="false" data-type-filter-option data-value="{{ $formTypeCode }}">{{ $formTypeCode }}</button>
+                    @endforeach
+                </div>
+            </div>
             <div class="status-filter-menu" data-status-filter-menu>
                 <select class="filter-control status-filter-menu__native" data-status-filter aria-label="กรองสถานะ">
                     @if($role === 'officer')
-                        <option value="UNDER_OFFICER_REVIEW,PENDING_COURSE_ID,PENDING_APPROVAL" data-default-queue-status selected>งานที่ต้องดำเนินการ</option>
+                        <option value="UNDER_OFFICER_REVIEW" data-default-queue-status selected>งานที่ต้องดำเนินการ</option>
                     @elseif($role === 'approver')
                         <option value="PENDING_APPROVAL" data-default-queue-status selected>งานที่ต้องดำเนินการ</option>
                     @endif
@@ -83,7 +101,7 @@ default => $statuses,
                 </button>
                 <div id="request-status-filter-options" class="status-filter-menu__options" role="listbox" hidden data-status-filter-options>
                     @if($role === 'officer')
-                    <button type="button" role="option" aria-selected="true" data-status-filter-option data-value="UNDER_OFFICER_REVIEW,PENDING_COURSE_ID,PENDING_APPROVAL">งานที่ต้องดำเนินการ</button>
+                    <button type="button" role="option" aria-selected="true" data-status-filter-option data-value="UNDER_OFFICER_REVIEW">งานที่ต้องดำเนินการ</button>
                     @elseif($role === 'approver')
                     <button type="button" role="option" aria-selected="true" data-status-filter-option data-value="PENDING_APPROVAL">งานที่ต้องดำเนินการ</button>
                     @endif
@@ -111,13 +129,14 @@ default => $statuses,
             </button>
         </section>
         <div class="table-container" tabindex="0" role="region" aria-label="ตารางคำร้อง">
-            <table class="request-table">
+            <table @class(['request-table', 'request-table--officer' => $role === 'officer'])>
                 <thead>
                     <tr>@if($isUser)<th>วันที่ส่งคำร้อง</th>
                         <th>ชื่อโครงการ</th>
                         <th>ส่วนงาน/คณะ/สำนักเป้าหมาย</th>
                         <th>สถานะล่าสุด</th>
-                        <th>Course ID</th>@else<th>เลขที่เอกสาร</th>
+                        @else<th>เลขที่เอกสาร</th>
+                        @if($role === 'officer')<th class="request-form-type">ประเภทฟอร์ม</th>@endif
                         <th>ชื่อโครงการ / รายวิชา</th>
                         <th>ผู้เสนอขอ</th>
                         <th>ส่วนงานเป้าหมาย</th>
@@ -128,18 +147,18 @@ default => $statuses,
                 <tbody>
                     @foreach($records as $record)
                     @php($targetUnit = collect([$record['unit'] ?? null, $record['subunit'] ?? null])->filter(fn ($value) => filled($value))->implode(', '))
-                    @php($hasCourseIdAction = $role === 'officer' && in_array($record['status'], ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true))
+                    @php($hasCourseIdAction = $role === 'officer' && $record['status'] === 'COURSE_ID_RECORDED')
                     @php($usesFullWidthMobileAction = in_array($role, ['officer', 'approver'], true))
-                    <tr data-request-row data-status="{{ $record['status'] }}" data-date="{{ $record['submitted_at'] }}" data-completion-notification="{{ $isUser && $record['status'] === 'COURSE_ID_RECORDED' ? ($record['completion_notification_id'] ?? '') : '' }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $targetUnit }} {{ $record['proposer'] ?? '' }}">
+                    <tr data-request-row data-status="{{ $record['status'] }}" data-form-type="{{ $record['form_type_code'] ?? 'CC-ITED-06' }}" data-date="{{ $record['submitted_at'] }}" data-completion-notification="{{ $isUser && $record['status'] === 'COMPLETED' ? ($record['completion_notification_id'] ?? '') : '' }}" data-missing-roster="{{ ($record['requires_student_roster'] ?? false) && ! ($record['has_student_roster'] ?? false) ? 'true' : 'false' }}" data-roster-update="{{ ($record['student_roster_needs_officer_attention'] ?? false) ? 'true' : 'false' }}" data-search-content="{{ $record['number'] }} {{ $record['project_name'] }} {{ $record['form_type_code'] ?? '' }} {{ $targetUnit }} {{ $record['proposer'] ?? '' }}">
                         @if($isUser)
                         <td class="date-cell request-card__date">{{ \Carbon\Carbon::parse($record['submitted_at'])->locale('th')->translatedFormat('d M').' '.(\Carbon\Carbon::parse($record['submitted_at'])->year + 543) }}</td>
-                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span><small>เลขที่คำร้อง: {{ $record['number'] }}</small></td>
+                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }} ({{ $record['form_type_code'] ?? 'CC-ITED-06' }})">{{ $record['project_name'] }} ({{ $record['form_type_code'] ?? 'CC-ITED-06' }})</span><small>เลขที่คำร้อง: {{ $record['number'] }}</small></td>
                         <td class="request-card__unit"><span class="request-card__unit-text" title="{{ $targetUnit }}">{{ $targetUnit }}</span></td>
                         <td class="request-card__status"><x-status-badge :status="$record['status']" /></td>
-                        <td class="request-card__course-id">@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif</td>
                         @else
                         <td class="request-table__number request-card__number">{{ $record['number'] }}</td>
-                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span></td>
+                        @if($role === 'officer')<td class="request-form-type request-card__form-type">{{ $record['form_type_code'] ?? 'CC-ITED-06' }}</td>@endif
+                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span>@if($role === 'officer')<small class="request-card__mobile-form-type">{{ $record['form_type_code'] ?? 'CC-ITED-06' }}</small>@endif</td>
                         <td @class([
                             'requester-cell',
                             'request-card__requester',
@@ -162,18 +181,7 @@ default => $statuses,
                                 'request-actions-group' => $role === 'officer',
                                 'request-actions-group--paired' => $usesFullWidthMobileAction,
                             ])>
-                                @if($isUser && $record['status'] === 'PENDING_SIGNED_DOCUMENT')
-                                <x-portal-button
-                                    :href="route('requests.document.download', $record['id'])"
-                                    variant="secondary"
-                                    data-request-pdf-download
-                                    :hidden="$record['unsigned_pdf_downloaded']">ดาวน์โหลด PDF</x-portal-button>
-                                <x-portal-button
-                                    variant="secondary"
-                                    :data-open-dialog="'upload-'.$record['id']"
-                                    data-request-upload
-                                    :hidden="! $record['unsigned_pdf_downloaded']">อัปโหลดไฟล์</x-portal-button>
-                                @elseif($role === 'officer' && ($record['student_roster_reopen_requested'] ?? false))
+                                @if($role === 'officer' && ($record['student_roster_reopen_requested'] ?? false))
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจสอบ</x-portal-button>
                                 @elseif($role === 'officer' && ($record['student_roster_needs_officer_attention'] ?? false))
                                 <x-portal-button :href="route($detailRoute, $record['id'])">ตรวจรายชื่อ</x-portal-button>
@@ -197,7 +205,7 @@ default => $statuses,
                         </td>
                     </tr>
                     @endforeach
-                    <tr data-empty-row @if($records->isNotEmpty()) hidden @endif><td colspan="{{ $isUser ? 6 : 7 }}" class="empty-state">ไม่พบคำร้องที่ตรงกับการค้นหา</td>
+                    <tr data-empty-row @if($records->isNotEmpty()) hidden @endif><td colspan="{{ $role === 'officer' ? 8 : ($isUser ? 6 : 7) }}" class="empty-state">ไม่พบคำร้องที่ตรงกับการค้นหา</td>
                     </tr>
                 </tbody>
             </table>
@@ -216,34 +224,7 @@ default => $statuses,
         <p class="sr-only" data-filter-count aria-live="polite"></p>
     </main>
     @foreach($records as $record)
-    @if($isUser && $record['status'] === 'PENDING_SIGNED_DOCUMENT')
-    <x-portal-modal :id="'upload-'.$record['id']" title="อัปโหลดเอกสารที่ลงนามแล้ว">
-        <form id="upload-form-{{ $record['id'] }}" method="post" action="{{ route('requests.upload', $record['id']) }}" enctype="multipart/form-data">@csrf
-            <div id="upload-step1-{{ $record['id'] }}">
-                <x-portal-upload name="signed_document" :id="'signed-'.$record['id']" :required="true" />
-                <div class="modal-actions">
-                    <x-portal-button variant="secondary" data-upload-cancel="{{ $record['id'] }}">ยกเลิก</x-portal-button>
-                    <x-portal-button type="button" variant="secondary" data-upload-next="{{ $record['id'] }}">อัปโหลด</x-portal-button>
-                </div>
-            </div>
-            <div id="upload-step2-{{ $record['id'] }}" class="upload-confirmation" hidden>
-                <p class="upload-confirmation__message">ระบบจะส่งคำร้องให้เจ้าหน้าที่ตรวจสอบ<br>คุณต้องการยืนยันการส่งใช่หรือไม่?</p>
-                <div class="modal-actions upload-confirmation__actions">
-                    <x-portal-button type="button" variant="plain" data-upload-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button>
-                    <x-portal-button type="submit" variant="primary">ยืนยันการส่ง</x-portal-button>
-                </div>
-            </div>
-            <div id="upload-cancel-step-{{ $record['id'] }}" class="upload-confirmation" hidden>
-                <p class="upload-confirmation__message">คุณต้องการยกเลิกการอัปโหลดเอกสารใช่หรือไม่?<br>ไฟล์ที่เลือกไว้จะถูกล้าง</p>
-                <div class="modal-actions upload-confirmation__actions">
-                    <x-portal-button type="button" variant="plain" data-upload-cancel-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button>
-                    <x-portal-button type="button" variant="primary" data-upload-cancel-confirm>ยืนยันการยกเลิก</x-portal-button>
-                </div>
-            </div>
-        </form>
-    </x-portal-modal>
-    @endif
-    @if($role === 'officer' && in_array($record['status'], ['PENDING_COURSE_ID', 'COURSE_ID_RECORDED'], true))
+    @if($role === 'officer' && $record['status'] === 'COURSE_ID_RECORDED')
     <x-portal-modal :id="'native-pdf-preview-'.$record['id']" title="ตัวอย่าง PDF ที่อนุมัติแล้ว" class="native-pdf-preview-dialog">
         <iframe
             data-native-pdf-preview
