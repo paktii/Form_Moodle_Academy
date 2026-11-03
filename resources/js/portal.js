@@ -228,8 +228,7 @@ document.addEventListener('click', (event) => {
     if (courseIdNext) {
         const requestId = courseIdNext.dataset.courseIdNext;
         const input = document.getElementById(`course-id-${requestId}`);
-        if (!input?.checkValidity()) {
-            input?.reportValidity();
+        if (!input?.form?.reportValidity()) {
             return;
         }
         const step1 = document.getElementById(`course-id-step1-${requestId}`);
@@ -272,6 +271,8 @@ document.addEventListener('click', (event) => {
         const requestId = courseIdCancelConfirm.dataset.courseIdCancelConfirm;
         const input = document.getElementById(`course-id-${requestId}`);
         if (input) input.value = '';
+        const executionDetail = document.getElementById(`course-execution-detail-${requestId}`);
+        if (executionDetail) executionDetail.value = '';
         document.getElementById(`course-id-step1-${requestId}`).hidden = false;
         document.getElementById(`course-id-step3-${requestId}`).hidden = true;
         document.getElementById(`course-id-${requestId}`)?.focus();
@@ -940,7 +941,10 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
     const form = document.getElementById(input.getAttribute('form')) || input.closest('form');
     const maxFiles = Number(upload.dataset.maxFiles || 5);
     const allowedExtensions = input.accept.split(',').map((extension) => extension.trim().toLowerCase());
+    const studentRosterSelector = upload.dataset.studentRosterSelector === 'true';
+    const enrollmentInputs = [...document.querySelectorAll('input[name="enrollment"]')];
     let selectedFiles = [];
+    let selectedNewRosterFile = null;
 
     function existingCount() {
         return list.querySelectorAll('[data-existing-file]').length;
@@ -948,6 +952,26 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
 
     function formatSize(bytes) {
         return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function isSpreadsheet(filename) {
+        const extension = filename.split('.').pop()?.toLowerCase();
+        return ['xls', 'xlsx', 'csv'].includes(extension);
+    }
+
+    function studentRosterEnabled() {
+        if (!studentRosterSelector) return false;
+        if (enrollmentInputs.length === 0) return upload.dataset.studentRosterEnabled === 'true';
+        return enrollmentInputs.some((enrollment) => enrollment.checked && enrollment.value === 'ผู้ดูแลระบบนำเข้ารายชื่อ');
+    }
+
+    function syncStudentRosterChoices() {
+        const enabled = studentRosterEnabled();
+        upload.querySelectorAll('[data-roster-choice]').forEach((choice) => {
+            choice.hidden = !enabled;
+            const radio = choice.querySelector('input[name="student_roster_file"]');
+            if (radio) radio.disabled = !enabled;
+        });
     }
 
     function syncInputFiles() {
@@ -977,6 +1001,21 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
             filename.className = 'multi-upload__filename';
             filename.textContent = `${file.name} (${formatSize(file.size)})`;
 
+            let rosterChoice = null;
+            if (studentRosterSelector && isSpreadsheet(file.name)) {
+                rosterChoice = document.createElement('label');
+                rosterChoice.className = 'multi-upload__roster-choice';
+                rosterChoice.dataset.rosterChoice = '';
+
+                const rosterRadio = document.createElement('input');
+                rosterRadio.type = 'radio';
+                rosterRadio.name = 'student_roster_file';
+                rosterRadio.value = `new:${index}`;
+                rosterRadio.checked = file === selectedNewRosterFile;
+                if (input.getAttribute('form')) rosterRadio.setAttribute('form', input.getAttribute('form'));
+                rosterChoice.append(rosterRadio, 'ใช้เป็นรายชื่อผู้เรียน');
+            }
+
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'multi-upload__remove';
@@ -984,11 +1023,14 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
             remove.setAttribute('aria-label', `ลบไฟล์ ${file.name}`);
             remove.textContent = '×';
 
-            item.append(filename, remove);
+            item.append(filename);
+            if (rosterChoice) item.append(rosterChoice);
+            item.append(remove);
             list.append(item);
         });
         syncInputFiles();
         updateTrigger();
+        syncStudentRosterChoices();
     }
 
     input.addEventListener('change', () => {
@@ -1018,7 +1060,8 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
     list.addEventListener('click', (event) => {
         const removeNew = event.target.closest('[data-remove-new]');
         if (removeNew) {
-            selectedFiles.splice(Number(removeNew.dataset.removeNew), 1);
+            const removedFile = selectedFiles.splice(Number(removeNew.dataset.removeNew), 1)[0];
+            if (removedFile === selectedNewRosterFile) selectedNewRosterFile = null;
             error.textContent = '';
             renderNewFiles();
             return;
@@ -1036,7 +1079,18 @@ document.querySelectorAll('[data-multi-upload]').forEach((upload) => {
         updateTrigger();
     });
 
+    list.addEventListener('change', (event) => {
+        const rosterRadio = event.target.closest('input[name="student_roster_file"]');
+        if (!rosterRadio?.checked) return;
+        selectedNewRosterFile = rosterRadio.value.startsWith('new:')
+            ? selectedFiles[Number(rosterRadio.value.slice(4))]
+            : null;
+    });
+
+    enrollmentInputs.forEach((enrollment) => enrollment.addEventListener('change', syncStudentRosterChoices));
+
     updateTrigger();
+    syncStudentRosterChoices();
 });
 
 const requestList = document.querySelector('[data-request-list]');

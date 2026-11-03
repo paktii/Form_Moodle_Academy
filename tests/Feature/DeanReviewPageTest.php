@@ -12,7 +12,7 @@ class DeanReviewPageTest extends TestCase
         parent::setUp();
         \Illuminate\Support\Facades\View::share('errors', new \Illuminate\Support\ViewErrorBag());
     }
-    public function test_dean_review_page_does_not_show_student_roster(): void
+    public function test_dean_review_page_shows_student_roster_with_other_attachments(): void
     {
         $mockRequest = new CourseRequest();
         $mockRequest->request_no = 'CC-TEST-01';
@@ -20,7 +20,7 @@ class DeanReviewPageTest extends TestCase
 
         $record = [
             'request_no' => 'CC-TEST-01',
-            'form_type_code' => 'CC-ITED-01',
+            'form_type_code' => 'CC-ITED-06',
             'document_name' => 'CC-TEST-01_FORM.pdf',
             'requires_student_roster' => true,
             'has_student_roster' => true,
@@ -45,12 +45,11 @@ class DeanReviewPageTest extends TestCase
             'errors' => new \Illuminate\Support\ViewErrorBag(),
         ])->render();
 
-        $this->assertStringNotContainsString('id="dean-student-roster"', $html);
-        $this->assertStringNotContainsString('รายชื่อผู้เรียน', $html);
-        $this->assertStringNotContainsString('roster-2026.xlsx', $html);
-        $this->assertStringNotContainsString('http://localhost/attachment/roster', $html);
-        $this->assertStringContainsString('ขอใช้พื้นที่สำหรับจัดทำเว็บไซต์', $html);
-        $this->assertStringNotContainsString('บริการพื้นที่เว็บไซต์', $html);
+        $this->assertStringContainsString('id="dean-student-roster"', $html);
+        $this->assertStringContainsString('roster-2026.xlsx', $html);
+        $this->assertStringContainsString('http://localhost/attachment/roster', $html);
+        $this->assertStringContainsString('ดาวน์โหลดไฟล์รายชื่อผู้เรียน roster-2026.xlsx', $html);
+        $this->assertStringContainsString('SWU Moodle Academy', $html);
 
         // Document PDF is excluded from attachments list
         $this->assertStringNotContainsString('CC-TEST-01_FORM.pdf', $html);

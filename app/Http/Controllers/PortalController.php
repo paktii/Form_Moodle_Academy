@@ -960,7 +960,7 @@ class PortalController extends Controller
                 'target_subdept_id' => ['nullable', 'integer', Rule::in($this->departmentDirectory->subdepartmentsFor((int) $request->input('target_dept_id'))->keys()->all())],
                 'website_name' => "$required|string|max:500",
                 'site_scope_type' => [$required, Rule::in(['DEPARTMENT', 'PROJECT', 'CONFERENCE'])],
-                'service_starts_on' => ($required === 'required' ? 'required_if:site_scope_type,PROJECT,CONFERENCE|' : '').'nullable|date',
+                'service_starts_on' => ($required === 'required' ? 'required_if:site_scope_type,PROJECT,CONFERENCE|' : '').'nullable|date|after_or_equal:today',
                 'service_ends_on' => ($required === 'required' ? 'required_if:site_scope_type,PROJECT,CONFERENCE|' : '').'nullable|date|after_or_equal:service_starts_on',
                 'domain_url' => "$required|string|max:1000",
                 'platform_code' => [$required, Rule::in(WebsitePlatform::query()->where('is_active', 'Y')->where('platform_code', '<>', 'OTHER')->pluck('platform_code')->all())],
@@ -987,6 +987,7 @@ class PortalController extends Controller
             'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
             'required_if' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
             'email' => 'กรุณาระบุอีเมลให้ถูกต้อง',
+            'service_starts_on.after_or_equal' => 'วันที่เริ่มต้นต้องไม่ก่อนวันที่ปัจจุบัน',
             'after_or_equal' => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
             'mimes' => 'ประเภทไฟล์ไม่ถูกต้อง',
             'max' => 'ข้อมูลหรือไฟล์มีขนาดเกินที่กำหนด',
@@ -1195,6 +1196,7 @@ class PortalController extends Controller
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
         $rules['remove_additional.*'] = 'integer|min:0';
+        $rules['student_roster_file'] = ['nullable', 'string', 'regex:/^(existing|new):\d+$/'];
 
         $validated = $request->validate($rules, [
             'required' => 'กรุณากรอกข้อมูลให้ครบถ้วน',
@@ -1206,7 +1208,8 @@ class PortalController extends Controller
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงานเป้าหมาย',
         ]);
         $removeAdditional = $validated['remove_additional'] ?? [];
-        unset($validated['additional_documents'], $validated['remove_additional']);
+        $studentRosterSelection = $validated['student_roster_file'] ?? null;
+        unset($validated['additional_documents'], $validated['remove_additional'], $validated['student_roster_file']);
 
         if (isset($validated['target_dept_id'])) {
             $validated['target_dept_id'] = (int) $validated['target_dept_id'];
@@ -1248,6 +1251,20 @@ class PortalController extends Controller
             $data['dean_name'] = $this->personName($data['dean_pers_id']);
         }
         $additionalFiles = $this->draftAdditionalFiles($existingDraft);
+        $selectedStudentRosterPath = null;
+        if (is_string($studentRosterSelection) && str_starts_with($studentRosterSelection, 'existing:')) {
+            $selectedIndex = (int) Str::after($studentRosterSelection, 'existing:');
+            $selectedFile = $additionalFiles[$selectedIndex] ?? null;
+            if ($selectedFile === null
+                || ! isset($selectedFile['additional_path'])
+                || in_array($selectedIndex, array_map('intval', $removeAdditional), true)
+                || ! $this->isStudentRosterFile($selectedFile)) {
+                throw ValidationException::withMessages([
+                    'student_roster_file' => 'กรุณาเลือกไฟล์ Excel หรือ CSV ที่ยังแนบอยู่เป็นรายชื่อผู้เรียน',
+                ]);
+            }
+            $selectedStudentRosterPath = $selectedFile['additional_path'] ?? null;
+        }
         $removedDocumentIds = $existingDraft['removed_additional_document_ids'] ?? [];
         $pendingFilesToDelete = [];
         rsort($removeAdditional);
@@ -1269,11 +1286,38 @@ class PortalController extends Controller
                 'additional_documents' => 'อัปโหลดเอกสารเพิ่มเติมได้ไม่เกิน 5 ไฟล์',
             ]);
         }
+        $selectedNewIndex = null;
+        if (is_string($studentRosterSelection) && str_starts_with($studentRosterSelection, 'new:')) {
+            $selectedNewIndex = (int) Str::after($studentRosterSelection, 'new:');
+            $selectedUpload = $incomingAdditional[$selectedNewIndex] ?? null;
+            if ($selectedUpload === null || ! $this->isStudentRosterFile([
+                'additional_name' => $selectedUpload->getClientOriginalName(),
+            ])) {
+                throw ValidationException::withMessages([
+                    'student_roster_file' => 'กรุณาเลือกไฟล์ Excel หรือ CSV ที่ยังแนบอยู่เป็นรายชื่อผู้เรียน',
+                ]);
+            }
+        }
         foreach ($pendingFilesToDelete as $file) {
             $this->deletePendingFile($file, 'additional');
         }
-        foreach ($incomingAdditional as $file) {
-            $additionalFiles[] = $this->storeDraftFile($file, 'additional');
+        foreach ($incomingAdditional as $index => $file) {
+            $storedFile = $this->storeDraftFile($file, 'additional');
+            $additionalFiles[] = $storedFile;
+            if ($index === $selectedNewIndex) {
+                $selectedStudentRosterPath = $storedFile['additional_path'];
+            }
+        }
+        if ($studentRosterSelection !== null) {
+            foreach ($additionalFiles as &$additionalFile) {
+                $additionalFile['additional_is_student_roster'] = ($additionalFile['additional_path'] ?? null) === $selectedStudentRosterPath;
+            }
+            unset($additionalFile);
+        } elseif (($data['enrollment'] ?? null) !== 'ผู้ดูแลระบบนำเข้ารายชื่อ') {
+            foreach ($additionalFiles as &$additionalFile) {
+                $additionalFile['additional_is_student_roster'] = false;
+            }
+            unset($additionalFile);
         }
         $data['additional_files'] = $additionalFiles;
         $data['removed_additional_document_ids'] = array_values(array_unique($removedDocumentIds));
@@ -1332,7 +1376,7 @@ class PortalController extends Controller
                     && ! $courseRequest->documents()->where('document_type_code', 'STUDENT_ROSTER')->exists();
                 foreach ($this->draftAdditionalFiles($data) as $additional) {
                     if (($additional['additional_pending'] ?? false) && isset($additional['additional_path'])) {
-                        $storeAsStudentRoster = $needsStudentRoster && $this->isStudentRosterFile($additional);
+                        $storeAsStudentRoster = $this->shouldStoreAsStudentRoster($additional, $needsStudentRoster);
                         $this->createDocument(
                             $courseRequest,
                             $storeAsStudentRoster ? 'STUDENT_ROSTER' : 'ADDITIONAL_DOCUMENT',
@@ -1552,6 +1596,7 @@ class PortalController extends Controller
         $isWebsiteContactChangeRequest = $requestType === 'CC-ITED-02';
         $isWebsiteStorageRequest = $requestType === 'CC-ITED-04';
         $isEmeetingRequest = $requestType === 'CC-ITED-05';
+        $isMoodleCourseRequest = $requestType === 'CC-ITED-06';
         $requiresExecutionDetail = $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest;
         $executionDetailMessage = match (true) {
             $isWebsiteContactChangeRequest => 'กรุณาระบุข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์',
@@ -1561,7 +1606,9 @@ class PortalController extends Controller
         $data = $request->validate([
             'course_id' => ($isWebsiteRequest || $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? ['nullable'] : ['required', 'integer', 'min:1'],
             'allocated_domain' => $isWebsiteRequest ? ['required', 'string', 'max:5000'] : ['nullable'],
-            'execution_detail' => $requiresExecutionDetail ? ['required', 'string', 'max:5000'] : ['nullable'],
+            'execution_detail' => $requiresExecutionDetail
+                ? ['required', 'string', 'max:5000']
+                : ($isMoodleCourseRequest ? ['nullable', 'string', 'max:5000'] : ['nullable']),
             'notify_requester' => ['nullable', 'boolean'],
         ], [
             'execution_detail.required' => $executionDetailMessage,
@@ -1603,6 +1650,7 @@ class PortalController extends Controller
             } else {
                 $courseRequest->moodleCourseDetail()->update([
                     'course_id' => (string) (int) $data['course_id'],
+                    'execution_detail' => filled($data['execution_detail'] ?? null) ? trim((string) $data['execution_detail']) : null,
                 ]);
             }
 
@@ -1631,6 +1679,7 @@ class PortalController extends Controller
         $isWebsiteContactChangeRequest = $requestType === 'CC-ITED-02';
         $isWebsiteStorageRequest = $requestType === 'CC-ITED-04';
         $isEmeetingRequest = $requestType === 'CC-ITED-05';
+        $isMoodleCourseRequest = $requestType === 'CC-ITED-06';
         $requiresExecutionDetail = $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest;
         $executionDetailMessage = match (true) {
             $isWebsiteContactChangeRequest => 'กรุณาระบุข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์',
@@ -1642,7 +1691,9 @@ class PortalController extends Controller
             'reason' => 'required_if:decision,reject|nullable|string|max:3000',
             'course_id' => ($isWebsiteRequest || $isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? 'nullable' : 'required_if:decision,pass|nullable|integer|min:1',
             'allocated_domain' => $isWebsiteRequest ? 'required_if:decision,pass|nullable|string' : 'nullable',
-            'execution_detail' => $requiresExecutionDetail ? 'required_if:decision,pass|nullable|string|max:5000' : 'nullable',
+            'execution_detail' => $requiresExecutionDetail
+                ? 'required_if:decision,pass|nullable|string|max:5000'
+                : ($isMoodleCourseRequest ? 'nullable|string|max:5000' : 'nullable'),
         ], [
             'execution_detail.required_if' => $executionDetailMessage,
         ]);
@@ -1796,6 +1847,7 @@ class PortalController extends Controller
                 } else {
                     $courseRequest->moodleCourseDetail()->update([
                         'course_id' => (string) (int) $data['course_id'],
+                        'execution_detail' => filled($data['execution_detail'] ?? null) ? trim((string) $data['execution_detail']) : null,
                     ]);
                 }
                 $courseRequest->update([
@@ -1822,7 +1874,7 @@ class PortalController extends Controller
         });
 
         return redirect()->route('officer.reviews')->with('success', $data['decision'] === 'pass'
-            ? ($isWebsiteRequest ? 'อนุมัติและบันทึกโดเมนที่จัดสรรเรียบร้อยแล้ว' : ($isWebsiteContactChangeRequest ? 'อนุมัติและบันทึกข้อมูลการดำเนินการเปลี่ยนผู้ดูแลเว็บไซต์เรียบร้อยแล้ว' : ($isEmeetingRequest ? 'อนุมัติและบันทึกข้อมูลการดำเนินการกำหนดหรือเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุมเรียบร้อยแล้ว' : 'อนุมัติและบันทึก Course ID เรียบร้อยแล้ว')))
+            ? 'อนุมัติและดำเนินการเรียบร้อย'
             : 'บันทึกผลไม่อนุมัติและแจ้งผู้ยื่นคำร้องแล้ว');
     }
 
@@ -2090,6 +2142,7 @@ class PortalController extends Controller
     {
         $data = $request->validate([
             'course_id' => ['required', 'integer', 'min:1'],
+            'execution_detail' => ['nullable', 'string', 'max:5000'],
         ], [
             'course_id.integer' => 'กรุณากรอก Course ID เป็นตัวเลขเท่านั้น',
             'course_id.min' => 'Course ID ต้องเป็นเลขจำนวนเต็มตั้งแต่ 1 ขึ้นไป',
@@ -2101,8 +2154,11 @@ class PortalController extends Controller
             $wasRecorded = $courseRequest->status === 'COURSE_ID_RECORDED';
             $actor = $this->actor($request);
 
-            $courseRequest->update([
+            $courseRequest->moodleCourseDetail()->update([
                 'course_id' => (string) (int) $data['course_id'],
+                'execution_detail' => filled($data['execution_detail'] ?? null) ? trim((string) $data['execution_detail']) : null,
+            ]);
+            $courseRequest->update([
                 'recorded_by_pers_id' => $actor['pers_id'],
                 'status' => 'COURSE_ID_RECORDED',
             ]);
@@ -2113,8 +2169,8 @@ class PortalController extends Controller
         });
 
         return redirect()->route('officer.reviews')->with('success', $wasRecorded
-            ? 'แก้ไข Course ID สำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว'
-            : 'บันทึก Course ID สำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว');
+            ? 'แก้ไขผลการดำเนินการสำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว'
+            : 'บันทึกผลการดำเนินการสำเร็จ<br>แจ้งเตือนผู้ยื่นคำร้องเรียบร้อยแล้ว');
     }
 
     public function document(Request $request, string $id = 'draft')
@@ -2730,6 +2786,7 @@ class PortalController extends Controller
             'status' => $courseRequest->status,
             'submitted_at' => $courseRequest->submitted_at?->toDateString() ?? $courseRequest->created_at?->toDateString(),
             'course_id' => $courseRequest->course_id,
+            'execution_detail' => $courseRequest->moodleCourseDetail?->execution_detail,
             'completion_notification_id' => $courseIdNotification?->notification_id,
             'reason' => $reason,
             'decision_source' => $latestStatusHistory?->change_source,
@@ -3376,6 +3433,13 @@ class PortalController extends Controller
         $extension = Str::lower(pathinfo((string) ($file['additional_name'] ?? ''), PATHINFO_EXTENSION));
 
         return in_array($extension, ['xls', 'xlsx', 'csv'], true);
+    }
+
+    private function shouldStoreAsStudentRoster(array $file, bool $needsStudentRoster): bool
+    {
+        return $needsStudentRoster
+            && ($file['additional_is_student_roster'] ?? false)
+            && $this->isStudentRosterFile($file);
     }
 
     private function deletePendingFile(array $data, string $prefix): void

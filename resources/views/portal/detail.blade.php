@@ -121,8 +121,8 @@ $documentDownloadRoute = match ($formTypeCode) {
             @endif
         </section>
         @endif
-        @if($record['course_id'] ?? null)<x-portal-detail-card title="ผลการสร้างรายวิชา" class="course-result">
-            <div class="document-row"><x-portal-icon name="globe-code" /><span class="document-row__name">Course ID: <a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a></span>@if($canEditResult)<x-portal-button variant="secondary" class="detail-card__action course-result__edit" data-open-dialog="edit-result-dialog"><x-portal-icon name="pen-line" /><span class="course-result__edit-label">แก้ไขผล</span></x-portal-button>@endif</div>
+        @if(!$isWebsiteRequest && !$isWebsiteContactChangeRequest && !$isWebsiteStorageRequest && !$isEmeetingRequest && (($record['course_id'] ?? null) || ($record['execution_detail'] ?? null)))<x-portal-detail-card title="ผลการสร้างรายวิชา" class="course-result">
+            <div class="document-row execution-detail-row"><x-portal-icon name="globe-code" /><span class="document-row__name">Course ID: @if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif<br>รายละเอียดการดำเนินการ: <span class="execution-detail-text">{{ $record['execution_detail'] ?? '—' }}</span></span>@if($canEditResult)<x-portal-button variant="secondary" class="detail-card__action course-result__edit" data-open-dialog="edit-result-dialog"><x-portal-icon name="pen-line" /><span class="course-result__edit-label">แก้ไขผล</span></x-portal-button>@endif</div>
         </x-portal-detail-card>@endif
         @if($isWebsiteRequest && ($record['allocated_domain'] ?? null))<x-portal-detail-card title="ผลการดำเนินการ" class="course-result">
             <div class="document-row"><x-portal-icon name="globe-code" /><span class="document-row__name">ข้อมูลการจัดสรรพื้นที่เว็บไซต์: <span class="allocated-domain-text">{{ $record['allocated_domain'] }}</span></span>@if($canEditResult)<x-portal-button variant="secondary" class="detail-card__action course-result__edit" data-open-dialog="edit-result-dialog"><x-portal-icon name="pen-line" /><span class="course-result__edit-label">แก้ไขผล</span></x-portal-button>@endif</div>
@@ -182,6 +182,10 @@ $documentDownloadRoute = match ($formTypeCode) {
             </label>
             @else
             <x-portal-field name="course_id" id="edit-result-course-id" label="Course ID" type="number" :value="old('course_id', $record['course_id'] ?? '')" :required="true" min="1" step="1" inputmode="numeric" />
+            <label class="form-label" for="edit-result-execution-detail">รายละเอียดการดำเนินการ (ถ้ามี)
+                <textarea id="edit-result-execution-detail" name="execution_detail" class="form-field form-field--textarea @error('execution_detail') form-field--error @enderror" rows="4" maxlength="5000" placeholder="ระบุรายละเอียดที่ต้องการแจ้งให้ผู้ยื่นคำร้องทราบ">{{ old('execution_detail', $record['execution_detail'] ?? '') }}</textarea>
+                @error('execution_detail')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+            </label>
             @endif
             <label class="result-notification-option">
                 <input type="checkbox" name="notify_requester" value="1" @checked(old('notify_requester'))>
@@ -234,8 +238,12 @@ $documentDownloadRoute = match ($formTypeCode) {
                 </label>
                 @else
                 <x-portal-field name="course_id" id="officer-course-id" label="Course ID" type="number" :value="old('course_id')" placeholder="เช่น 6674" :required="true" min="1" step="1" inputmode="numeric" />
+                <label class="form-label" for="officer-execution-detail">รายละเอียดการดำเนินการ (ถ้ามี)
+                    <textarea id="officer-execution-detail" name="execution_detail" class="form-field form-field--textarea @error('execution_detail') form-field--error @enderror" rows="4" maxlength="5000" placeholder="ระบุรายละเอียดที่ต้องการแจ้งให้ผู้ยื่นคำร้องทราบ" data-officer-execution-detail>{{ old('execution_detail') }}</textarea>
+                    @error('execution_detail')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+                </label>
                 @endif
-                <div class="modal-actions"><x-portal-button variant="secondary" data-officer-approval-cancel>ยกเลิก</x-portal-button><x-portal-button data-officer-approval-send>{{ $isWebsiteRequest ? 'อนุมัติและบันทึกโดเมน' : (($isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? 'อนุมัติและบันทึกข้อมูลการดำเนินการ' : 'อนุมัติและบันทึก Course ID') }}</x-portal-button></div>
+                <div class="modal-actions"><x-portal-button variant="secondary" data-officer-approval-cancel>ยกเลิก</x-portal-button><x-portal-button data-officer-approval-send>{{ $isWebsiteRequest ? 'อนุมัติและบันทึกโดเมน' : (($isWebsiteContactChangeRequest || $isWebsiteStorageRequest || $isEmeetingRequest) ? 'อนุมัติและบันทึกข้อมูลการดำเนินการ' : 'อนุมัติและบันทึกผลการดำเนินการ') }}</x-portal-button></div>
             </div>
             <div data-officer-approval-confirm hidden>
                 <p class="confirmation-message" data-officer-approval-confirm-message></p>

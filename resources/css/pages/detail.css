@@ -111,6 +111,10 @@
         overflow-wrap: anywhere;
     }
 
+    .detail-field__multiline {
+        white-space: pre-wrap;
+    }
+
     .attachment-card,
     .detail-page .student-roster,
     .review-card,

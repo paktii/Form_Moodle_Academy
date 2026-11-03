@@ -33,7 +33,7 @@ $documentDownloadFilename = $requestCode !== ''
                         </fieldset>
 
                         <div class="form-grid" data-website-period @if($value('site_scope_type') === 'DEPARTMENT' || $value('site_scope_type') === '') hidden @endif>
-                            <x-portal-field name="service_starts_on" label="วันที่เริ่มต้น" type="date" :value="$value('service_starts_on')" />
+                            <x-portal-field name="service_starts_on" label="วันที่เริ่มต้น" type="date" :value="$value('service_starts_on')" :min="now()->toDateString()" />
                             <x-portal-field name="service_ends_on" label="วันที่สิ้นสุด" type="date" :value="$value('service_ends_on')" />
                         </div>
 

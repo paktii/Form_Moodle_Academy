@@ -2,6 +2,8 @@
 
 เอกสารนี้เป็นโครงสร้างฐานข้อมูลเป้าหมายสำหรับรวมแบบฟอร์มขอรับบริการหลายประเภทไว้ในระบบเดียวกันบน Server 133 โดยครอบคลุมแบบฟอร์มต่อไปนี้
 
+ERD และคำอธิบาย workflow ปัจจุบันอยู่ที่ [service-portal-current-erd-and-workflow-th.md](./service-portal-current-erd-and-workflow-th.md)
+
 | รหัสแบบฟอร์ม | ชื่อแบบฟอร์ม |
 |---|---|
 | `CC-ITED-01` | แบบฟอร์มขอใช้พื้นที่สำหรับจัดทำเว็บไซต์ |
@@ -12,22 +14,22 @@
 
 โครงสร้างนี้ deploy แล้วใน schema `service_portal` ของฐาน `academy_db1447` และเป็นแหล่งข้อมูลหลักของระบบ ตารางทดสอบเดิมใน schema `course133` ถูกลบด้วย migration วันที่ 26 ต.ค. 2569
 
-## Workflow เป้าหมาย
+## Workflow ปัจจุบัน
 
 ```text
 ผู้ยื่นส่งคำร้อง
 → หัวหน้าส่วนงาน/คณบดี/ผู้อำนวยการรับรอง
 → เจ้าหน้าที่ตรวจและบันทึกผลดำเนินการในครั้งเดียว
 → COMPLETED
-→ ส่งอีเมลแจ้งผู้ยื่นและ Approver เพื่อรับทราบ
+→ ส่งอีเมลแจ้งผลให้ผู้ยื่น
 ```
 
-- ไม่มีขั้นตอนให้ Approver ตัดสินใจ
+- ไม่มีขั้นตอนและ role `APPROVER` ใน workflow ปัจจุบัน
 - ไม่มีสถานะ `PENDING_APPROVAL`
 - ไม่มีสถานะ `PENDING_COURSE_ID`
 - แบบฟอร์ม `CC-ITED-06` บังคับกรอก Course ID เมื่อเจ้าหน้าที่อนุมัติ
-- Approver เป็นผู้รับ notification หลังคำร้องเสร็จสมบูรณ์เท่านั้น
-- ไม่สร้างข้อมูลใหม่ใน `approver_review`; ข้อมูลเก่าให้เก็บแบบ read-only ระหว่างการย้ายระบบ
+- ไม่มีการสร้าง notification ถึง Approver เมื่อคำร้องเสร็จสมบูรณ์
+- ไม่มีตาราง `approver_review` ใน schema ปัจจุบัน
 
 ## สัญลักษณ์
 
@@ -190,7 +192,9 @@ Master เหตุการณ์ที่สร้างอีเมลหร�
 | `OFFICER_REVIEW_REQUIRED` | ส่งคำร้องให้เจ้าหน้าที่ดำเนินการ |
 | `REQUEST_REJECTED` | เจ้าหน้าที่ไม่อนุมัติคำร้อง |
 | `REQUEST_COMPLETED_REQUESTER` | แจ้งผู้ยื่นเมื่อดำเนินการเสร็จ |
-| `REQUEST_COMPLETED_APPROVER` | แจ้ง Approver เพื่อรับทราบเมื่อดำเนินการเสร็จ |
+| `REQUEST_RESULT_UPDATED` | แจ้งผู้ยื่นเมื่อเจ้าหน้าที่แก้ไขผลดำเนินการหลังคำร้องเสร็จ |
+
+`REQUEST_COMPLETED_APPROVER` เป็น notification type เดิมที่ยังอยู่ใน master จาก schema เริ่มต้น แต่ workflow ปัจจุบันไม่สร้าง outbox ชนิดนี้
 
 ## `service_portal.website_platform`
 
@@ -213,11 +217,9 @@ Master บทบาทผู้ใช้ในระบบ
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
 | `role_id` | smallint identity | PK | auto | รหัสบทบาท |
-| `role_code` | varchar(30) | UK, NOT NULL | — | `USER`, `OFFICER`, `APPROVER` |
+| `role_code` | varchar(30) | UK, NOT NULL | — | `USER` หรือ `OFFICER` |
 | `role_name_th` | nvarchar(100) | NOT NULL | — | ชื่อบทบาทภาษาไทย |
 | `is_active` | char(1) | NOT NULL | `Y` | `Y` เปิดใช้บทบาท, `N` ปิดใช้บทบาท |
-
-`APPROVER` ไม่มีสิทธิ์ตัดสินคำร้อง ใช้เพื่อกำหนดกลุ่มผู้รับอีเมลแจ้งเพื่อทราบเท่านั้น
 
 ระบบไม่มี role `ADMIN` คำว่า “ผู้ดูแลเว็บไซต์” และ “ผู้ดูแลกรอบการประชุม” เป็นข้อมูลผู้รับบริการภายในคำร้อง ไม่ใช่สิทธิ์ผู้ดูแลระบบ
 
@@ -268,7 +270,7 @@ Master ผู้รับรองประจำส่วนงาน ใช้
 | `recipient_name` | nvarchar(300) | NULL | `NULL` | ชื่อแสดงสำหรับอีเมลคงที่ |
 | `is_active` | char(1) | NOT NULL | `Y` | `Y` เปิดใช้กฎ, `N` ปิดใช้กฎ |
 
-ต้องมีข้อมูลปลายทางตาม `recipient_source` เพียงชนิดเดียว สำหรับ `REQUEST_COMPLETED_APPROVER` ให้กำหนด `recipient_source = APP_ROLE` และชี้ role `APPROVER`
+ต้องมีข้อมูลปลายทางตาม `recipient_source` เพียงชนิดเดียว ปัจจุบันกฎแบบ `APP_ROLE` ใช้ resolve กลุ่มเจ้าหน้าที่ เช่น `OFFICER_REVIEW_REQUIRED`
 
 ## `service_portal.project_type`
 
@@ -388,7 +390,7 @@ Metadata ของไฟล์คำร้อง ไฟล์จริงอย�
 | `rejection_reason` | nvarchar(max) | Conditional | `NULL` | บังคับเมื่อ `decision = REJECTED` |
 | `reviewed_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาตรวจและดำเนินการ |
 
-เมื่อ `decision = APPROVED` ต้องบันทึกผลลัพธ์เฉพาะแบบฟอร์ม เปลี่ยน `service_request.status_code` เป็น `COMPLETED` เพิ่มประวัติ และสร้าง notification ถึงผู้ยื่นกับ Approver ภายใน transaction เดียวกัน
+เมื่อ `decision = APPROVED` ต้องบันทึกผลลัพธ์เฉพาะแบบฟอร์ม เปลี่ยน `service_request.status_code` เป็น `COMPLETED` เพิ่มประวัติ และสร้าง notification ถึงผู้ยื่นภายใน transaction เดียวกัน
 
 ## `service_portal.request_status_history`
 
@@ -427,7 +429,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 | `last_error` | nvarchar(max) | NULL | `NULL` | ข้อผิดพลาดล่าสุด |
 | `created_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาสร้างคิว |
 
-เมื่อคำร้อง `COMPLETED` ต้องมีอย่างน้อยหนึ่งแถวชนิด `REQUEST_COMPLETED_REQUESTER` และหนึ่งแถวต่อ Approver ที่ active ชนิด `REQUEST_COMPLETED_APPROVER`
+เมื่อคำร้อง `COMPLETED` ต้องมีอย่างน้อยหนึ่งแถวชนิด `REQUEST_COMPLETED_REQUESTER` เพื่อแจ้งผลให้ผู้ยื่นคำร้อง
 
 ---
 
@@ -498,7 +500,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 
 ## `service_portal.cc_ited_06_request_detail`
 
-รายละเอียดของ `CC-ITED-06` แยกจาก header กลาง และเก็บผล Course ID ที่เจ้าหน้าที่ต้องกรอกพร้อมการอนุมัติ
+รายละเอียดของ `CC-ITED-06` แยกจาก header กลาง และเก็บ Course ID พร้อมรายละเอียดการดำเนินการที่เจ้าหน้าที่สามารถระบุเพื่อแจ้งผู้ยื่นคำร้อง
 
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
@@ -520,10 +522,11 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 | `enrollment_other` | nvarchar(500) | Conditional | `NULL` | บังคับเมื่อเลือกอื่น ๆ |
 | `expected_students` | integer | NOT NULL | — | จำนวนผู้เรียนที่คาดการณ์ ต้องมากกว่า 0 |
 | `course_id` | varchar(100) | Conditional | `NULL` | บังคับเมื่อเจ้าหน้าที่อนุมัติ |
+| `execution_detail` | nvarchar(max) | NULL | `NULL` | รายละเอียดการดำเนินการที่แจ้งกลับผู้ยื่นคำร้อง (ถ้ามี) |
 | `created_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาสร้าง |
 | `updated_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาแก้ไขล่าสุด |
 
-ข้อมูลผู้ประสานงานเก็บใน `request_contact` ด้วย role `COORDINATOR` เจ้าหน้าที่ต้องบันทึก `course_id`, สร้าง `officer_review` แบบ `APPROVED` และเปลี่ยนสถานะเป็น `COMPLETED` ใน transaction เดียวกัน
+ข้อมูลผู้ประสานงานเก็บใน `request_contact` ด้วย role `COORDINATOR` เจ้าหน้าที่ต้องบันทึก `course_id` และอาจระบุ `execution_detail`, สร้าง `officer_review` แบบ `APPROVED` และเปลี่ยนสถานะเป็น `COMPLETED` ใน transaction เดียวกัน
 
 ## `service_portal.course_instructor`
 
@@ -548,7 +551,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 | `CC-ITED-02` | `cc_ited_02_request_detail` | `CURRENT_WEBSITE_CONTACT`, `NEW_WEBSITE_CONTACT` | `execution_detail` |
 | `CC-ITED-04` | `cc_ited_04_request_detail` | `WEBSITE_CONTACT` | `execution_detail`; `granted_space_gb` ถูกกำหนดคงที่ 1 GB ต่อคำร้อง |
 | `CC-ITED-05` | `cc_ited_05_request_detail` | `EMEETING_CONTACT`; และผู้ดูแลเดิมเมื่อเปลี่ยนสิทธิ์ | `execution_detail` |
-| `CC-ITED-06` | `cc_ited_06_request_detail` | `COORDINATOR` และ `course_instructor` อย่างน้อย 1 คน | `course_id` |
+| `CC-ITED-06` | `cc_ited_06_request_detail` | `COORDINATOR` และ `course_instructor` อย่างน้อย 1 คน | `course_id`; `execution_detail` ระบุได้ถ้ามี |
 
 # สถานะและ Transition
 
@@ -572,8 +575,6 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 4. กำหนด `completed_at` และ `completed_by_pers_id`
 5. เพิ่ม `request_status_history`
 6. สร้าง `notification_outbox` ชนิด `REQUEST_COMPLETED_REQUESTER`
-7. Resolve กฎ `REQUEST_COMPLETED_APPROVER` แล้วสร้างหนึ่ง outbox ต่อ Approver ที่ active
-
 การส่งอีเมลล้มเหลวไม่ย้อนสถานะ `COMPLETED`; worker ต้อง retry จาก outbox
 
 # Index และ Constraint ที่แนะนำ
@@ -598,10 +599,9 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 - ข้อมูลชื่อ อีเมล โทรศัพท์ และตำแหน่งในคำร้องเป็น snapshot ไม่ควรเปลี่ยนตาม SWU MIS ย้อนหลัง
 - ไฟล์จริงไม่เก็บในฐานข้อมูลและต้องอยู่ใน private storage
 - ทุกการเปลี่ยนสถานะต้องเพิ่ม `request_status_history`; ห้ามแก้ประวัติเก่า
-- Approver ไม่มี review table และไม่มี route สำหรับตัดสินคำร้อง
-- `APPROVER` ใน `app_role` ใช้เป็นกลุ่มผู้รับแจ้งเตือนเท่านั้น
+- ไม่มี role หรือตารางผลตัดสินของ Approver ใน workflow ปัจจุบัน
 - Officer ต้องกรอกผลลัพธ์บังคับและกดอนุมัติใน action เดียวกัน
-- สำหรับ `CC-ITED-06` ต้องมี `course_id` ก่อนเปลี่ยนเป็น `COMPLETED`
+- สำหรับ `CC-ITED-06` ต้องมี `course_id` ก่อนเปลี่ยนเป็น `COMPLETED`; `execution_detail` เป็นข้อมูลเสริมและเป็น `NULL` ได้
 - สำหรับ `CC-ITED-01` ต้องมี `allocated_domain` ก่อนเปลี่ยนเป็น `COMPLETED`
 - สำหรับ `CC-ITED-04` ต้องมี `execution_detail` ก่อนเปลี่ยนเป็น `COMPLETED` และระบบกำหนด `granted_space_gb` เป็น 1 GB เสมอ
 - สำหรับ `CC-ITED-05` ต้องมี `execution_detail` ก่อนเปลี่ยนเป็น `COMPLETED`
@@ -771,15 +771,14 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 
 | recipient_rule_id | form_type_code | notification_type_code | recipient_source | role_id | is_active |
 |---:|---|---|---|---:|---|
-| 11001 | `CC-ITED-06` | `REQUEST_COMPLETED_APPROVER` | `APP_ROLE` | 3 | `Y` |
+| 11001 | `CC-ITED-06` | `OFFICER_REVIEW_REQUIRED` | `APP_ROLE` | 2 | `Y` |
 
-สมมติว่า `role_id = 3` คือ role `APPROVER` ระบบจะค้นสมาชิก active ของ role นี้ก่อนสร้าง outbox
+สมมติว่า `role_id = 2` คือ role `OFFICER` ระบบจะค้นสมาชิก active ของ role นี้ก่อนสร้าง outbox เมื่อผู้รับรองรับรองคำร้อง
 
 ### `notification_outbox`
 
 | notification_id | request_id | notification_type_code | recipient_pers_id | recipient_email | delivery_status | attempt_count | created_at |
 |---:|---:|---|---:|---|---|---:|---|
 | 12001 | 1005 | `REQUEST_COMPLETED_REQUESTER` | 990001 | `requester@example.invalid` | `PENDING` | 0 | 2026-10-17 15:40 |
-| 12002 | 1005 | `REQUEST_COMPLETED_APPROVER` | 990401 | `approver@example.invalid` | `PENDING` | 0 | 2026-10-17 15:40 |
 
-สองแถวนี้หมายถึงคำร้องเสร็จสมบูรณ์แล้ว ส่วนการส่งอีเมลเป็นหน้าที่ของ worker หากส่งไม่สำเร็จ สถานะคำร้องยังคงเป็น `COMPLETED` และ worker จะ retry จาก outbox
+แถวนี้หมายถึงคำร้องเสร็จสมบูรณ์แล้วและรอแจ้งผู้ยื่น ส่วนการส่งอีเมลเป็นหน้าที่ของ worker หากส่งไม่สำเร็จ สถานะคำร้องยังคงเป็น `COMPLETED` และ worker จะ retry จาก outbox

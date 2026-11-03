@@ -252,6 +252,11 @@ body {
     page-break-inside: avoid;
 }
 
+.document-staff-spacer {
+    display: table-cell;
+    width: 50%;
+}
+
 .document-staff-card p {
     display: table;
     width: 100%;

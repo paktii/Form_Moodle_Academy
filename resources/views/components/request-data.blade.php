@@ -45,7 +45,7 @@
             ['ระยะเวลาใช้งาน', $websitePeriod],
             ['โดเมน (URL) ที่ต้องการ', $record['domain_url'] ?? ''],
             ['รายละเอียดเว็บไซต์', $platform],
-            ['รายละเอียดเพิ่มเติม', $record['additional_detail'] ?? '', true],
+            ['รายละเอียดเพิ่มเติม', $record['additional_detail'] ?? '', true, true],
         ],
         'ข้อมูลผู้ดูแลเว็บไซต์' => [
             ['ชื่อ-นามสกุล', trim(($record['contact_first'] ?? '').' '.($record['contact_last'] ?? ''))],
@@ -131,7 +131,7 @@
 @endphp
 @foreach($groups as $heading => $fields)
     <section class="detail-section"><h3>{{ $variant === 'summary' && $loop->first ? 'ข้อมูลพื้นฐานเอกสาร' : $heading }}</h3><dl class="detail-grid">
-        @foreach($fields as $field)<div class="detail-field {{ ($field[2] ?? false) ? 'detail-field--wide' : '' }}"><dt>{{ $field[0] }}</dt><dd>{{ $field[1] ?: '—' }}</dd></div>@endforeach
+        @foreach($fields as $field)<div class="detail-field {{ ($field[2] ?? false) ? 'detail-field--wide' : '' }}"><dt>{{ $field[0] }}</dt><dd @class(['detail-field__multiline' => ($field[3] ?? false)])>{{ $field[1] ?: '—' }}</dd></div>@endforeach
         @if(! $isWebsiteRequest && ! $isWebsiteContactChangeRequest && ! $isWebsiteStorageRequest && ! $isEmeetingRequest && $heading === 'รายละเอียดรายวิชา')
             @foreach($record['instructors'] ?? [] as $instructor)<div class="detail-field"><dt>อาจารย์ผู้สอน {{ $loop->iteration }}</dt><dd>{{ $instructor['first'] }} {{ $instructor['last'] }}</dd></div><div class="detail-field"><dt>Email</dt><dd>{{ $instructor['email'] }}</dd></div>@endforeach
         @endif

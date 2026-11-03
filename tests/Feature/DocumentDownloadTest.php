@@ -6,6 +6,14 @@ use Tests\TestCase;
 
 class DocumentDownloadTest extends TestCase
 {
+    public function test_cc_ited_06_document_omits_approver_section(): void
+    {
+        $html = view('portal.partials.document-content', ['record' => []])->render();
+
+        $this->assertStringContainsString('1. เจ้าหน้าที่รับเอกสาร', $html);
+        $this->assertStringNotContainsString('2. ผู้มีอำนาจพิจารณา', $html);
+    }
+
     public function test_draft_pdf_preview_is_never_cached(): void
     {
         $response = $this->withSession([

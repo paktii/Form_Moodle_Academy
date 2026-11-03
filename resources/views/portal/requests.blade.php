@@ -194,7 +194,7 @@ default => $statuses,
                                     title="Preview PDF"><x-portal-icon name="eye" /></x-portal-button>
                                 <x-portal-button
                                     :data-open-dialog="'course-'.$record['id']"
-                                    data-course-id-action>{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข Course ID' : 'บันทึก Course ID' }}</x-portal-button>
+                                    data-course-id-action>{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไขผลการดำเนินการ' : 'บันทึกผลการดำเนินการ' }}</x-portal-button>
                                 @else
                                 <x-portal-button :href="route($detailRoute, $record['id'])" :variant="$isUser ? 'secondary' : 'primary'">{{ $role === 'officer' && $record['status'] === 'UNDER_OFFICER_REVIEW' ? 'ตรวจสอบ' : ($role === 'approver' && $record['status'] === 'PENDING_APPROVAL' ? 'พิจารณา' : 'รายละเอียด') }}</x-portal-button>
                                 @endif
@@ -233,7 +233,7 @@ default => $statuses,
                 : route('requests.document', ['id' => $record['id'], 'preview' => 1]) }}"
             title="ตัวอย่าง PDF ที่อนุมัติแล้ว"></iframe>
     </x-portal-modal>
-    <x-portal-modal :id="'course-'.$record['id']" :title="$record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข Course ID' : 'บันทึก Course ID'" class="course-modal">
+    <x-portal-modal :id="'course-'.$record['id']" :title="$record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไขผลการดำเนินการ' : 'บันทึกผลการดำเนินการ'" class="course-modal">
         <form id="course-id-form-{{ $record['id'] }}" method="post" action="{{ route('officer.course-id', $record['id']) }}">@csrf
             <div id="course-id-step1-{{ $record['id'] }}">
                 <dl class="request-summary">
@@ -251,14 +251,17 @@ default => $statuses,
                     </div>
                 </dl>
                 <x-portal-field name="course_id" :id="'course-id-'.$record['id']" label="Course ID (ตัวเลขหลัง id=)" type="number" :value="$record['course_id'] ?? ''" placeholder="เช่น 2" :required="true" min="1" step="1" inputmode="numeric" />
+                <label class="form-label" for="course-execution-detail-{{ $record['id'] }}">รายละเอียดการดำเนินการ (ถ้ามี)
+                    <textarea id="course-execution-detail-{{ $record['id'] }}" name="execution_detail" class="form-field form-field--textarea" rows="4" maxlength="5000" placeholder="ระบุรายละเอียดที่ต้องการแจ้งให้ผู้ยื่นคำร้องทราบ">{{ $record['execution_detail'] ?? '' }}</textarea>
+                </label>
                 <div class="modal-actions modal-actions--stack"><x-portal-button type="button" data-course-id-next="{{ $record['id'] }}">{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'บันทึกการแก้ไขและแจ้งเตือนผู้ขอคำร้อง' : 'บันทึกและแจ้งเตือนผู้ขอคำร้อง' }}</x-portal-button><x-portal-button variant="plain" data-course-id-cancel="{{ $record['id'] }}">ยกเลิก</x-portal-button></div>
             </div>
             <div id="course-id-step2-{{ $record['id'] }}" hidden>
-                <p class="confirmation-message">ยืนยัน{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข' : 'บันทึก' }} Course ID <strong data-course-id-preview></strong><br>และแจ้งเตือนผู้ขอคำร้องใช่หรือไม่?</p>
+                <p class="confirmation-message">ยืนยัน{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'แก้ไข' : 'บันทึก' }}ผลการดำเนินการสำหรับ Course ID <strong data-course-id-preview></strong><br>และแจ้งเตือนผู้ขอคำร้องใช่หรือไม่?</p>
                 <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-course-id-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button><x-portal-button type="submit">ยืนยัน{{ $record['status'] === 'COURSE_ID_RECORDED' ? 'การแก้ไข' : 'บันทึก' }}</x-portal-button></div>
             </div>
             <div id="course-id-step3-{{ $record['id'] }}" hidden>
-                <p class="confirmation-message">คุณต้องการยกเลิกใช่หรือไม่?<br>Course ID ที่กรอกไว้จะถูกล้าง</p>
+                <p class="confirmation-message">คุณต้องการยกเลิกใช่หรือไม่?<br>Course ID และรายละเอียดการดำเนินการที่กรอกไว้จะถูกล้าง</p>
                 <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-course-id-cancel-back="{{ $record['id'] }}">ย้อนกลับ</x-portal-button><x-portal-button type="button" data-course-id-cancel-confirm="{{ $record['id'] }}">ยืนยันยกเลิก</x-portal-button></div>
             </div>
         </form>

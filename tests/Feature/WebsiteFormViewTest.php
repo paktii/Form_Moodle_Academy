@@ -44,6 +44,7 @@ class WebsiteFormViewTest extends TestCase
         $this->assertStringContainsString('<span class="requester-page-header__context">สร้างคำร้อง</span>', $stepTwo);
         $this->assertStringContainsString('<span class="requester-page-header__context">สร้างคำร้อง</span>', $stepThree);
         $this->assertStringContainsString('name="website_name"', $stepOne);
+        $this->assertMatchesRegularExpression('/name="service_starts_on"[^>]*min="'.preg_quote(now()->toDateString(), '/').'"/', $stepOne);
         $this->assertMatchesRegularExpression('/name="domain_url"[^>]*required/', $stepOne);
         $this->assertStringNotContainsString('โดเมน (URL) ที่ต้องการ (ถ้ามี)', $stepOne);
         $this->assertStringContainsString('name="platform_code"', $stepOne);
@@ -61,5 +62,18 @@ class WebsiteFormViewTest extends TestCase
         $this->assertStringContainsString('data-searchable-select-show-all-on-focus', $stepThree);
         $this->assertStringContainsString('pakteema@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('CC-ITED-01_000123.pdf', $stepThree);
+    }
+
+    public function test_cc_ited_01_additional_detail_preserves_multiline_display(): void
+    {
+        $html = view('components.request-data', [
+            'record' => [
+                'form_type_code' => 'CC-ITED-01',
+                'additional_detail' => "บรรทัดที่หนึ่ง\nบรรทัดที่สอง",
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('class="detail-field__multiline"', $html);
+        $this->assertStringContainsString("บรรทัดที่หนึ่ง\nบรรทัดที่สอง", $html);
     }
 }

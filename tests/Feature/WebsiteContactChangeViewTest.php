@@ -171,6 +171,7 @@ class WebsiteContactChangeViewTest extends TestCase
 
         $this->assertStringContainsString('ผลการสร้างรายวิชา', $courseHtml);
         $this->assertStringContainsString('Course ID:', $courseHtml);
+        $this->assertStringContainsString('รายละเอียดการดำเนินการ', $courseHtml);
     }
 
     public function test_cc_ited_02_officer_approval_requires_execution_detail(): void
@@ -212,7 +213,9 @@ class WebsiteContactChangeViewTest extends TestCase
         $courseHtml = view('portal.detail', ['record' => $record, 'role' => 'officer'])->render();
         preg_match('/<button[^>]*data-officer-approval-send[^>]*>/', $courseHtml, $courseApprovalButton);
 
-        $this->assertStringNotContainsString('name="execution_detail"', $courseHtml);
+        $this->assertStringContainsString('name="execution_detail"', $courseHtml);
+        $this->assertStringContainsString('รายละเอียดการดำเนินการ', $courseHtml);
+        $this->assertStringContainsString('อนุมัติและบันทึกผลการดำเนินการ', $courseHtml);
         $this->assertStringNotContainsString('disabled', $courseApprovalButton[0] ?? '');
     }
 

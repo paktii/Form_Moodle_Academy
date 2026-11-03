@@ -19,7 +19,7 @@
                     <x-request-data :record="$record" :show-requester-unit="false" :split-target-unit="true" />
                 </div>
 
-                @if(!empty($record['additional_files']))
+                @if(!empty($record['additional_files']) || (($record['has_student_roster'] ?? false) && $studentRosterUrl))
                 <section class="dean-review-attachments" aria-labelledby="dean-review-attachments-heading">
                     <h2 id="dean-review-attachments-heading">เอกสารแนบเพื่อตรวจสอบ</h2>
                     @foreach($record['additional_files'] ?? [] as $file)
@@ -32,6 +32,16 @@
                             </x-portal-button>
                         </div>
                     @endforeach
+                    @if(($record['has_student_roster'] ?? false) && $studentRosterUrl)
+                        <div class="document-row" id="dean-student-roster">
+                            <x-portal-icon name="file-text" />
+                            <span class="document-row__name">{{ $record['student_roster_name'] }}</span>
+                            <x-portal-button :href="$studentRosterUrl" variant="secondary" class="document-row__download" :aria-label="'ดาวน์โหลดไฟล์รายชื่อผู้เรียน '.$record['student_roster_name']">
+                                <x-portal-icon name="download" />
+                                <span class="document-row__download-label">ดาวน์โหลด</span>
+                            </x-portal-button>
+                        </div>
+                    @endif
                 </section>
                 @endif
 

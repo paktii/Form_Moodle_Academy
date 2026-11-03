@@ -87,7 +87,7 @@ $documentDownloadFilename = $requestCode !== ''
                                 <label><input type="radio" name="enrollment" value="{{ $enrollment }}" @checked($value('enrollment')===$enrollment) required>{{ $enrollment }}</label>
                                 @endforeach
                             </div>
-                            <p class="enrollment-import-note" data-conditional="enrollment" data-when="ผู้ดูแลระบบนำเข้ารายชื่อ" aria-live="polite" @if($value('enrollment') !=='ผู้ดูแลระบบนำเข้ารายชื่อ' ) hidden @endif>*กรุณาแนบรายชื่อ (.csv หรือ .xlsx) ในช่องเอกสารเพิ่มเติม <br class="enrollment-import-note__mobile-break">หากยังไม่มีรายชื่อกรุณาแนบมาภายหลัง</p>
+                            <p class="enrollment-import-note" data-conditional="enrollment" data-when="ผู้ดูแลระบบนำเข้ารายชื่อ" aria-live="polite" @if($value('enrollment') !=='ผู้ดูแลระบบนำเข้ารายชื่อ' ) hidden @endif>*หากแนบรายชื่อ (.csv, .xls หรือ .xlsx) กรุณาเลือก “ใช้เป็นรายชื่อผู้เรียน” ที่ไฟล์นั้น <br class="enrollment-import-note__mobile-break">หากยังไม่มีรายชื่อสามารถแนบมาภายหลังได้</p>
                             <label class="form-label form-label--conditional" data-conditional="enrollment" data-when="อื่น ๆ (ระบุ)" @if($value('enrollment') !=='อื่น ๆ (ระบุ)' ) hidden @endif>ระบุรูปแบบการเข้ารายวิชาอื่น ๆ<span class="required-indicator" aria-hidden="true">*</span><input name="enrollment_other" value="{{ $value('enrollment_other') }}" class="form-field conditional-input" placeholder="ระบุรูปแบบการเข้ารายวิชา" required></label>
                         </fieldset>
                         <div class="expected-students">
@@ -144,7 +144,7 @@ $documentDownloadFilename = $requestCode !== ''
                     @endif
             </div>
         </form>
-        <x-portal-stepper :step="$step" :steps="$steps" :data="$data" />
+        <x-portal-stepper :step="$step" :steps="$steps" :data="$data" :student-roster-selector="true" />
     </main>
     <x-portal-modal id="discard-dialog" title="ล้างข้อมูลส่วนที่ {{ $step }}">
         <p>ต้องการล้างข้อมูลที่กรอกไว้ในส่วนนี้ใช่หรือไม่?</p>

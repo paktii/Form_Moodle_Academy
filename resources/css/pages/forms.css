@@ -423,6 +423,21 @@
         overflow-wrap: anywhere;
     }
 
+    .multi-upload__roster-choice {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 5px;
+        color: var(--portal-navy);
+        font-size: 11px;
+        line-height: 1.35;
+        cursor: pointer;
+    }
+
+    .multi-upload__roster-choice[hidden] {
+        display: none;
+    }
+
     .multi-upload__remove {
         display: inline-grid;
         width: 28px;

@@ -83,9 +83,11 @@
                 <dl class="course-result__list"><div class="course-result__row"><dt>ข้อมูลการจัดสรรพื้นที่เว็บไซต์</dt><dd class="allocated-domain-text">@if($record['allocated_domain'] ?? null){{ $record['allocated_domain'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
                 @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-04')
                 <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
+                @php($hasGrantedSpace = filled($record['granted_space_gb'] ?? null))
+                @php($hasExecutionDetail = filled($record['execution_detail'] ?? null))
                 <dl class="course-result__list">
-                    <div class="course-result__row"><dt>พื้นที่เว็บไซต์ที่เพิ่มให้</dt><dd>@if($record['granted_space_gb'] ?? null)1 GB@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div>
-                    <div class="course-result__row"><dt>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div>
+                    <div class="course-result__row"><dt>พื้นที่เว็บไซต์ที่เพิ่มให้</dt><dd @class(['muted' => ! $hasGrantedSpace])>{{ $hasGrantedSpace ? '1 GB' : ($record['status'] === 'REJECTED' ? '—' : 'รอเจ้าหน้าที่ดำเนินการ') }}</dd></div>
+                    <div class="course-result__row"><dt>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์</dt><dd @class(['execution-detail-text', 'muted' => ! $hasExecutionDetail])>{{ $hasExecutionDetail ? $record['execution_detail'] : ($record['status'] === 'REJECTED' ? '—' : 'รอเจ้าหน้าที่ดำเนินการ') }}</dd></div>
                 </dl>
                 @elseif(($record['form_type_code'] ?? 'CC-ITED-06') === 'CC-ITED-02')
                 <h3><x-portal-icon name="globe-code" />ผลการดำเนินการ</h3>
@@ -95,7 +97,7 @@
                 <dl class="course-result__list"><div class="course-result__row"><dt>ข้อมูลการเปลี่ยนสิทธิ์ผู้ดูแลกรอบการประชุม</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
                 @else
                 <h3><x-portal-icon name="globe-code" />ผลการสร้างรายวิชา</h3>
-                <dl class="course-result__list"><div class="course-result__row"><dt>Course ID</dt><dd>@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
+                <dl class="course-result__list"><div class="course-result__row"><dt>Course ID</dt><dd>@if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@elseif($record['status'] === 'REJECTED')<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div><div class="course-result__row"><dt>รายละเอียดการดำเนินการ</dt><dd class="execution-detail-text">@if($record['execution_detail'] ?? null){{ $record['execution_detail'] }}@elseif(in_array($record['status'], ['COMPLETED', 'REJECTED'], true))<span class="muted">—</span>@else<span class="muted">รอเจ้าหน้าที่ดำเนินการ</span>@endif</dd></div></dl>
                 @endif
             </section>
         </article>

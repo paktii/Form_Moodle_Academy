@@ -1,4 +1,4 @@
-@props(['step', 'steps', 'data' => []])
+@props(['step', 'steps', 'data' => [], 'studentRosterSelector' => false])
 <aside class="stepper">
     <h2 class="stepper__title">ขั้นตอนการกรอกข้อมูล</h2>
     <ol class="stepper__list">
@@ -13,6 +13,6 @@
     </ol>
     <section class="stepper-upload">
         <h3><x-portal-icon name="paperclip" />เอกสารเพิ่มเติม</h3>
-        <x-portal-multi-upload name="additional_documents" id="additional-documents" form="course-form" :files="$data['additional_files'] ?? []" :max-files="5" />
+        <x-portal-multi-upload name="additional_documents" id="additional-documents" form="course-form" :files="$data['additional_files'] ?? []" :max-files="5" :student-roster-selector="$studentRosterSelector" :student-roster-enabled="($data['enrollment'] ?? null) === 'ผู้ดูแลระบบนำเข้ารายชื่อ'" />
     </section>
 </aside>

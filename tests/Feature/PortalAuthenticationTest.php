@@ -13,7 +13,11 @@ class PortalAuthenticationTest extends TestCase
     {
         $this->get('/')->assertRedirect('/login');
         $this->get('/officer/reviews')->assertRedirect('/login');
-        $this->get('/approver/reviews')->assertRedirect('/login');
+    }
+
+    public function test_removed_approver_page_is_not_available(): void
+    {
+        $this->get('/approver/reviews')->assertNotFound();
     }
 
     #[DataProvider('staffHomeRoutes')]
@@ -34,7 +38,6 @@ class PortalAuthenticationTest extends TestCase
     {
         return [
             'officer' => ['officer', '/officer/reviews'],
-            'approver' => ['approver', '/approver/reviews'],
         ];
     }
 
@@ -68,7 +71,6 @@ class PortalAuthenticationTest extends TestCase
         return [
             'requester' => ['user', '/'],
             'officer' => ['officer', '/officer/reviews'],
-            'approver' => ['approver', '/approver/reviews'],
         ];
     }
 
@@ -114,9 +116,9 @@ class PortalAuthenticationTest extends TestCase
             'buasri_id' => 'someone',
             'name' => 'ผู้ใช้งานทดสอบ',
             'email' => 'someone@g.swu.ac.th',
-            'label' => 'ผู้อนุมัติ',
-            'role' => 'approver',
-            'available_roles' => ['user', 'officer', 'approver'],
+            'label' => 'บุคลากร',
+            'role' => 'user',
+            'available_roles' => ['user', 'officer'],
         ];
         $identity = Mockery::mock(PortalIdentityService::class);
         $identity->shouldReceive('authenticate')->once()->with('someone', 'secret')->andReturn($actor);
@@ -152,7 +154,7 @@ class PortalAuthenticationTest extends TestCase
         $this->post('/login', [
             'buasri_id' => 'someone',
             'password' => 'secret',
-            'login_role' => 'approver',
+            'login_role' => 'officer',
         ])->assertSessionHasErrors('login_role');
 
         $this->assertNull(session('portal.actor'));

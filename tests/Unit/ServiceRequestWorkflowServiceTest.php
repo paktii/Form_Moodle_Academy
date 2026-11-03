@@ -44,6 +44,7 @@ CREATE TABLE service_portal.service_request (
 CREATE TABLE service_portal.cc_ited_06_request_detail (
     request_id INTEGER PRIMARY KEY,
     course_id TEXT NULL,
+    execution_detail TEXT NULL,
     created_at TEXT NULL,
     updated_at TEXT NULL
 );
@@ -125,6 +126,7 @@ SQL);
         $database->table('service_portal.cc_ited_06_request_detail')->insert([
             'request_id' => 1,
             'course_id' => null,
+            'execution_detail' => null,
         ]);
         $database->table('service_portal.service_request')->insert([
             'request_id' => 2,
@@ -184,7 +186,10 @@ SQL);
     {
         $service = new ServiceRequestWorkflowService($this->recipientResolver());
 
-        $request = $service->approveByOfficer(1, 4001, ['course_id' => 'COURSE-4832']);
+        $request = $service->approveByOfficer(1, 4001, [
+            'course_id' => 'COURSE-4832',
+            'execution_detail' => 'สร้างรายวิชาและกำหนดค่าพื้นฐานเรียบร้อยแล้ว',
+        ]);
 
         $this->assertSame('COMPLETED', $request->status_code);
         $this->assertSame(4001, $request->completed_by_pers_id);
@@ -192,6 +197,10 @@ SQL);
             ->table('service_portal.cc_ited_06_request_detail')
             ->where('request_id', 1)
             ->value('course_id'));
+        $this->assertSame('สร้างรายวิชาและกำหนดค่าพื้นฐานเรียบร้อยแล้ว', DB::connection('course133')
+            ->table('service_portal.cc_ited_06_request_detail')
+            ->where('request_id', 1)
+            ->value('execution_detail'));
         $this->assertDatabaseHas('service_portal.officer_review', [
             'request_id' => 1,
             'officer_pers_id' => 4001,
@@ -233,6 +242,22 @@ SQL);
         $this->assertSame(0, $database->table('service_portal.officer_review')->count());
         $this->assertSame(0, $database->table('service_portal.request_status_history')->count());
         $this->assertSame(0, $database->table('service_portal.notification_outbox')->count());
+    }
+
+    public function test_course_execution_detail_is_optional_and_stored_as_null_when_omitted(): void
+    {
+        $service = new ServiceRequestWorkflowService($this->recipientResolver());
+
+        $request = $service->approveByOfficer(1, 4001, ['course_id' => 'COURSE-4832']);
+
+        $database = DB::connection('course133');
+        $this->assertSame('COMPLETED', $request->status_code);
+        $this->assertNull($database
+            ->table('service_portal.cc_ited_06_request_detail')
+            ->where('request_id', 1)
+            ->value('execution_detail'));
+        $this->assertSame(1, $database->table('service_portal.officer_review')->count());
+        $this->assertSame(1, $database->table('service_portal.notification_outbox')->count());
     }
 
     public function test_website_officer_approval_records_allocated_domain_and_notifies_requester(): void

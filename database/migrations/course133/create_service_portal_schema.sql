@@ -371,6 +371,7 @@ CREATE TABLE [service_portal].[moodle_course_request_detail]
     [enrollment_other] nvarchar(500) NULL,
     [expected_students] int NOT NULL,
     [course_id] varchar(100) NULL,
+    [execution_detail] nvarchar(max) NULL,
     [created_at] datetime2 NOT NULL CONSTRAINT [DF_sp_moodle_detail_created] DEFAULT (SYSDATETIME()),
     [updated_at] datetime2 NOT NULL CONSTRAINT [DF_sp_moodle_detail_updated] DEFAULT (SYSDATETIME()),
     CONSTRAINT [PK_sp_moodle_detail] PRIMARY KEY ([request_id]),

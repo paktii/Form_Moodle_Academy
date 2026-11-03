@@ -149,12 +149,15 @@ class WebsiteStorageViewTest extends TestCase
         $this->assertStringContainsString('พื้นที่เว็บไซต์ที่เพิ่มให้: 1 GB<br>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์:', $detailTemplate);
         $this->assertStringContainsString('<div class="document-row execution-detail-row"><x-portal-icon name="globe-code" /><span class="document-row__name">พื้นที่เว็บไซต์ที่เพิ่มให้: 1 GB<br>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์: <span class="execution-detail-text">', $detailTemplate);
 
-        $requestDetailTemplate = file_get_contents(resource_path('views/portal/request-detail.blade.php'));
-        $spacePosition = strpos($requestDetailTemplate, '<p>พื้นที่เว็บไซต์ที่เพิ่มให้:');
-        $executionPosition = strpos($requestDetailTemplate, '<p>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์:');
+        $requesterHtml = view('portal.request-detail', compact('record'))->render();
+        $spacePosition = strpos($requesterHtml, '<dt>พื้นที่เว็บไซต์ที่เพิ่มให้</dt>');
+        $executionPosition = strpos($requesterHtml, '<dt>ข้อมูลการดำเนินการเพิ่มพื้นที่เว็บไซต์</dt>');
         $this->assertNotFalse($spacePosition);
         $this->assertNotFalse($executionPosition);
         $this->assertTrue($spacePosition < $executionPosition);
+        $this->assertStringContainsString('รอเจ้าหน้าที่ดำเนินการ', $requesterHtml);
+        $this->assertStringNotContainsString('@elseif', $requesterHtml);
+        $this->assertStringNotContainsString('@else', $requesterHtml);
     }
 
     public function test_cc_ited_04_cannot_be_approved_without_execution_detail(): void

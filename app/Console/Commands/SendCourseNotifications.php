@@ -274,7 +274,7 @@ class SendCourseNotifications extends Command
 
                 return [$subject, $body, $html];
             }
-            $subject = "[$request->request_no] มีคำร้องรอการรับรอง";
+            $subject = "[$request->request_no] มีคำร้องขอสร้างรายวิชารอการรับรอง";
             $body = "มีคำร้องขอสร้างรายวิชาในระบบ SWU Moodle Academy รอการรับรอง\n\n"
                 ."เลขที่คำร้อง: $request->request_no\n"
                 ."ส่วนงาน/คณะ/สำนัก: $departmentName\n"

@@ -166,6 +166,7 @@ class ServiceRequestWorkflowService
                     $result['course_id'] ?? null,
                     'course_id is required for CC-ITED-06.',
                 ),
+                'execution_detail' => $this->nullableString($result['execution_detail'] ?? null),
             ]),
             default => throw new DomainException("Unsupported form type {$request->form_type_code}."),
         };
