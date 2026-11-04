@@ -29,7 +29,14 @@ class DiscardPortalDraftWhenLeavingForm
 
     public function handle(Request $request, Closure $next): Response
     {
-        $isRequester = $request->session()->get('portal.actor.role') === 'user';
+        $role = $request->session()->get('portal.actor.role');
+        $tabRole = $request->input('_portal_role');
+        if (config('course-workflow.dev_role_switcher')
+            && is_string($tabRole)
+            && in_array($tabRole, $request->session()->get('portal.available_roles', []), true)) {
+            $role = $tabRole;
+        }
+        $isRequester = $role === 'user';
         $preservesDraft = $this->preservesDraft($request);
 
         if ($isRequester && ! $preservesDraft) {

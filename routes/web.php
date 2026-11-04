@@ -56,6 +56,7 @@ Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')
         Route::post('/request/website-storage/create/{step}/clear', 'clearWebsiteStorageStep')->whereNumber('step')->name('website-storage-requests.clear-step');
         Route::post('/request/discard', 'discard')->name('requests.discard');
         Route::get('/request/{id}', 'detail')->defaults('role', 'user')->whereNumber('id')->name('requests.show');
+        Route::post('/request/{id}/dean-email/resend', 'resendDeanReviewEmail')->whereNumber('id')->name('requests.dean-email.resend');
         Route::post('/request/{id}/student-roster', 'uploadStudentRoster')->whereNumber('id')->name('requests.student-roster.upload');
         Route::post('/request/{id}/student-roster/reopen-request', 'requestStudentRosterReopen')->whereNumber('id')->name('requests.student-roster.reopen-request');
     });

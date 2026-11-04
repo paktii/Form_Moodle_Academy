@@ -1,6 +1,63 @@
 const dialogTriggers = new WeakMap();
 let pdfJsPromise;
 
+const portalTabRoleKey = 'portal.devTabRole';
+const portalTabRoleParameter = '_portal_role';
+const validPortalTabRoles = ['user', 'officer'];
+const loginRoleSwitcher = document.querySelector('.login-role-switcher');
+
+loginRoleSwitcher?.closest('form')?.addEventListener('submit', () => {
+    const selectedRole = loginRoleSwitcher.querySelector('input[name="login_role"]:checked')?.value;
+    if (validPortalTabRoles.includes(selectedRole)) {
+        sessionStorage.setItem(portalTabRoleKey, selectedRole);
+    } else {
+        sessionStorage.removeItem(portalTabRoleKey);
+    }
+});
+
+const portalTabRoleMeta = document.querySelector('meta[name="portal-tab-role"]');
+let portalTabRole = sessionStorage.getItem(portalTabRoleKey);
+if (portalTabRoleMeta && !validPortalTabRoles.includes(portalTabRole)) {
+    portalTabRole = portalTabRoleMeta.content;
+    if (validPortalTabRoles.includes(portalTabRole)) {
+        sessionStorage.setItem(portalTabRoleKey, portalTabRole);
+    }
+}
+
+function addPortalTabRole(url) {
+    const scopedUrl = new URL(url, window.location.href);
+    if (!portalTabRoleMeta || !validPortalTabRoles.includes(portalTabRole)) return scopedUrl;
+
+    if (scopedUrl.origin === window.location.origin) {
+        scopedUrl.searchParams.set(portalTabRoleParameter, portalTabRole);
+    }
+
+    return scopedUrl;
+}
+
+if (portalTabRoleMeta && validPortalTabRoles.includes(portalTabRole)) {
+    const currentUrl = addPortalTabRole(window.location.href);
+    window.history.replaceState(window.history.state, '', currentUrl);
+
+    document.querySelectorAll('a[href]').forEach((link) => {
+        const scopedUrl = addPortalTabRole(link.href);
+        if (scopedUrl.origin === window.location.origin) link.href = scopedUrl;
+    });
+
+    document.querySelectorAll('form').forEach((form) => {
+        if (new URL(form.action, window.location.href).origin !== window.location.origin) return;
+
+        let roleInput = form.querySelector(`input[name="${portalTabRoleParameter}"]`);
+        if (!roleInput) {
+            roleInput = document.createElement('input');
+            roleInput.type = 'hidden';
+            roleInput.name = portalTabRoleParameter;
+            form.append(roleInput);
+        }
+        roleInput.value = portalTabRole;
+    });
+}
+
 const requesterShell = document.querySelector('[data-requester-shell]');
 const requesterSidebarToggle = requesterShell?.querySelector('[data-requester-sidebar-toggle]');
 const requesterSidebarCloseButtons = requesterShell?.querySelectorAll('[data-requester-sidebar-close]') ?? [];
@@ -57,7 +114,7 @@ async function renderPdfPreview(dialog) {
     viewer.setAttribute('aria-busy', 'true');
 
     try {
-        const previewUrl = new URL(viewer.dataset.pdfUrl, window.location.href);
+        const previewUrl = addPortalTabRole(viewer.dataset.pdfUrl);
         previewUrl.searchParams.set('_preview', Date.now().toString());
         const [pdfJs, response] = await Promise.all([
             loadPdfJs(),
@@ -105,7 +162,7 @@ function openDialog(id, trigger) {
     document.documentElement.classList.add('has-open-dialog');
     const nativePdfPreview = dialog.querySelector('[data-native-pdf-preview]');
     if (nativePdfPreview) {
-        const previewUrl = new URL(nativePdfPreview.dataset.pdfUrl, window.location.href);
+        const previewUrl = addPortalTabRole(nativePdfPreview.dataset.pdfUrl);
         previewUrl.searchParams.set('_preview', Date.now().toString());
         nativePdfPreview.src = previewUrl.toString();
     }

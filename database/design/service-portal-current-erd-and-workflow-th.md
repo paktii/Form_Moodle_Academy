@@ -16,8 +16,9 @@ flowchart LR
     underOfficer -->|"อนุมัติพร้อมบันทึกผลดำเนินการ"| completed["COMPLETED"]
     underOfficer -->|"ไม่อนุมัติพร้อมเหตุผล"| rejectedByOfficer["REJECTED"]
     submit --> deanMail["แจ้งผู้รับรอง"]
-    underOfficer --> officerMail["แจ้งเจ้าหน้าที่"]
+    underOfficer --> officerMail["แจ้ง officer ที่รับผิดชอบฟอร์ม"]
     completed --> completedMail["แจ้งผลผู้ยื่น"]
+    completed --> headMail["แจ้งหัวหน้าที่รับผิดชอบฟอร์ม"]
     rejectedByDean --> rejectedMail["แจ้งเหตุผลผู้ยื่น"]
     rejectedByOfficer --> rejectedMail
 ```
@@ -27,10 +28,12 @@ flowchart LR
 1. ผู้ยื่นเลือกแบบฟอร์ม `CC-ITED-01`, `02`, `04`, `05` หรือ `06` กรอกข้อมูล เลือกผู้รับรอง และแนบเอกสารเพิ่มเติมได้
 2. เมื่อส่งคำร้อง ระบบสร้าง `service_request`, detail ตามชนิดแบบฟอร์ม, contact, document และประวัติสถานะ จากนั้นเปลี่ยนเป็น `PENDING_DEAN_REVIEW`
 3. ระบบสร้าง `notification_outbox` ชนิด `DEAN_REVIEW_REQUIRED` เพื่อส่งลิงก์ลงนามดิจิทัลให้ผู้รับรองที่อยู่ในคำร้อง
-4. ผู้รับรองรับรอง ระบบบันทึก `dean_review`, เปลี่ยนสถานะเป็น `UNDER_OFFICER_REVIEW` และแจ้งเจ้าหน้าที่ หรือไม่รับรอง ระบบเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผลให้ผู้ยื่น
-5. เจ้าหน้าที่ตรวจคำร้องและบันทึกผลตามแบบฟอร์มใน action เดียวกับการอนุมัติ ถ้าอนุมัติระบบบันทึก `officer_review`, กำหนด `completed_at`/`completed_by_pers_id`, เปลี่ยนเป็น `COMPLETED` และแจ้งผู้ยื่น ถ้าไม่อนุมัติจะเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผล
+4. ผู้รับรองรับรอง ระบบบันทึก `dean_review`, เปลี่ยนสถานะเป็น `UNDER_OFFICER_REVIEW` และแจ้งเฉพาะเจ้าหน้าที่ active ใน `form_officer_assignment` ของฟอร์มนั้น หรือไม่รับรอง ระบบเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผลให้ผู้ยื่น
+5. เจ้าหน้าที่ตรวจคำร้องและบันทึกผลตามแบบฟอร์มใน action เดียวกับการอนุมัติ ถ้าอนุมัติระบบบันทึก `officer_review`, กำหนด `completed_at`/`completed_by_pers_id`, เปลี่ยนเป็น `COMPLETED` แล้วแจ้งผู้ยื่นและหัวหน้า active ใน `form_head_assignment` ของฟอร์มนั้น ถ้าไม่อนุมัติจะเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผล
 6. ทุก transition เพิ่มแถวใน `request_status_history` และทุกอีเมลสร้างเป็น outbox ก่อนให้ worker ส่งภายหลัง
 7. หลัง `COMPLETED` เจ้าหน้าที่แก้ไขผลดำเนินการได้ และเลือกส่ง `REQUEST_RESULT_UPDATED` เพื่อแจ้งผู้ยื่นได้
+
+ระหว่าง rollout หากฟอร์มยังไม่มี `form_officer_assignment` ระบบจะ fallback ไปกลุ่ม `OFFICER` เดิม ส่วน `REQUEST_COMPLETED_FORM_HEAD` จะถูกสร้างเมื่อฟอร์มนั้นมีหัวหน้า active แล้วเท่านั้น
 
 ไม่มีขั้น Approver, ไม่มีการอัปโหลดเอกสารที่นำไปเซ็นกลับเข้าระบบ และไม่มีการเก็บประวัติการดาวน์โหลด PDF
 
@@ -57,6 +60,8 @@ erDiagram
     NOTIFICATION_TYPE ||--o{ NOTIFICATION_OUTBOX : classifies
     APP_ROLE ||--o{ USER_ROLE_ASSIGNMENT : grants
     FORM_TYPE ||--o{ FORM_NOTIFICATION_RECIPIENT : configures
+    FORM_TYPE ||--o{ FORM_HEAD_ASSIGNMENT : assigns_head
+    FORM_TYPE ||--o{ FORM_OFFICER_ASSIGNMENT : assigns_officers
     NOTIFICATION_TYPE ||--o{ FORM_NOTIFICATION_RECIPIENT : triggers
     APP_ROLE o|--o{ FORM_NOTIFICATION_RECIPIENT : targets
 
@@ -187,6 +192,22 @@ erDiagram
         varchar recipient_email
         char is_active
     }
+    FORM_HEAD_ASSIGNMENT {
+        bigint head_assignment_id PK
+        varchar form_type_code FK
+        int head_pers_id
+        char is_active
+        datetime2 created_at
+        datetime2 updated_at
+    }
+    FORM_OFFICER_ASSIGNMENT {
+        bigint officer_assignment_id PK
+        varchar form_type_code FK
+        int officer_pers_id
+        char is_active
+        datetime2 created_at
+        datetime2 updated_at
+    }
 ```
 
 ## 3. ERD — รายละเอียดแต่ละแบบฟอร์ม
@@ -289,6 +310,7 @@ erDiagram
 |---|---|---|
 | Master | `form_type`, `request_status`, `contact_role`, `document_type`, `notification_type` | กำหนดชนิดฟอร์ม สถานะ บทบาทผู้ติดต่อ ประเภทเอกสาร และเหตุการณ์แจ้งเตือน |
 | สิทธิ์และผู้รับรอง | `app_role`, `user_role_assignment`, `faculty_dean` | กำหนดสิทธิ์ USER/OFFICER และ mapping ผู้รับรองประจำส่วนงาน |
+| ผู้รับผิดชอบแบบฟอร์ม | `form_head_assignment`, `form_officer_assignment` | กำหนดหัวหน้า 1 คนและเจ้าหน้าที่หลายคนที่ active ต่อแบบฟอร์ม |
 | Transaction กลาง | `service_request` | Header และสถานะปัจจุบันของทุกคำร้อง |
 | ข้อมูลประกอบ | `request_contact`, `request_document` | Snapshot ผู้เกี่ยวข้องและ metadata ไฟล์ใน private storage |
 | ผลตัดสิน | `dean_review`, `officer_review` | เก็บผลรับรองและผลตรวจของเจ้าหน้าที่แบบ append-only |

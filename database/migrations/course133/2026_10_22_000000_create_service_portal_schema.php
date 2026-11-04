@@ -37,6 +37,8 @@ DROP TABLE IF EXISTS [service_portal].[dean_review];
 DROP TABLE IF EXISTS [service_portal].[request_document];
 DROP TABLE IF EXISTS [service_portal].[request_contact];
 DROP TABLE IF EXISTS [service_portal].[service_request];
+DROP TABLE IF EXISTS [service_portal].[form_officer_assignment];
+DROP TABLE IF EXISTS [service_portal].[form_head_assignment];
 DROP TABLE IF EXISTS [service_portal].[form_notification_recipient];
 DROP TABLE IF EXISTS [service_portal].[faculty_dean];
 DROP TABLE IF EXISTS [service_portal].[user_role_assignment];

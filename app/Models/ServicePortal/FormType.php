@@ -32,4 +32,14 @@ class FormType extends ServicePortalModel
     {
         return $this->hasMany(FormNotificationRecipient::class, 'form_type_code', 'form_type_code');
     }
+
+    public function headAssignments(): HasMany
+    {
+        return $this->hasMany(FormHeadAssignment::class, 'form_type_code', 'form_type_code');
+    }
+
+    public function officerAssignments(): HasMany
+    {
+        return $this->hasMany(FormOfficerAssignment::class, 'form_type_code', 'form_type_code');
+    }
 }

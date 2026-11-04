@@ -113,10 +113,11 @@ class SendCourseNotificationsTest extends TestCase
         $url = URL::temporarySignedRoute(
             'dean.review.confirm',
             now()->addMonth(),
-            ['id' => 123],
+            ['id' => 123, 'notification' => 456],
         );
 
         $this->assertStringContainsString('/dean/reviews/123?', $url);
+        $this->assertStringContainsString('notification=456', $url);
         $this->assertStringNotContainsString('/approve', $url);
         $this->assertStringNotContainsString('/reject', $url);
     }

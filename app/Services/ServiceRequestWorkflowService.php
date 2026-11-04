@@ -18,9 +18,13 @@ class ServiceRequestWorkflowService
 
     public function approveByDean(int $requestId, int $deanPersId, ?string $comment = null): ServiceRequest
     {
+        $snapshot = ServiceRequest::query()->findOrFail($requestId);
+        $formOfficerRecipients = $this->recipientResolver->formOfficerRecipients($snapshot);
         $officerRecipients = $this->requiredRecipients(
-            $this->recipientResolver->roleRecipients('OFFICER'),
-            'No active officer recipient is configured.',
+            $formOfficerRecipients !== []
+                ? $formOfficerRecipients
+                : $this->recipientResolver->roleRecipients('OFFICER'),
+            "No active officer is configured for form {$snapshot->form_type_code}.",
         );
 
         return DB::connection('course133')->transaction(function () use ($requestId, $deanPersId, $comment, $officerRecipients) {
@@ -70,8 +74,9 @@ class ServiceRequestWorkflowService
     {
         $snapshot = ServiceRequest::query()->findOrFail($requestId);
         $requester = $this->recipientResolver->requester($snapshot);
+        $headRecipients = $this->recipientResolver->formHeadRecipients($snapshot);
 
-        return DB::connection('course133')->transaction(function () use ($requestId, $officerPersId, $result, $requester) {
+        return DB::connection('course133')->transaction(function () use ($requestId, $officerPersId, $result, $requester, $headRecipients) {
             $request = $this->lockedRequest($requestId, 'UNDER_OFFICER_REVIEW');
 
             $this->storeOfficerResult($request, $result);
@@ -91,6 +96,7 @@ class ServiceRequestWorkflowService
             ]);
             $this->addHistory($request, $fromStatus, 'COMPLETED', $officerPersId, 'OFFICER');
             $this->queueNotifications($request, 'REQUEST_COMPLETED_REQUESTER', [$requester]);
+            $this->queueNotifications($request, 'REQUEST_COMPLETED_FORM_HEAD', $headRecipients);
 
             return $request;
         });

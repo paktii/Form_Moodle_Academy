@@ -42,6 +42,7 @@ class DeanReviewPageTest extends TestCase
             'additionalDocumentUrls' => [99 => 'http://localhost/attachment/99'],
             'studentRosterUrl' => 'http://localhost/attachment/roster',
             'alreadyProcessed' => false,
+            'linkInvalidated' => false,
             'errors' => new \Illuminate\Support\ViewErrorBag(),
         ])->render();
 
@@ -57,5 +58,34 @@ class DeanReviewPageTest extends TestCase
         // Additional files are displayed in attachments section
         $this->assertStringContainsString('attached-syllabus.pdf', $html);
 
+    }
+
+    public function test_invalidated_dean_review_link_hides_request_actions_and_documents(): void
+    {
+        $mockRequest = new CourseRequest();
+        $mockRequest->request_no = 'CC-TEST-02';
+        $mockRequest->status = 'PENDING_DEAN_REVIEW';
+
+        $html = view('portal.dean-review', [
+            'courseRequest' => $mockRequest,
+            'record' => [
+                'request_no' => 'CC-TEST-02',
+                'form_type_code' => 'CC-ITED-06',
+                'additional_files' => [],
+                'instructors' => [],
+            ],
+            'decisionUrl' => 'http://localhost/decide',
+            'documentUrl' => 'http://localhost/document',
+            'additionalDocumentUrls' => [],
+            'studentRosterUrl' => null,
+            'alreadyProcessed' => false,
+            'linkInvalidated' => true,
+            'errors' => new \Illuminate\Support\ViewErrorBag(),
+        ])->render();
+
+        $this->assertStringContainsString('ลิงก์นี้ถูกยกเลิกแล้ว', $html);
+        $this->assertStringContainsString('กรุณาใช้ลิงก์จากอีเมลฉบับล่าสุด', $html);
+        $this->assertStringNotContainsString('http://localhost/decide', $html);
+        $this->assertStringNotContainsString('รายละเอียดคำร้องเพื่อพิจารณารับรอง', $html);
     }
 }

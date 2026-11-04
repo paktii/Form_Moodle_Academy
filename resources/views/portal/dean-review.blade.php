@@ -5,7 +5,12 @@
                 <img src="{{ asset('img/logo.png') }}" alt="มหาวิทยาลัยศรีนครินทรวิโรฒ">
                 <span>{{ match ($record['form_type_code'] ?? 'CC-ITED-06') { 'CC-ITED-01' => 'ขอใช้พื้นที่สำหรับจัดทำเว็บไซต์', 'CC-ITED-02' => 'ขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์', 'CC-ITED-04' => 'ขอเพิ่มพื้นที่บนเว็บไซต์', 'CC-ITED-05' => 'ขอสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting', default => 'SWU Moodle Academy' } }}</span>
             </div>
-            @if($alreadyProcessed)
+            @if($linkInvalidated)
+                <div class="dean-review-result" role="status">
+                    <h1>ลิงก์นี้ถูกยกเลิกแล้ว</h1>
+                    <p>กรุณาใช้ลิงก์จากอีเมลฉบับล่าสุด</p>
+                </div>
+            @elseif($alreadyProcessed)
                 <div class="dean-review-result" role="status">
                     <h1>คำร้องได้รับการดำเนินการแล้ว</h1>
                     <p>ไม่สามารถเปลี่ยนผลผ่านลิงก์นี้ได้อีก</p>
@@ -52,7 +57,7 @@
             @endif
         </section>
     </main>
-    @unless($alreadyProcessed)
+    @if(! $linkInvalidated && ! $alreadyProcessed)
         <x-portal-modal id="dean-approve-dialog" title="ยืนยันการรับรองคำร้อง">
             <p class="confirmation-message">คุณต้องการรับรองคำร้องนี้ใช่หรือไม่?<br>ระบบจะส่งต่อคำร้องให้เจ้าหน้าที่ตรวจสอบ</p>
             <form method="post" action="{{ $decisionUrl }}">
@@ -88,5 +93,5 @@
                 </div>
             </form>
         </x-portal-modal>
-    @endunless
+    @endif
 </x-portal-layout>

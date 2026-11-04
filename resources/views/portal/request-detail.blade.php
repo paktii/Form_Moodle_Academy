@@ -19,7 +19,12 @@
         <article class="portal-card requester-detail__card">
             <div class="requester-detail__heading" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid #e5e7eb;">
                 <h2 style="font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.4;">{{ $record['project_name'] }}</h2>
-                <div style="flex-shrink: 0; margin-top: 4px;"><x-status-badge :status="$record['status']" /></div>
+                <div class="requester-detail__heading-actions">
+                    @if($record['status'] === 'PENDING_DEAN_REVIEW')
+                    <x-portal-button type="button" variant="secondary" data-open-dialog="resend-dean-email-dialog">ส่งอีเมลถึงคณบดีอีกครั้ง</x-portal-button>
+                    @endif
+                    <x-status-badge :status="$record['status']" />
+                </div>
             </div>
             <x-request-data :record="$record" variant="summary" :show-requester-unit="false" :split-target-unit="true" />
             <section class="requester-attachments">
@@ -101,5 +106,17 @@
                 @endif
             </section>
         </article>
+        @if($record['status'] === 'PENDING_DEAN_REVIEW')
+        <x-portal-modal id="resend-dean-email-dialog" title="ยืนยันการส่งอีเมลอีกครั้ง">
+            <p class="confirmation-message">ระบบจะส่งอีเมลแจ้งเตือนคำร้องนี้ไปยังคณบดีอีกครั้ง<br>คุณต้องการดำเนินการต่อใช่หรือไม่?</p>
+            <form method="post" action="{{ route('requests.dean-email.resend', $record['id']) }}">
+                @csrf
+                <div class="modal-actions">
+                    <x-portal-button type="button" variant="secondary" data-close-dialog>ยกเลิก</x-portal-button>
+                    <x-portal-button type="submit">ยืนยันส่งอีเมลอีกครั้ง</x-portal-button>
+                </div>
+            </form>
+        </x-portal-modal>
+        @endif
     </main>
 </x-portal-layout>

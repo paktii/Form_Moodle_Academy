@@ -6,6 +6,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @if(request()->attributes->get('portal.tab_role_enabled', false))
+    <meta name="portal-tab-role" content="{{ request()->attributes->get('portal.actor', session('portal.actor'))['role'] ?? 'user' }}">
+    @endif
     <link rel="icon" type="image/png" href="{{ asset('img/logo.png') }}">
     <title>{{ $tabTitle ?? $title }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])

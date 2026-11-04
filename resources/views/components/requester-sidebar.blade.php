@@ -1,5 +1,5 @@
 @php
-$actor = session('portal.actor', config('course-workflow.actors.user'));
+$actor = request()->attributes->get('portal.actor', session('portal.actor', config('course-workflow.actors.user')));
 $name = $actor['name'] ?? 'ผู้ใช้งาน';
 $roleLabel = $actor['label'] ?? 'บุคลากร';
 $buasriId = $actor['buasri_id'] ?? '';

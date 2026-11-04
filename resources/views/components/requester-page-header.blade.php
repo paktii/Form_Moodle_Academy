@@ -1,6 +1,6 @@
 @props(['title', 'contextTitle' => null, 'highlightContext' => false, 'description' => null, 'role' => 'user', 'showMenu' => true, 'showAccount' => false, 'showLogo' => false])
 @php
-$actor = session('portal.actor', config("course-workflow.actors.$role"));
+$actor = request()->attributes->get('portal.actor', session('portal.actor', config("course-workflow.actors.$role")));
 $name = $actor['name'] ?? 'ผู้ใช้งาน';
 $roleLabel = $actor['label'] ?? '';
 $buasriId = $actor['buasri_id'] ?? '';

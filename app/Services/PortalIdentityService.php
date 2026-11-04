@@ -52,12 +52,22 @@ class PortalIdentityService
 
     private function roleCodesForPerson(int $personId)
     {
-        return DB::connection('course133')
+        $database = DB::connection('course133');
+        $roleCodes = $database
             ->table('service_portal.user_role_assignment as assignments')
             ->join('service_portal.app_role as roles', 'roles.role_id', '=', 'assignments.role_id')
             ->where('assignments.pers_id', $personId)
             ->where('assignments.is_active', 'Y')
             ->pluck('roles.role_code');
+
+        if ($database->table('service_portal.form_officer_assignment')
+            ->where('officer_pers_id', $personId)
+            ->where('is_active', 'Y')
+            ->exists()) {
+            $roleCodes->push('OFFICER');
+        }
+
+        return $roleCodes->unique()->values();
     }
 
     private function roleFromCodes($roleCodes): string

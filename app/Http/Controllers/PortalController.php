@@ -43,7 +43,7 @@ class PortalController extends Controller
 
     public function login(Request $request)
     {
-        if ($request->session()->has('portal.actor')) {
+        if ($request->session()->has('portal.actor') && ! config('course-workflow.dev_role_switcher')) {
             return redirect()->route($this->homeRoute($request->session()->get('portal.actor.role', 'user')));
         }
 
@@ -55,7 +55,7 @@ class PortalController extends Controller
         $credentials = $request->validate([
             'buasri_id' => 'required|string|max:100',
             'password'  => 'required|string|max:255',
-            'login_role' => ['nullable', Rule::in(['officer'])],
+            'login_role' => ['nullable', Rule::in(['user', 'officer'])],
         ]);
 
         $buasriId = Str::lower(Str::before(trim($credentials['buasri_id']), '@'));
@@ -91,14 +91,19 @@ class PortalController extends Controller
             }
 
             $matched['role'] = $requestedRole;
-            $matched['label'] = 'เจ้าหน้าที่';
+            $matched['label'] = $requestedRole === 'officer' ? 'เจ้าหน้าที่' : 'ผู้ใช้งาน';
+        }
+        if (config('course-workflow.dev_role_switcher')) {
+            $request->session()->put('portal.available_roles', $matched['available_roles'] ?? [$matched['role']]);
+        } else {
+            $request->session()->forget('portal.available_roles');
         }
         unset($matched['available_roles']);
 
         $request->session()->regenerate();
         $request->session()->put('portal.actor', $matched);
 
-        return redirect()->route($this->homeRoute($matched['role']));
+        return redirect()->intended(route($this->homeRoute($matched['role'])));
     }
 
     public function logout(Request $request)
@@ -109,20 +114,28 @@ class PortalController extends Controller
         return redirect()->route('login');
     }
 
-    public function deanReviewConfirmation(int $id, ?string $decision = null)
+    public function deanReviewConfirmation(Request $request, int $id, ?string $decision = null)
     {
         $courseRequest = CourseRequest::query()->with($this->recordRelations())->findOrFail($id);
         $record = $this->toRecord($courseRequest);
+        $notificationId = $request->integer('notification');
+        $linkInvalidated = ! $this->isCurrentDeanReviewLink($courseRequest, $notificationId);
         $linkExpiresAt = now()->addMinutes(30);
         $decisionUrl = URL::temporarySignedRoute(
             'dean.review.decide',
             $linkExpiresAt,
-            ['id' => $courseRequest->request_id],
+            [
+                'id' => $courseRequest->request_id,
+                'notification' => $notificationId,
+            ],
         );
         $documentUrl = URL::temporarySignedRoute(
             'dean.review.document',
             $linkExpiresAt,
-            ['id' => $courseRequest->request_id],
+            [
+                'id' => $courseRequest->request_id,
+                'notification' => $notificationId,
+            ],
         );
         $additionalDocumentUrls = collect($record['additional_files'] ?? [])
             ->mapWithKeys(fn (array $file) => [
@@ -132,6 +145,7 @@ class PortalController extends Controller
                     [
                         'id' => $courseRequest->request_id,
                         'document' => $file['document_id'],
+                        'notification' => $notificationId,
                     ],
                 ),
             ])
@@ -141,7 +155,11 @@ class PortalController extends Controller
             ? URL::temporarySignedRoute(
                 'dean.review.attachment',
                 $linkExpiresAt,
-                ['id' => $courseRequest->request_id, 'document' => $studentRosterDocId],
+                [
+                    'id' => $courseRequest->request_id,
+                    'document' => $studentRosterDocId,
+                    'notification' => $notificationId,
+                ],
             )
             : null;
 
@@ -153,12 +171,14 @@ class PortalController extends Controller
             'additionalDocumentUrls' => $additionalDocumentUrls,
             'studentRosterUrl' => $studentRosterUrl,
             'alreadyProcessed' => $courseRequest->status !== 'PENDING_DEAN_REVIEW',
+            'linkInvalidated' => $linkInvalidated,
         ]);
     }
 
-    public function deanReviewDocument(int $id)
+    public function deanReviewDocument(Request $request, int $id)
     {
         $courseRequest = CourseRequest::query()->with($this->recordRelations())->findOrFail($id);
+        abort_unless($this->isCurrentDeanReviewLink($courseRequest, $request->integer('notification')), 410);
         $record = $this->toRecord($courseRequest);
 
         return $this->generatedPdfResponse(
@@ -168,9 +188,10 @@ class PortalController extends Controller
         );
     }
 
-    public function deanReviewAttachment(int $id, int $document)
+    public function deanReviewAttachment(Request $request, int $id, int $document)
     {
         $courseRequest = CourseRequest::query()->findOrFail($id);
+        abort_unless($this->isCurrentDeanReviewLink($courseRequest, $request->integer('notification')), 410);
         $courseDocument = $courseRequest->documents()
             ->whereKey($document)
             ->whereIn('document_type_code', ['ADDITIONAL_DOCUMENT', 'STUDENT_ROSTER'])
@@ -186,6 +207,10 @@ class PortalController extends Controller
 
     public function deanReviewDecision(Request $request, int $id, ?string $decision = null)
     {
+        $notificationId = $request->integer('notification');
+        $linkRequest = CourseRequest::query()->findOrFail($id);
+        abort_unless($this->isCurrentDeanReviewLink($linkRequest, $notificationId), 410);
+
         $request->merge(['decision' => $decision ?? $request->input('decision')]);
         $data = $request->validate([
             'decision' => ['required', Rule::in(['approve', 'reject'])],
@@ -195,8 +220,10 @@ class PortalController extends Controller
         ]);
         $decision = $data['decision'];
 
-        $result = DB::connection('course133')->transaction(function () use ($id, $decision, $data) {
+        $result = DB::connection('course133')->transaction(function () use ($id, $decision, $data, $notificationId) {
             $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
+
+            abort_unless($this->isCurrentDeanReviewLink($courseRequest, $notificationId), 410);
 
             if ($courseRequest->status !== 'PENDING_DEAN_REVIEW') {
                 return ['request' => $courseRequest, 'processed' => false];
@@ -218,7 +245,7 @@ class PortalController extends Controller
             $this->addHistory($courseRequest, $status, $deanPersonId, 'DEAN');
 
             if ($decision === 'approve') {
-                $this->queueRoleNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'OFFICER', $deanActor);
+                $this->queueFormResponsibilityNotifications($courseRequest, 'OFFICER_REVIEW_REQUIRED', 'officer', $deanActor);
             } else {
                 $this->queueNotification($courseRequest, 'DEAN_REJECTED', $this->requesterRecipient($courseRequest), $deanActor);
             }
@@ -230,7 +257,10 @@ class PortalController extends Controller
         $confirmationUrl = URL::temporarySignedRoute(
             'dean.review.confirm',
             now()->addMinutes(30),
-            ['id' => $courseRequest->request_id],
+            [
+                'id' => $courseRequest->request_id,
+                'notification' => $notificationId,
+            ],
         );
         $redirect = redirect()->to($confirmationUrl);
 
@@ -1446,6 +1476,59 @@ class PortalController extends Controller
         return view($role === 'user' ? 'portal.request-detail' : 'portal.detail', compact('record', 'role'));
     }
 
+    public function resendDeanReviewEmail(Request $request, int $id)
+    {
+        $queued = DB::connection('course133')->transaction(function () use ($request, $id): bool {
+            $courseRequest = CourseRequest::query()->lockForUpdate()->findOrFail($id);
+            $actor = $this->actor($request);
+
+            abort_unless((int) $courseRequest->requester_pers_id === (int) $actor['pers_id'], 403);
+            abort_unless($courseRequest->status === 'PENDING_DEAN_REVIEW', 409, 'คำร้องนี้ไม่ได้อยู่ในสถานะรอการรับรอง');
+            abort_unless((int) $courseRequest->dean_pers_id > 0, 409, 'ไม่พบผู้รับรองของคำร้อง');
+
+            $recipient = $this->personRecipient((int) $courseRequest->dean_pers_id, 'ผู้รับรอง');
+            $latestNotification = NotificationOutbox::query()
+                ->where('request_id', $courseRequest->request_id)
+                ->where('notification_type_code', 'DEAN_REVIEW_REQUIRED')
+                ->where('recipient_pers_id', $recipient['pers_id'])
+                ->latest('created_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($latestNotification !== null && in_array($latestNotification->delivery_status, ['PENDING', 'SENDING'], true)) {
+                return false;
+            }
+
+            if ($latestNotification?->delivery_status === 'FAILED') {
+                $latestNotification->update([
+                    'recipient_email' => $recipient['email'],
+                    'reply_to_email' => $actor['email'],
+                    'reply_to_name' => $actor['name'],
+                    'delivery_status' => 'PENDING',
+                    'attempt_count' => 0,
+                    'claimed_at' => null,
+                    'next_attempt_at' => null,
+                    'last_error' => null,
+                    'sent_at' => null,
+                    'created_at' => now(),
+                ]);
+
+                return true;
+            }
+
+            $this->queueNotification($courseRequest, 'DEAN_REVIEW_REQUIRED', $recipient, $actor);
+
+            return true;
+        });
+
+        return redirect()->route('requests.show', $id)->with(
+            'success',
+            $queued
+                ? 'ส่งอีเมลแจ้งคณบดีเรียบร้อยแล้ว'
+                : 'อีเมลแจ้งคณบดีอยู่ในคิวส่งแล้ว<br>ระบบจะไม่สร้างรายการส่งซ้ำ',
+        );
+    }
+
     public function uploadStudentRoster(Request $request, int $id)
     {
         $request->validate(['student_roster' => 'required|file|mimes:xls,xlsx,csv|max:10240'], [
@@ -1472,10 +1555,10 @@ class PortalController extends Controller
 
                 $isUpdate = $existing !== null;
                 $this->createDocument($courseRequest, 'STUDENT_ROSTER', $stored, 'roster', $actor['pers_id']);
-                $this->queueRoleNotifications(
+                $this->queueFormResponsibilityNotifications(
                     $courseRequest,
                     $isUpdate ? 'STUDENT_ROSTER_UPDATED' : 'STUDENT_ROSTER_SUBMITTED',
-                    'OFFICER',
+                    'officer',
                     $actor
                 );
             });
@@ -1546,10 +1629,10 @@ class PortalController extends Controller
                 ->exists();
 
             if (! $alreadyRequested) {
-                $this->queueRoleNotifications(
+                $this->queueFormResponsibilityNotifications(
                     $courseRequest,
                     'STUDENT_ROSTER_REOPEN_REQUESTED',
-                    'OFFICER',
+                    'officer',
                     $actor
                 );
             }
@@ -1868,6 +1951,7 @@ class PortalController extends Controller
             }
             if ($passed) {
                 $this->queueNotification($courseRequest, 'REQUEST_COMPLETED_REQUESTER', $this->requesterRecipient($courseRequest), $actor);
+                $this->queueFormResponsibilityNotifications($courseRequest, 'REQUEST_COMPLETED_FORM_HEAD', 'head', $actor);
             } else {
                 $this->queueNotification($courseRequest, 'REQUEST_REJECTED', $this->requesterRecipient($courseRequest), $actor);
             }
@@ -3224,6 +3308,23 @@ class PortalController extends Controller
         }));
     }
 
+    private function isCurrentDeanReviewLink(CourseRequest $courseRequest, int $notificationId): bool
+    {
+        if ($notificationId <= 0) {
+            return false;
+        }
+
+        $latestSentNotificationId = NotificationOutbox::query()
+            ->where('request_id', $courseRequest->request_id)
+            ->where('notification_type_code', 'DEAN_REVIEW_REQUIRED')
+            ->where('delivery_status', 'SENT')
+            ->orderByDesc('sent_at')
+            ->orderByDesc('notification_id')
+            ->value('notification_id');
+
+        return (int) $latestSentNotificationId === $notificationId;
+    }
+
     private function deanOptionsForTargetDepartment(int $targetDepartmentId): array
     {
         return collect($this->activeDeanPersonIds($targetDepartmentId))
@@ -3317,6 +3418,72 @@ class PortalController extends Controller
         foreach ($this->roleRecipients($roleCode) as $recipient) {
             $this->queueNotification($courseRequest, $type, $recipient, $actor);
         }
+    }
+
+    private function queueFormResponsibilityNotifications(
+        CourseRequest $courseRequest,
+        string $type,
+        string $responsibility,
+        array $actor,
+    ): void {
+        foreach ($this->formResponsibilityRecipients($courseRequest, $responsibility) as $recipient) {
+            $this->queueNotification($courseRequest, $type, $recipient, $actor);
+        }
+    }
+
+    private function formResponsibilityRecipients(CourseRequest $courseRequest, string $responsibility): array
+    {
+        if ($responsibility === 'head' && app()->environment('local', 'uat')) {
+            $testPersonId = (int) config('course-workflow.notifications.test_recipient_person_id');
+            $testEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
+
+            if ($testPersonId <= 0 || ! filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+                throw ValidationException::withMessages([
+                    'responsibility' => 'กรุณากำหนด COURSE133_TEST_PERSON_ID และ COURSE133_TEST_EMAIL สำหรับผู้รับแจ้งเตือน Head',
+                ]);
+            }
+
+            return [['pers_id' => $testPersonId, 'email' => $testEmail]];
+        }
+
+        [$table, $personColumn, $orderColumn, $label] = match ($responsibility) {
+            'head' => ['form_head_assignment', 'head_pers_id', 'head_assignment_id', 'หัวหน้าผู้รับผิดชอบ'],
+            'officer' => ['form_officer_assignment', 'officer_pers_id', 'officer_assignment_id', 'เจ้าหน้าที่ผู้รับผิดชอบ'],
+            default => throw new \InvalidArgumentException("Unsupported form responsibility {$responsibility}."),
+        };
+
+        $personIds = DB::connection('course133')
+            ->table("service_portal.{$table}")
+            ->where('form_type_code', $courseRequest->form_type_code)
+            ->where('is_active', 'Y')
+            ->orderBy($orderColumn)
+            ->pluck($personColumn);
+
+        $recipients = $personIds->map(function ($personId) use ($label) {
+            $personId = (int) $personId;
+            $person = $this->personnelDirectory->findByPersonId($personId);
+            $email = $person ? $this->personnelDirectory->email($person) : null;
+
+            if ($email === null) {
+                throw ValidationException::withMessages([
+                    'email' => "ไม่พบอีเมล Google Workspace ของ{$label}รหัส {$personId} ใน SWU MIS API",
+                ]);
+            }
+
+            return ['pers_id' => $personId, 'email' => $email];
+        })->unique('email')->values()->all();
+
+        if ($recipients === [] && $responsibility === 'officer') {
+            return $this->roleRecipients('OFFICER');
+        }
+
+        if ($recipients === [] && $responsibility !== 'head') {
+            throw ValidationException::withMessages([
+                'responsibility' => "ยังไม่ได้กำหนด{$label}สำหรับแบบฟอร์ม {$courseRequest->form_type_code}",
+            ]);
+        }
+
+        return $recipients;
     }
 
     private function requesterRecipient(CourseRequest $courseRequest): array
@@ -3476,7 +3643,7 @@ class PortalController extends Controller
 
     private function actor(Request $request): array
     {
-        $actor = $request->session()->get('portal.actor');
+        $actor = $request->attributes->get('portal.actor', $request->session()->get('portal.actor'));
         abort_unless(is_array($actor), 401);
 
         return $actor;

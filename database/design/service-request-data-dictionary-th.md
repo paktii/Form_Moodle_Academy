@@ -69,8 +69,10 @@ ERD และคำอธิบาย workflow ปัจจุบันอยู
 8. `user_role_assignment`
 9. `faculty_dean`
 10. `form_notification_recipient`
-11. `project_type`
-12. `course_category`
+11. `form_head_assignment`
+12. `form_officer_assignment`
+13. `project_type`
+14. `course_category`
 
 ### Transaction กลาง
 
@@ -192,6 +194,7 @@ Master เหตุการณ์ที่สร้างอีเมลหร�
 | `OFFICER_REVIEW_REQUIRED` | ส่งคำร้องให้เจ้าหน้าที่ดำเนินการ |
 | `REQUEST_REJECTED` | เจ้าหน้าที่ไม่อนุมัติคำร้อง |
 | `REQUEST_COMPLETED_REQUESTER` | แจ้งผู้ยื่นเมื่อดำเนินการเสร็จ |
+| `REQUEST_COMPLETED_FORM_HEAD` | แจ้งหัวหน้าผู้รับผิดชอบของแบบฟอร์มเมื่อดำเนินการเสร็จ |
 | `REQUEST_RESULT_UPDATED` | แจ้งผู้ยื่นเมื่อเจ้าหน้าที่แก้ไขผลดำเนินการหลังคำร้องเสร็จ |
 
 `REQUEST_COMPLETED_APPROVER` เป็น notification type เดิมที่ยังอยู่ใน master จาก schema เริ่มต้น แต่ workflow ปัจจุบันไม่สร้าง outbox ชนิดนี้
@@ -271,6 +274,36 @@ Master ผู้รับรองประจำส่วนงาน ใช้
 | `is_active` | char(1) | NOT NULL | `Y` | `Y` เปิดใช้กฎ, `N` ปิดใช้กฎ |
 
 ต้องมีข้อมูลปลายทางตาม `recipient_source` เพียงชนิดเดียว ปัจจุบันกฎแบบ `APP_ROLE` ใช้ resolve กลุ่มเจ้าหน้าที่ เช่น `OFFICER_REVIEW_REQUIRED`
+
+## `service_portal.form_head_assignment`
+
+กำหนดหัวหน้าผู้รับผิดชอบของแต่ละแบบฟอร์ม โดยอ้างบุคลากรจาก SWU MIS API แต่ละแบบฟอร์มมีหัวหน้าที่ `is_active = Y` ได้เพียงหนึ่งคน ระบบใช้รายการนี้เป็นผู้รับเมล `REQUEST_COMPLETED_FORM_HEAD`
+
+| Column | Type | Key / Null | Default | ความหมาย |
+|---|---|---|---|---|
+| `head_assignment_id` | bigint identity | PK | auto | รหัสรายการ |
+| `form_type_code` | varchar(20) | FK, NOT NULL | — | แบบฟอร์มที่รับผิดชอบ อ้าง `form_type.form_type_code` |
+| `head_pers_id` | int | LR, NOT NULL | — | `Officer.personId` ของหัวหน้าผู้รับผิดชอบ |
+| `is_active` | char(1) | NOT NULL | `Y` | `Y` รับผิดชอบอยู่, `N` ยกเลิกการรับผิดชอบ |
+| `created_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาสร้าง |
+| `updated_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาแก้ไขล่าสุด |
+
+กำหนด UK ร่วมที่ `(form_type_code, head_pers_id)` และ filtered unique index ที่ `form_type_code` เมื่อ `is_active = Y` เพื่อให้แต่ละแบบฟอร์มมีหัวหน้าปัจจุบันเพียงหนึ่งคน
+
+## `service_portal.form_officer_assignment`
+
+กำหนดเจ้าหน้าที่ผู้รับผิดชอบของแต่ละแบบฟอร์ม หนึ่งแบบฟอร์มมีเจ้าหน้าที่ active ได้หลายคน และเจ้าหน้าที่หนึ่งคนรับผิดชอบได้หลายแบบฟอร์ม ระบบใช้รายการนี้เป็นผู้รับเมล `OFFICER_REVIEW_REQUIRED` และใช้ให้สิทธิ/redirect ไปหน้า officer ตอน login ระหว่างที่ฟอร์มยังไม่มี assignment ระบบจะ fallback ไปกลุ่ม `OFFICER` เดิมเพื่อไม่ให้ workflow หยุด
+
+| Column | Type | Key / Null | Default | ความหมาย |
+|---|---|---|---|---|
+| `officer_assignment_id` | bigint identity | PK | auto | รหัสรายการ |
+| `form_type_code` | varchar(20) | FK, NOT NULL | — | แบบฟอร์มที่รับผิดชอบ อ้าง `form_type.form_type_code` |
+| `officer_pers_id` | int | LR, NOT NULL | — | `Officer.personId` ของเจ้าหน้าที่ผู้รับผิดชอบ |
+| `is_active` | char(1) | NOT NULL | `Y` | `Y` รับผิดชอบอยู่, `N` ยกเลิกการรับผิดชอบ |
+| `created_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาสร้าง |
+| `updated_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาแก้ไขล่าสุด |
+
+กำหนด UK ร่วมที่ `(form_type_code, officer_pers_id)` เพื่อป้องกันการกำหนดเจ้าหน้าที่คนเดิมซ้ำในแบบฟอร์มเดียวกัน
 
 ## `service_portal.project_type`
 
@@ -575,6 +608,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 4. กำหนด `completed_at` และ `completed_by_pers_id`
 5. เพิ่ม `request_status_history`
 6. สร้าง `notification_outbox` ชนิด `REQUEST_COMPLETED_REQUESTER`
+7. Resolve หัวหน้าจาก `form_head_assignment` ตาม `form_type_code` แล้วสร้าง `REQUEST_COMPLETED_FORM_HEAD` เมื่อมีหัวหน้า active; หากยังไม่กำหนดหัวหน้า คำร้องยังเสร็จสมบูรณ์ได้โดยไม่สร้างเมลชนิดนี้
 การส่งอีเมลล้มเหลวไม่ย้อนสถานะ `COMPLETED`; worker ต้อง retry จาก outbox
 
 # Index และ Constraint ที่แนะนำ
@@ -592,6 +626,8 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 | `request_status_history` | IX `(request_id, changed_at, history_id)` | แสดง timeline ตามลำดับ |
 | `notification_outbox` | IX `(delivery_status, next_attempt_at, notification_id)` | worker claim งาน |
 | `form_notification_recipient` | IX `(form_type_code, notification_type_code, is_active)` | resolve ผู้รับแจ้งเตือน |
+| `form_head_assignment` | Filtered UK `(form_type_code)` เมื่อ `is_active = Y` | บังคับให้แต่ละแบบฟอร์มมีหัวหน้าปัจจุบันได้เพียงหนึ่งคน |
+| `form_officer_assignment` | UK `(form_type_code, officer_pers_id)` และ IX `(form_type_code, is_active, officer_pers_id)` | ป้องกันรายการซ้ำและค้นหาเจ้าหน้าที่ active ของแต่ละแบบฟอร์ม |
 
 # กฎข้อมูลสำคัญ
 

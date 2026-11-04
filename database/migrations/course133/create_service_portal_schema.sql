@@ -179,6 +179,34 @@ CREATE TABLE [service_portal].[form_notification_recipient]
     CONSTRAINT [FK_sp_recipient_role] FOREIGN KEY ([role_id]) REFERENCES [service_portal].[app_role] ([role_id])
 );
 
+CREATE TABLE [service_portal].[form_head_assignment]
+(
+    [head_assignment_id] bigint IDENTITY NOT NULL,
+    [form_type_code] varchar(20) NOT NULL,
+    [head_pers_id] int NOT NULL,
+    [is_active] char(1) NOT NULL CONSTRAINT [DF_sp_form_head_active] DEFAULT ('Y'),
+    [created_at] datetime2 NOT NULL CONSTRAINT [DF_sp_form_head_created] DEFAULT (SYSDATETIME()),
+    [updated_at] datetime2 NOT NULL CONSTRAINT [DF_sp_form_head_updated] DEFAULT (SYSDATETIME()),
+    CONSTRAINT [PK_sp_form_head_assignment] PRIMARY KEY ([head_assignment_id]),
+    CONSTRAINT [UQ_sp_form_head_assignment] UNIQUE ([form_type_code], [head_pers_id]),
+    CONSTRAINT [CK_sp_form_head_active] CHECK ([is_active] IN ('Y', 'N')),
+    CONSTRAINT [FK_sp_form_head_form] FOREIGN KEY ([form_type_code]) REFERENCES [service_portal].[form_type] ([form_type_code])
+);
+
+CREATE TABLE [service_portal].[form_officer_assignment]
+(
+    [officer_assignment_id] bigint IDENTITY NOT NULL,
+    [form_type_code] varchar(20) NOT NULL,
+    [officer_pers_id] int NOT NULL,
+    [is_active] char(1) NOT NULL CONSTRAINT [DF_sp_form_officer_active] DEFAULT ('Y'),
+    [created_at] datetime2 NOT NULL CONSTRAINT [DF_sp_form_officer_created] DEFAULT (SYSDATETIME()),
+    [updated_at] datetime2 NOT NULL CONSTRAINT [DF_sp_form_officer_updated] DEFAULT (SYSDATETIME()),
+    CONSTRAINT [PK_sp_form_officer_assignment] PRIMARY KEY ([officer_assignment_id]),
+    CONSTRAINT [UQ_sp_form_officer_assignment] UNIQUE ([form_type_code], [officer_pers_id]),
+    CONSTRAINT [CK_sp_form_officer_active] CHECK ([is_active] IN ('Y', 'N')),
+    CONSTRAINT [FK_sp_form_officer_form] FOREIGN KEY ([form_type_code]) REFERENCES [service_portal].[form_type] ([form_type_code])
+);
+
 CREATE TABLE [service_portal].[service_request]
 (
     [request_id] bigint IDENTITY NOT NULL,
@@ -422,6 +450,19 @@ CREATE INDEX [IX_sp_history_request]
 CREATE INDEX [IX_sp_recipient_rule_lookup]
     ON [service_portal].[form_notification_recipient] ([form_type_code], [notification_type_code], [is_active]);
 
+CREATE UNIQUE INDEX [UX_sp_form_head_one_active]
+    ON [service_portal].[form_head_assignment] ([form_type_code])
+    WHERE [is_active] = 'Y';
+
+CREATE INDEX [IX_sp_form_head_person]
+    ON [service_portal].[form_head_assignment] ([head_pers_id], [is_active]);
+
+CREATE INDEX [IX_sp_form_officer_active]
+    ON [service_portal].[form_officer_assignment] ([form_type_code], [is_active], [officer_pers_id]);
+
+CREATE INDEX [IX_sp_form_officer_person]
+    ON [service_portal].[form_officer_assignment] ([officer_pers_id], [is_active]);
+
 CREATE INDEX [IX_sp_outbox_pending]
     ON [service_portal].[notification_outbox] ([delivery_status], [next_attempt_at], [notification_id])
     WHERE [delivery_status] IN ('PENDING', 'FAILED', 'SENDING');
@@ -471,6 +512,7 @@ VALUES
     ('OFFICER_REVIEW_REQUIRED', N'แจ้งเจ้าหน้าที่ให้ดำเนินการ', 'officer-review-required'),
     ('REQUEST_REJECTED', N'แจ้งผู้ยื่นเมื่อเจ้าหน้าที่ไม่อนุมัติ', 'request-rejected'),
     ('REQUEST_COMPLETED_REQUESTER', N'แจ้งผู้ยื่นเมื่อดำเนินการเสร็จ', 'request-completed-requester'),
+    ('REQUEST_COMPLETED_FORM_HEAD', N'แจ้งหัวหน้าผู้รับผิดชอบแบบฟอร์มเมื่อดำเนินการเสร็จ', 'request-completed-form-head'),
     ('REQUEST_COMPLETED_APPROVER', N'แจ้ง Approver เพื่อรับทราบเมื่อดำเนินการเสร็จ', 'request-completed-approver');
 
 INSERT INTO [service_portal].[website_platform]

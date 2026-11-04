@@ -217,9 +217,10 @@ SQL);
             'notification_type_code' => 'REQUEST_COMPLETED_REQUESTER',
             'recipient_email' => 'requester@g.swu.ac.th',
         ], 'course133');
-        $this->assertDatabaseMissing('service_portal.notification_outbox', [
+        $this->assertDatabaseHas('service_portal.notification_outbox', [
             'request_id' => 1,
-            'notification_type_code' => 'REQUEST_COMPLETED_APPROVER',
+            'notification_type_code' => 'REQUEST_COMPLETED_FORM_HEAD',
+            'recipient_email' => 'head@g.swu.ac.th',
         ], 'course133');
     }
 
@@ -257,7 +258,31 @@ SQL);
             ->where('request_id', 1)
             ->value('execution_detail'));
         $this->assertSame(1, $database->table('service_portal.officer_review')->count());
-        $this->assertSame(1, $database->table('service_portal.notification_outbox')->count());
+        $this->assertSame(2, $database->table('service_portal.notification_outbox')->count());
+    }
+
+    public function test_missing_form_head_does_not_block_officer_completion(): void
+    {
+        $resolver = Mockery::mock(ServicePortalRecipientResolver::class);
+        $resolver->shouldReceive('requester')->once()->andReturn([
+            'pers_id' => 1001,
+            'email' => 'requester@g.swu.ac.th',
+            'name' => 'Requester',
+        ]);
+        $resolver->shouldReceive('formHeadRecipients')->once()->andReturn([]);
+
+        $request = (new ServiceRequestWorkflowService($resolver))
+            ->approveByOfficer(1, 4001, ['course_id' => 'COURSE-4832']);
+
+        $this->assertSame('COMPLETED', $request->status_code);
+        $this->assertDatabaseHas('service_portal.notification_outbox', [
+            'request_id' => 1,
+            'notification_type_code' => 'REQUEST_COMPLETED_REQUESTER',
+        ], 'course133');
+        $this->assertDatabaseMissing('service_portal.notification_outbox', [
+            'request_id' => 1,
+            'notification_type_code' => 'REQUEST_COMPLETED_FORM_HEAD',
+        ], 'course133');
     }
 
     public function test_website_officer_approval_records_allocated_domain_and_notifies_requester(): void
@@ -276,9 +301,10 @@ SQL);
             'notification_type_code' => 'REQUEST_COMPLETED_REQUESTER',
             'recipient_email' => 'requester@g.swu.ac.th',
         ], 'course133');
-        $this->assertDatabaseMissing('service_portal.notification_outbox', [
+        $this->assertDatabaseHas('service_portal.notification_outbox', [
             'request_id' => 2,
-            'notification_type_code' => 'REQUEST_COMPLETED_APPROVER',
+            'notification_type_code' => 'REQUEST_COMPLETED_FORM_HEAD',
+            'recipient_email' => 'head@g.swu.ac.th',
         ], 'course133');
     }
 
@@ -356,9 +382,9 @@ SQL);
             ->update(['status_code' => 'PENDING_DEAN_REVIEW']);
 
         $resolver = Mockery::mock(ServicePortalRecipientResolver::class);
-        $resolver->shouldReceive('roleRecipients')
+        $resolver->shouldReceive('formOfficerRecipients')
             ->once()
-            ->with('OFFICER')
+            ->with(Mockery::type(\App\Models\ServicePortal\ServiceRequest::class))
             ->andReturn([[
                 'pers_id' => 4001,
                 'email' => 'officer@g.swu.ac.th',
@@ -394,6 +420,11 @@ SQL);
             'email' => 'requester@g.swu.ac.th',
             'name' => 'Requester',
         ]);
+        $resolver->shouldReceive('formHeadRecipients')->once()->andReturn([[
+            'pers_id' => 5001,
+            'email' => 'head@g.swu.ac.th',
+            'name' => 'Form Head',
+        ]]);
         return $resolver;
     }
 }

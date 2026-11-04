@@ -31,6 +31,41 @@ class ServicePortalRecipientResolver
         return $this->personRecipients($personIds);
     }
 
+    /** @return array<int, array{pers_id: int, email: string, name: string}> */
+    public function formOfficerRecipients(ServiceRequest $request): array
+    {
+        return $this->assignmentRecipients(
+            'service_portal.form_officer_assignment',
+            'officer_pers_id',
+            $request->form_type_code,
+        );
+    }
+
+    /** @return array<int, array{pers_id: int, email: string, name: string}> */
+    public function formHeadRecipients(ServiceRequest $request): array
+    {
+        if (app()->environment('local', 'uat')) {
+            $testPersonId = (int) config('course-workflow.notifications.test_recipient_person_id');
+            $testEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
+
+            if ($testPersonId <= 0 || ! filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException('A valid COURSE133_TEST_PERSON_ID and COURSE133_TEST_EMAIL are required for the test form head.');
+            }
+
+            return [[
+                'pers_id' => $testPersonId,
+                'email' => $testEmail,
+                'name' => 'ผู้รับแจ้งเตือน Head สำหรับทดสอบ',
+            ]];
+        }
+
+        return $this->assignmentRecipients(
+            'service_portal.form_head_assignment',
+            'head_pers_id',
+            $request->form_type_code,
+        );
+    }
+
     /** @return array<int, array{pers_id: int|null, email: string, name: string|null}> */
     public function forFormEvent(ServiceRequest $request, string $notificationTypeCode): array
     {
@@ -79,6 +114,18 @@ class ServicePortalRecipientResolver
             ->unique(fn (array $recipient) => strtolower($recipient['email']))
             ->values()
             ->all();
+    }
+
+    /** @return array<int, array{pers_id: int, email: string, name: string}> */
+    private function assignmentRecipients(string $table, string $personColumn, string $formTypeCode): array
+    {
+        $personIds = \Illuminate\Support\Facades\DB::connection('course133')
+            ->table($table)
+            ->where('form_type_code', $formTypeCode)
+            ->where('is_active', 'Y')
+            ->pluck($personColumn);
+
+        return $this->personRecipients($personIds);
     }
 
     /** @return array{pers_id: int, email: string, name: string} */
