@@ -148,6 +148,13 @@ class SendCourseNotifications extends Command
             'REQUEST_COMPLETED_REQUESTER',
             'REQUEST_RESULT_UPDATED',
             'REQUEST_COMPLETED_FORM_HEAD',
+            'DEAN_REJECTED',
+            'REQUEST_REJECTED',
+            'STUDENT_ROSTER_SUBMITTED',
+            'STUDENT_ROSTER_UPDATED',
+            'STUDENT_ROSTER_REOPEN_REQUESTED',
+            'STUDENT_ROSTER_ACKNOWLEDGED',
+            'STUDENT_ROSTER_REOPENED',
         ], true)) {
             return $this->workflowTemplateMessage($type, $request, $notification);
         }
@@ -365,13 +372,24 @@ class SendCourseNotifications extends Command
         $actionLabel = null;
         $expiresAtText = null;
         $resultText = null;
+        $resultTitle = 'ผลการดำเนินการ';
+        $resultTone = 'info';
         $completedAtText = null;
 
         if ($type === 'DEAN_REVIEW_REQUIRED') {
             $subject = "[รออนุมัติ] คำร้อง {$requestLabel} ของ {$departmentName}";
-            $heading = 'มีคำร้องรอการพิจารณารับรอง';
+            $heading = null;
             $greeting = $request->dean_position_name ?: 'คณบดี/ผู้อำนวยการ';
-            $intro = "มีคำร้องบริการ{$context['service_name']} ของ {$departmentName} รอการพิจารณาจากท่าน";
+            $scopeText = $request->form_type_code === 'CC-ITED-01'
+                ? match ($request->websiteDetail?->site_scope_type) {
+                    'DEPARTMENT' => 'ส่วนงาน',
+                    'PROJECT' => 'โครงการ',
+                    'CONFERENCE' => 'ประชุมวิชาการ',
+                    default => null,
+                }
+                : null;
+            $scopeSuffix = $scopeText ? " สำหรับ{$scopeText}" : '';
+            $intro = "มีคำร้องบริการ{$context['service_name']}{$scopeSuffix} ของ {$departmentName} รอการพิจารณาจากท่าน";
             $expiresAt = now()->addMonthsNoOverflow((int) config('course-workflow.dean.review_link_months', 1));
             $expiresAtText = $this->thaiBuddhistDateTime($expiresAt);
             $actionUrl = URL::temporarySignedRoute(
@@ -385,7 +403,7 @@ class SendCourseNotifications extends Command
             $actionLabel = 'ดูรายละเอียดและพิจารณาคำร้อง';
         } elseif ($type === 'OFFICER_REVIEW_REQUIRED') {
             $subject = "[งานใหม่] คำร้อง {$requestLabel} ของ {$departmentName}";
-            $heading = 'มีรายการคำร้องใหม่เข้ามา';
+            $heading = null;
             $greeting = null;
             $intro = 'มีรายการคำร้องใหม่เข้ามา (หัวหน้าส่วนงานอนุมัติแล้ว)';
             $actionUrl = route('officer.show', $request->request_id);
@@ -396,14 +414,72 @@ class SendCourseNotifications extends Command
             $greeting = $this->personNameFor((int) $request->requester_pers_id, 'ผู้ขอรับบริการ');
             $intro = 'สำนักคอมพิวเตอร์ได้ดำเนินการตามคำร้องของท่านเรียบร้อยแล้ว';
             $resultText = $this->executionResultFor($request);
+        } elseif (in_array($type, ['DEAN_REJECTED', 'REQUEST_REJECTED'], true)) {
+            $isDeanRejection = $type === 'DEAN_REJECTED';
+            $subject = ($isDeanRejection ? '[ไม่รับรอง]' : '[ไม่อนุมัติ]')." คำร้อง {$requestLabel} ของ {$departmentName}";
+            $heading = null;
+            $greeting = $this->personNameFor((int) $request->requester_pers_id, 'ผู้ขอรับบริการ');
+            $rejectedRequestName = match ($request->form_type_code) {
+                'CC-ITED-01' => 'ขอใช้พื้นที่สำหรับจัดทำเว็บไซต์',
+                'CC-ITED-02' => 'ขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์',
+                'CC-ITED-04' => 'ขอเพิ่มพื้นที่บนเว็บไซต์',
+                'CC-ITED-05' => 'ขอสิทธิ์ผู้ดูแลกรอบการประชุมของส่วนงานบนระบบ e-Meeting',
+                default => 'ขอสร้างรายวิชาในระบบ SWU Moodle Academy',
+            };
+            $rejectedScopeText = $request->form_type_code === 'CC-ITED-01'
+                ? match ($request->websiteDetail?->site_scope_type) {
+                    'DEPARTMENT' => 'ส่วนงาน',
+                    'PROJECT' => 'โครงการ',
+                    'CONFERENCE' => 'ประชุมวิชาการ',
+                    default => null,
+                }
+                : null;
+            $rejectedScopeSuffix = $rejectedScopeText ? " สำหรับ{$rejectedScopeText}" : '';
+            $intro = $isDeanRejection
+                ? "คณบดี/ผู้อำนวยการ/หัวหน้าส่วนงาน ไม่รับรองคำร้อง {$rejectedRequestName}{$rejectedScopeSuffix}ของท่าน"
+                : "เจ้าหน้าที่ไม่อนุมัติคำร้อง{$rejectedRequestName}{$rejectedScopeSuffix}ของท่าน";
+            $resultTitle = $isDeanRejection ? 'เหตุผลที่ไม่รับรอง' : 'เหตุผลที่ไม่อนุมัติ';
+            $resultTone = 'danger';
+            $resultText = $isDeanRejection
+                ? ($request->deanReviews()->latest('decided_at')->value('comment') ?: '—')
+                : ($request->officerReviews()->latest('reviewed_at')->value('rejection_reason') ?: '—');
+        } elseif ($type === 'STUDENT_ROSTER_ACKNOWLEDGED') {
+            $subject = "[รับทราบรายชื่อผู้เรียน] คำร้อง {$requestLabel} ของ {$departmentName}";
+            $heading = null;
+            $greeting = $this->personNameFor((int) $request->requester_pers_id, 'ผู้ขอรับบริการ');
+            $intro = 'เจ้าหน้าที่รับทราบรายชื่อผู้เรียนสำหรับคำร้องของท่านแล้ว ระบบล็อกการแก้ไขไฟล์รายชื่อผู้เรียนเรียบร้อยแล้ว';
+            $actionUrl = route('requests.show', $request->request_id);
+            $actionLabel = 'ดูรายละเอียดคำร้อง';
+        } elseif (in_array($type, ['STUDENT_ROSTER_SUBMITTED', 'STUDENT_ROSTER_UPDATED', 'STUDENT_ROSTER_REOPEN_REQUESTED'], true)) {
+            $subject = match ($type) {
+                'STUDENT_ROSTER_SUBMITTED' => "[มีรายชื่อผู้เรียนใหม่] คำร้อง {$requestLabel} ของ {$departmentName}",
+                'STUDENT_ROSTER_UPDATED' => "[อัปเดตรายชื่อผู้เรียน] คำร้อง {$requestLabel} ของ {$departmentName}",
+                default => "[ขอแก้ไขรายชื่อผู้เรียน] คำร้อง {$requestLabel} ของ {$departmentName}",
+            };
+            $heading = null;
+            $greeting = null;
+            $intro = match ($type) {
+                'STUDENT_ROSTER_SUBMITTED' => 'ผู้ยื่นคำร้องได้แนบรายชื่อผู้เรียนแล้ว กรุณาตรวจสอบรายชื่อผู้เรียนของคำร้อง',
+                'STUDENT_ROSTER_UPDATED' => 'ผู้ยื่นคำร้องได้อัปเดตรายชื่อผู้เรียนแล้ว กรุณาตรวจสอบไฟล์รายชื่อผู้เรียนฉบับใหม่',
+                default => 'ผู้ยื่นคำร้องขอแก้ไขรายชื่อผู้เรียน กรุณาพิจารณาเปิดสิทธิ์ให้อัปโหลดรายชื่อผู้เรียนใหม่',
+            };
+            $actionUrl = route('officer.show', $request->request_id);
+            $actionLabel = 'เปิดคำร้อง';
+        } elseif ($type === 'STUDENT_ROSTER_REOPENED') {
+            $subject = "[เปิดสิทธิ์อัปโหลดรายชื่อผู้เรียน] คำร้อง {$requestLabel} ของ {$departmentName}";
+            $heading = null;
+            $greeting = $this->personNameFor((int) $request->requester_pers_id, 'ผู้ขอรับบริการ');
+            $intro = 'เจ้าหน้าที่อนุญาตให้ท่านอัปโหลดรายชื่อผู้เรียนใหม่แล้ว กรุณาเปิดคำร้องเพื่ออัปโหลดไฟล์รายชื่อผู้เรียนฉบับใหม่';
+            $actionUrl = route('requests.show', $request->request_id);
+            $actionLabel = 'ดูรายละเอียดคำร้อง';
         } else {
             $subject = "[แจ้งเพื่อทราบ] ดำเนินการคำร้อง {$requestLabel} ของ {$departmentName} เรียบร้อย";
-            $heading = 'แจ้งผลการดำเนินการคำร้อง';
+            $heading = null;
             $greeting = $this->personNameFor((int) $notification->recipient_pers_id, 'หัวหน้าส่วนงาน');
             $completedAtText = $request->completed_at
                 ? $this->thaiBuddhistDateTime($request->completed_at)
                 : $this->thaiBuddhistDateTime(now());
-            $intro = "ได้ดำเนินการคำร้อง {$requestLabel} ของ {$departmentName} เรียบร้อยแล้ว เมื่อ {$completedAtText}";
+            $intro = "ได้ดำเนินการคำร้อง {$requestLabel} ของ {$departmentName} เรียบร้อยแล้ว\nเมื่อ {$completedAtText}";
         }
 
         $plainRows = collect($context['rows'])
@@ -411,7 +487,7 @@ class SendCourseNotifications extends Command
             ->implode("\n");
         $body = ($greeting ? "เรียน {$greeting}\n\n" : '')
             .$intro."\n\n"
-            .($resultText ? "ผลการดำเนินการ\n{$resultText}\n\n" : '')
+            .($resultText ? "{$resultTitle}\n{$resultText}\n\n" : '')
             .$plainRows
             .($actionUrl ? "\n\n{$actionLabel}: {$actionUrl}" : '')
             .($expiresAtText ? "\n\nลิงก์หมดอายุวันที่ {$expiresAtText}" : '');
@@ -423,6 +499,8 @@ class SendCourseNotifications extends Command
             'intro' => $intro,
             'rows' => $context['rows'],
             'resultText' => $resultText,
+            'resultTitle' => $resultTitle,
+            'resultTone' => $resultTone,
             'actionUrl' => $actionUrl,
             'actionLabel' => $actionLabel,
             'expiresAtText' => $expiresAtText,

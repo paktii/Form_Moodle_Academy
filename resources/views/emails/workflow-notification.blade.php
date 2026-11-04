@@ -18,23 +18,25 @@
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-family:'Sarabun','Noto Sans Thai',Tahoma,Arial,sans-serif;">
         <tr>
             <td align="center">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:800px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
                     <tr>
                         <td style="padding:24px 28px;background:#123365;color:#ffffff;font-size:20px;font-weight:700;">แบบฟอร์มขอรับบริการ สำนักคอมพิวเตอร์</td>
                     </tr>
                     <tr>
                         <td class="email-card-content" style="padding:28px;">
-                            <h1 style="margin:0 0 18px;font-size:22px;line-height:1.45;">{{ $heading }}</h1>
+                            @if($heading)
+                                <h1 style="margin:0 0 18px;font-size:22px;line-height:1.45;">{{ $heading }}</h1>
+                            @endif
                             @if($greeting)
                                 <p style="margin:0 0 16px;line-height:1.7;">เรียน {{ $greeting }}</p>
                             @endif
-                            <p style="margin:0 0 24px;color:#374151;line-height:1.75;">{{ $intro }}</p>
+                            <p style="margin:0 0 24px;color:#374151;line-height:1.75;">{!! nl2br(e($intro)) !!}</p>
 
                             @if($resultText)
-                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:6px;">
+                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:{{ ($resultTone ?? 'info') === 'danger' ? '#fef2f2' : '#f0f7ff' }};border:1px solid {{ ($resultTone ?? 'info') === 'danger' ? '#fecaca' : '#bfdbfe' }};border-radius:6px;">
                                     <tr>
-                                        <td style="padding:16px 18px;line-height:1.75;">
-                                            <strong style="display:block;margin-bottom:6px;color:#123365;">ผลการดำเนินการ</strong>
+                                        <td align="{{ ($resultTone ?? 'info') === 'danger' ? 'center' : 'left' }}" style="padding:16px 18px;line-height:1.75;text-align:{{ ($resultTone ?? 'info') === 'danger' ? 'center' : 'left' }};overflow-wrap:anywhere;word-break:break-word;">
+                                            <strong style="display:block;margin-bottom:6px;color:{{ ($resultTone ?? 'info') === 'danger' ? '#991b1b' : '#123365' }};">{{ $resultTitle ?? 'ผลการดำเนินการ' }}</strong>
                                             {!! nl2br(e($resultText)) !!}
                                         </td>
                                     </tr>

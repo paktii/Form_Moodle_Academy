@@ -62,6 +62,8 @@ class WebsiteDocumentViewTest extends TestCase
         $this->assertStringContainsString('overflow-wrap: anywhere', $html);
         $this->assertStringContainsString('max-width: 210mm', $html);
         $this->assertStringContainsString('align-items: start', $html);
+        $this->assertStringContainsString('page-break-before: always', $html);
+        $this->assertStringContainsString('website-document website-document--staff-page', $html);
         $this->assertStringNotContainsString('website-staff__allocation-lines', $html);
         $this->assertStringNotContainsString('Course ID', $html);
     }

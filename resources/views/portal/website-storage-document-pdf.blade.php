@@ -28,9 +28,9 @@
         <div class="website-field"><span>ชื่อเว็บไซต์</span><b>{{ $text('website_name') }}</b></div>
         <div class="website-field"><span>โดเมน (URL)</span><b>{{ $text('domain_url') }}</b></div>
         <div class="website-field"><span>ผู้ดูแลเว็บไซต์ ชื่อ-นามสกุล</span><b>{{ $contactName }}</b></div>
-        <div class="website-field"><span style="text-align: right; padding-right: 1.25mm">ตำแหน่ง</span><b>{{ $text('contact_position') }}</b></div>
-        <div class="website-field"><span style="text-align: right; padding-right: 1.25mm">E-mail</span><b>{{ $text('contact_email') }}</b></div>
-        <div class="website-field"><span style="text-align: right; padding-right: 1.25mm">โทรศัพท์</span><b>{{ $text('contact_phone') }}</b></div>
+        <div class="website-field"><span>ตำแหน่ง</span><b>{{ $text('contact_position') }}</b></div>
+        <div class="website-field"><span>E-mail</span><b>{{ $text('contact_email') }}</b></div>
+        <div class="website-field"><span>โทรศัพท์</span><b>{{ $text('contact_phone') }}</b></div>
     </section>
     <p style="margin:0 0 3mm">สำนักคอมพิวเตอร์เพิ่มพื้นที่สำหรับจัดทำเว็บไซต์ สำหรับส่วนงาน/โครงการ/ประชุมวิชาการ ต่อครั้งการขอเพิ่มพื้นที่ จำนวน <strong>{{ $requestedSpace }} GB</strong></p>
 
@@ -39,6 +39,8 @@
         <div><h2>สำหรับผู้รับรอง คณบดี/ผู้อำนวยการ</h2><p>ลงชื่อ <span>{{ $deanApproved ? $text('dean_name') : '' }}</span></p><p>ตำแหน่ง <span>{{ $deanApproved ? $text('dean_position') : '' }}</span></p><p>วันที่ <span>{{ $deanApproved ? $thaiDate($record['dean_decided_at'] ?? null) : '' }}</span></p></div>
     </section>
 
+</main>
+<main class="website-document website-document--staff-page">
     <section class="website-staff">
         <h2>สำนักคอมพิวเตอร์</h2>
         <div class="website-staff__section"><strong>สำหรับเจ้าหน้าที่รับเอกสาร</strong><p class="website-staff__signature"><b>ลงชื่อ</b><span>{{ $officerReviewed ? $text('officer_name') : '' }}</span><b>วันที่รับเอกสาร</b><span>{{ $officerReviewed ? $text('officer_reviewed_at') : '' }}</span></p></div>

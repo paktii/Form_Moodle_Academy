@@ -300,6 +300,17 @@
             overflow-wrap: normal;
         }
 
+        .request-table--officer td.request-card__status {
+            padding-inline: 6px;
+        }
+
+        .request-table--officer .request-card__status .status-badge {
+            display: inline-flex;
+            width: auto;
+            min-width: max-content;
+            justify-content: center;
+        }
+
         .request-table--officer .table-actions {
             width: auto;
             white-space: normal;

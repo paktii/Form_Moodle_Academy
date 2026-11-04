@@ -20,6 +20,7 @@ html, body { width: 210mm; max-width: 210mm; height: 297mm; margin: 0; }
 body { color: #111; background: #fff; font-family: Sarabun, sans-serif; font-size: 10pt; line-height: 1.35; }
 
 .website-document { width: 210mm; max-width: 210mm; min-height: 297mm; padding: 13mm 15mm 9mm; overflow-wrap: anywhere; }
+.website-document--staff-page { min-height: 0; break-before: page; page-break-before: always; }
 
 .website-document__header { width: 100%; margin: 0 0 4mm; padding-bottom: 4mm; border-bottom: 1.5pt solid #0e2b5c; }
 .website-document__header img { position: relative; top: 2mm; width: 17mm; height: 17mm; object-fit: contain; vertical-align: middle; }
@@ -47,9 +48,9 @@ body { color: #111; background: #fff; font-family: Sarabun, sans-serif; font-siz
 .website-signatures p { display: grid; grid-template-columns: 18mm 1fr; margin: 2mm 0; }
 .website-signatures p span { min-width: 0; min-height: 5mm; border-bottom: .25mm dotted #222; padding: 0 1mm; overflow-wrap: anywhere; text-align: center; }
 
-.website-staff { margin-top: 3mm; border: .25mm solid #222; }
+.website-staff { width: 100%; margin-top: 0; border: .25mm solid #222; }
 .website-staff > h2 { margin: 0; background: #ececec; padding: 1.2mm 3mm; font-size: 11pt; break-after: avoid; page-break-after: avoid; }
-.website-staff__section { min-height: 12mm; border-top: .25mm solid #222; padding: 1.5mm 3mm; break-inside: avoid; page-break-inside: avoid; }
+.website-staff__section { min-height: 12mm; border-top: .25mm solid #222; padding: 1.5mm 3mm; }
 .website-staff__section > strong { display: block; margin-bottom: 1mm; }
 .website-staff__decisions { display: flex; gap: 8mm; margin: 0 0 1.5mm; font-weight: 700; }
 .website-staff__reason { display: grid; grid-template-columns: 14mm minmax(0, 1fr); gap: 2mm; align-items: start; margin: 1.5mm 0; }

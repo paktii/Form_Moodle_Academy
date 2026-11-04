@@ -81,6 +81,10 @@ class WebsiteStorageViewTest extends TestCase
 
         $this->assertStringContainsString('บริการขอเพิ่มพื้นที่สำหรับจัดทำเว็บไซต์', $pdfHtml);
         $this->assertStringContainsString('ต่อครั้งการขอเพิ่มพื้นที่ จำนวน <strong>1 GB</strong>', $pdfHtml);
+        $this->assertStringContainsString('<span>ตำแหน่ง</span>', $pdfHtml);
+        $this->assertStringContainsString('<span>E-mail</span>', $pdfHtml);
+        $this->assertStringContainsString('<span>โทรศัพท์</span>', $pdfHtml);
+        $this->assertStringNotContainsString('text-align: right; padding-right: 1.25mm', $pdfHtml);
         $this->assertStringContainsString('สำหรับเจ้าหน้าที่ดำเนินการ', $pdfHtml);
         $this->assertStringContainsString('ผลการดำเนินการ', $pdfHtml);
         $this->assertStringContainsString('website-staff__domain--allocation', $pdfHtml);

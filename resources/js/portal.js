@@ -506,6 +506,25 @@ document.querySelectorAll('[data-conditional]').forEach((conditional) => {
     update();
 });
 
+document.querySelectorAll('[data-emeeting-current-contact]').forEach((section) => {
+    const controls = [...section.querySelectorAll('input, select, textarea')];
+    const requiredIndicators = [...section.querySelectorAll('[data-required-indicator]')];
+    const actionTypeRadios = [...document.querySelectorAll('input[name="action_type"]')];
+    function update() {
+        const isChangeContact = actionTypeRadios.some((radio) => radio.checked && radio.value === 'CHANGE_CONTACT');
+        controls.forEach((control) => {
+            control.required = isChangeContact;
+            control.disabled = !isChangeContact;
+            if (!isChangeContact) control.value = '';
+        });
+        requiredIndicators.forEach((indicator) => {
+            indicator.hidden = !isChangeContact;
+        });
+    }
+    actionTypeRadios.forEach((radio) => radio.addEventListener('change', update));
+    update();
+});
+
 const websitePeriod = document.querySelector('[data-website-period]');
 if (websitePeriod) {
     const updateWebsitePeriod = () => {
@@ -532,7 +551,7 @@ if (activityDetails) {
         activityInputs.forEach((input) => {
             if (isEventBased) input.value = '';
             input.required = isPhaseBased;
-            input.disabled = isEventBased;
+            input.disabled = !isPhaseBased;
             const requiredIndicator = input.closest('.form-label')?.querySelector('[data-required-indicator]');
             if (requiredIndicator) requiredIndicator.hidden = !isPhaseBased;
         });

@@ -46,6 +46,8 @@
         <div><h2>สำหรับผู้รับรอง คณบดี/ผู้อำนวยการ</h2><p>ลงชื่อ <span>{{ $deanApproved ? $text('dean_name') : '' }}</span></p><p>ตำแหน่ง <span>{{ $deanApproved ? $text('dean_position') : '' }}</span></p><p>วันที่ <span>{{ $deanApproved ? $thaiDate($record['dean_decided_at'] ?? null) : '' }}</span></p></div>
     </section>
 
+</main>
+<main class="website-document website-document--staff-page">
     <section class="website-staff">
         <h2>สำนักคอมพิวเตอร์</h2>
         <div class="website-staff__section"><strong>สำหรับเจ้าหน้าที่รับเอกสาร</strong><p class="website-staff__signature"><b>ลงชื่อ</b><span>{{ $officerReviewed ? $text('officer_name') : '' }}</span><b>วันที่รับเอกสาร</b><span>{{ $officerReviewed ? $text('officer_reviewed_at') : '' }}</span></p></div>

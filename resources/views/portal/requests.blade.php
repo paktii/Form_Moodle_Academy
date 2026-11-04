@@ -158,7 +158,7 @@ default => $statuses,
                         @else
                         <td class="request-table__number request-card__number">{{ $record['number'] }}</td>
                         @if($role === 'officer')<td class="request-form-type request-card__form-type">{{ $record['form_type_code'] ?? 'CC-ITED-06' }}</td>@endif
-                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">{{ $record['project_name'] }}</span>@if($role === 'officer')<small class="request-card__mobile-form-type">{{ $record['form_type_code'] ?? 'CC-ITED-06' }}</small>@endif</td>
+                        <td class="course-cell request-card__title"><span title="{{ $record['project_name'] }}">@if($role === 'officer' && ($record['form_type_code'] ?? '') === 'CC-ITED-05' && str_contains($record['project_name'], 'SWU e-Meeting')){{ trim(\Illuminate\Support\Str::beforeLast($record['project_name'], 'SWU e-Meeting')) }}<br>SWU e-Meeting @else{{ $record['project_name'] }}@endif</span>@if($role === 'officer')<small class="request-card__mobile-form-type">{{ $record['form_type_code'] ?? 'CC-ITED-06' }}</small>@endif</td>
                         <td @class([
                             'requester-cell',
                             'request-card__requester',

@@ -71,8 +71,8 @@ $documentDownloadFilename = $requestCode !== ''
                             </div>
                         </fieldset>
                         <div class="form-grid" data-activity-details>
-                            <x-portal-field name="activity_round" label="วงรอบ/รุ่นที่" :value="$value('activity_round')" placeholder="เช่น รุ่นที่ 1" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') === 'แบบเปิดตามกรอบระยะเวลาของโครงการ (Event / Project-based)'" />
-                            <x-portal-field name="activity_phase" label="เฟส" :value="$value('activity_phase')" placeholder="เช่น เฟส 1/2569" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') === 'แบบเปิดตามกรอบระยะเวลาของโครงการ (Event / Project-based)'" />
+                            <x-portal-field name="activity_round" label="วงรอบ/รุ่นที่" :value="$value('activity_round')" placeholder="เช่น รุ่นที่ 1" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') !== 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" />
+                            <x-portal-field name="activity_phase" label="เฟส" :value="$value('activity_phase')" placeholder="เช่น เฟส 1/2569" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') !== 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" />
                         </div>
                         <fieldset class="radio-fieldset">
                             <legend>ระยะเวลาดำเนินกิจกรรม:</legend>

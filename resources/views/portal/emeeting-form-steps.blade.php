@@ -1,5 +1,6 @@
 @php
 $value = fn ($key, $default = '') => old($key, $data[$key] ?? $default);
+$isChangeContact = $value('action_type') === 'CHANGE_CONTACT';
 $requestNumber = (string) ($data['request_no'] ?? $data['number'] ?? '');
 $requestCode = \Illuminate\Support\Str::afterLast($requestNumber, '-');
 $documentDownloadFilename = $requestCode !== '' ? "CC-ITED-05_{$requestCode}.pdf" : 'CC-ITED-05.pdf';
@@ -22,11 +23,11 @@ $documentDownloadFilename = $requestCode !== '' ? "CC-ITED-05_{$requestCode}.pdf
                                 <label><input type="radio" name="action_type" value="NEW_ACCESS" @checked($value('action_type') === 'NEW_ACCESS') required>ขอสิทธิ์ผู้ดูแล</label>
                                 <label><input type="radio" name="action_type" value="CHANGE_CONTACT" @checked($value('action_type') === 'CHANGE_CONTACT') required>เปลี่ยนแปลงสิทธิ์ผู้ดูแล</label>
                             </div>
-                            <section class="emeeting-current-contact" data-conditional="action_type" data-when="CHANGE_CONTACT" @if($value('action_type') !== 'CHANGE_CONTACT') hidden @endif>
+                            <section class="emeeting-current-contact" data-emeeting-current-contact>
                                 <h3 class="website-contact-change-subheading">ผู้ดูแลเดิม</h3>
                                 <div class="form-grid">
-                                    <x-portal-field name="current_contact_first" label="ชื่อ" :value="$value('current_contact_first')" placeholder="ระบุชื่อผู้ดูแลเดิม" :required="true" />
-                                    <x-portal-field name="current_contact_last" label="นามสกุล" :value="$value('current_contact_last')" placeholder="ระบุนามสกุลผู้ดูแลเดิม" :required="true" />
+                                    <x-portal-field name="current_contact_first" label="ชื่อ" :value="$isChangeContact ? $value('current_contact_first') : ''" placeholder="ระบุชื่อผู้ดูแลเดิม" :required="$isChangeContact" :disabled="!$isChangeContact" />
+                                    <x-portal-field name="current_contact_last" label="นามสกุล" :value="$isChangeContact ? $value('current_contact_last') : ''" placeholder="ระบุนามสกุลผู้ดูแลเดิม" :required="$isChangeContact" :disabled="!$isChangeContact" />
                                 </div>
                             </section>
                         </fieldset>
