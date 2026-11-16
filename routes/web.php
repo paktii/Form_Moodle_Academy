@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\AdminController;
 use Illuminate\Support\Facades\Route;
 
 Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')->group(function () {
@@ -30,10 +31,11 @@ Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')
         ->middleware('signed')->name('dean.review.legacy-decide');
 
     Route::get('/', 'home')
-        ->middleware('portal.role:user,officer')
+        ->middleware('portal.role:user,officer,admin')
         ->name('requests.index');
 
     Route::middleware('portal.role:user')->group(function () {
+        Route::get('/request/personnel/search', 'searchPersonnel')->name('requests.personnel.search');
         Route::redirect('/request/create', '/request/create/1')->name('requests.create');
         Route::get('/request/create/{step}', 'form')->whereNumber('step')->name('requests.form');
         Route::post('/request/create/{step}', 'saveStep')->whereNumber('step')->name('requests.save-step');
@@ -63,6 +65,7 @@ Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')
 
     Route::middleware('portal.role:officer')->group(function () {
         Route::get('/officer/reviews', 'index')->defaults('role', 'officer')->name('officer.reviews');
+        Route::get('/officer/reports', 'officerReport')->name('officer.reports');
         Route::get('/officer/reviews/{id}', 'detail')->defaults('role', 'officer')->whereNumber('id')->name('officer.show');
         Route::post('/officer/reviews/{id}', 'review')->whereNumber('id')->name('officer.review');
         Route::post('/officer/reviews/{id}/result', 'updateResult')->whereNumber('id')->name('officer.result.update');
@@ -84,3 +87,17 @@ Route::controller(PortalController::class)->middleware('portal.draft.lifecycle')
         Route::get('/request/{id}/attachments/{kind}', 'attachment')->whereNumber('id')->name('requests.attachment');
     });
 });
+
+Route::controller(AdminController::class)
+    ->middleware(['portal.draft.lifecycle', 'portal.role:admin'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/', 'index')->name('dashboard');
+        Route::get('/personnel/search', 'searchPersonnel')->name('personnel.search');
+        Route::put('/deans', 'updateDean')->name('deans.update');
+        Route::put('/forms/{formType}/head', 'updateHead')->name('form-heads.update');
+        Route::delete('/form-heads/{assignment}', 'removeHead')->whereNumber('assignment')->name('form-heads.remove');
+        Route::post('/forms/{formType}/officers', 'addOfficer')->name('form-officers.add');
+        Route::delete('/form-officers/{assignment}', 'removeOfficer')->whereNumber('assignment')->name('form-officers.remove');
+    });

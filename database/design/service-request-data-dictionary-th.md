@@ -135,6 +135,7 @@ Master สถานะกลางสำหรับทุกแบบฟอร�
 | `DRAFT` | แบบร่าง | 0 |
 | `PENDING_DEAN_REVIEW` | รอผู้รับรอง | 0 |
 | `UNDER_OFFICER_REVIEW` | รอเจ้าหน้าที่ดำเนินการ | 0 |
+| `NOT_ENDORSED` | ไม่รับรอง | 1 |
 | `REJECTED` | ไม่อนุมัติ | 1 |
 | `COMPLETED` | ดำเนินการเสร็จสิ้น | 1 |
 
@@ -220,11 +221,11 @@ Master บทบาทผู้ใช้ในระบบ
 | Column | Type | Key / Null | Default | ความหมาย |
 |---|---|---|---|---|
 | `role_id` | smallint identity | PK | auto | รหัสบทบาท |
-| `role_code` | varchar(30) | UK, NOT NULL | — | `USER` หรือ `OFFICER` |
+| `role_code` | varchar(30) | UK, NOT NULL | — | `USER`, `OFFICER` หรือ `ADMIN` |
 | `role_name_th` | nvarchar(100) | NOT NULL | — | ชื่อบทบาทภาษาไทย |
 | `is_active` | char(1) | NOT NULL | `Y` | `Y` เปิดใช้บทบาท, `N` ปิดใช้บทบาท |
 
-ระบบไม่มี role `ADMIN` คำว่า “ผู้ดูแลเว็บไซต์” และ “ผู้ดูแลกรอบการประชุม” เป็นข้อมูลผู้รับบริการภายในคำร้อง ไม่ใช่สิทธิ์ผู้ดูแลระบบ
+role `ADMIN` ใช้เฉพาะหน้าจัดการผู้รับรองและผู้รับผิดชอบแบบฟอร์ม ส่วนคำว่า “ผู้ดูแลเว็บไซต์” และ “ผู้ดูแลกรอบการประชุม” ยังคงเป็นข้อมูลผู้รับบริการภายในคำร้อง ไม่ใช่สิทธิ์ผู้ดูแลระบบ
 
 ## `service_portal.user_role_assignment`
 
@@ -341,8 +342,10 @@ Header กลางของทุกคำร้อง หน้า Home ต้
 | `form_type_code` | varchar(20) | FK, NOT NULL | — | ประเภทแบบฟอร์ม |
 | `requester_pers_id` | int | LR, NOT NULL | — | ผู้ยื่นจาก `Officer.personId` |
 | `target_dept_id` | int | LR, NOT NULL | — | ส่วนงานที่เป็นเจ้าของคำร้องจาก `Department.deptCd` |
-| `dean_pers_id` | int | LR, NOT NULL | — | ผู้รับรองที่เลือกจาก `faculty_dean` |
-| `dean_position_name` | nvarchar(300) | NULL | `NULL` | Snapshot ตำแหน่งบริหารของผู้รับรอง ณ เวลายื่นคำร้อง |
+| `dean_pers_id` | int | LR, NOT NULL | — | ผู้รับรองที่ต้องรับอีเมลและพิจารณาคำร้อง; เมื่อมีผู้รักษาการแทนจะเก็บ `personId` ของผู้รักษาการแทน |
+| `dean_position_name` | nvarchar(300) | NULL | `NULL` | Snapshot ตำแหน่งบริหารของผู้รับรองตัวจริง ณ เวลายื่นคำร้อง |
+| `dean_principal_pers_id` | int | LR, NULL | `NULL` | `personId` ของผู้รับรองตัวจริงที่ผู้ยื่นเลือก |
+| `dean_is_acting` | bit | NOT NULL | `0` | `1` เมื่อมอบคำร้องให้ผู้รักษาการแทนพิจารณา |
 | `request_title` | nvarchar(500) | NOT NULL | — | ข้อความสรุปที่แสดงในหน้า Home เช่นชื่อเว็บไซต์หรือชื่อโครงการ |
 | `status_code` | varchar(40) | FK, NOT NULL | `DRAFT` | สถานะปัจจุบัน อ้าง `request_status` |
 | `submitted_at` | datetime2 | NULL | `NULL` | เวลายื่นคำร้องครั้งแรก |
@@ -406,8 +409,8 @@ Metadata ของไฟล์คำร้อง ไฟล์จริงอย�
 | `dean_review_id` | bigint identity | PK | auto | รหัสผลรับรอง |
 | `request_id` | bigint | FK, NOT NULL | — | อ้าง `service_request.request_id` |
 | `dean_pers_id` | int | LR, NOT NULL | — | ผู้รับรอง |
-| `decision` | varchar(20) | NOT NULL | — | `APPROVED` หรือ `REJECTED` |
-| `comment` | nvarchar(max) | Conditional | `NULL` | บังคับเมื่อ `decision = REJECTED` |
+| `decision` | varchar(20) | NOT NULL | — | `APPROVED` หรือ `NOT_ENDORSED` |
+| `comment` | nvarchar(max) | Conditional | `NULL` | บังคับเมื่อ `decision = NOT_ENDORSED` |
 | `decided_at` | datetime2 | NOT NULL | `SYSDATETIME()` | เวลาบันทึกผล |
 
 ## `service_portal.officer_review`
@@ -592,7 +595,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 |---|---|---|---|
 | `DRAFT` | ส่งคำร้อง | `PENDING_DEAN_REVIEW` | Requester |
 | `PENDING_DEAN_REVIEW` | รับรอง | `UNDER_OFFICER_REVIEW` | Dean |
-| `PENDING_DEAN_REVIEW` | ไม่รับรอง | `REJECTED` | Dean |
+| `PENDING_DEAN_REVIEW` | ไม่รับรอง | `NOT_ENDORSED` | Dean |
 | `UNDER_OFFICER_REVIEW` | ไม่อนุมัติ | `REJECTED` | Officer |
 | `UNDER_OFFICER_REVIEW` | อนุมัติและบันทึกผลดำเนินการ | `COMPLETED` | Officer |
 
@@ -674,6 +677,7 @@ Audit trail แบบ append-only ของการเปลี่ยนสถ�
 | `DRAFT` | แบบร่าง | `NEUTRAL` | 0 | 10 |
 | `PENDING_DEAN_REVIEW` | รอผู้รับรอง | `WARNING` | 0 | 20 |
 | `UNDER_OFFICER_REVIEW` | รอเจ้าหน้าที่ดำเนินการ | `INFO` | 0 | 40 |
+| `NOT_ENDORSED` | ไม่รับรอง | `DANGER` | 1 | 50 |
 | `REJECTED` | ไม่อนุมัติ | `DANGER` | 1 | 60 |
 | `COMPLETED` | ดำเนินการเสร็จสิ้น | `SUCCESS` | 1 | 70 |
 

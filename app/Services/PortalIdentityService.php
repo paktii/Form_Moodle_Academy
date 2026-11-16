@@ -14,7 +14,7 @@ class PortalIdentityService
 
     public function authenticate(string $buasriId, string $password): ?array
     {
-        if (! $this->ldapAuthenticator->authenticate($buasriId, $password)) {
+        if (!$this->ldapAuthenticator->authenticate($buasriId, $password)) {
             return null;
         }
 
@@ -40,12 +40,14 @@ class PortalIdentityService
             'name' => $this->personnelDirectory->name($person),
             'email' => $email,
             'label' => match ($role) {
+                'admin' => 'ผู้ดูแลระบบ',
                 'officer' => 'เจ้าหน้าที่',
                 default => 'บุคลากร',
             },
             'role' => $role,
             'available_roles' => collect(['user'])
-                ->when($roleCodes->contains('OFFICER'), fn ($roles) => $roles->push('officer'))
+                ->when($roleCodes->contains('OFFICER'), fn($roles) => $roles->push('officer'))
+                ->when($roleCodes->contains('ADMIN'), fn($roles) => $roles->push('admin'))
                 ->all(),
         ];
     }
@@ -63,7 +65,8 @@ class PortalIdentityService
         if ($database->table('service_portal.form_officer_assignment')
             ->where('officer_pers_id', $personId)
             ->where('is_active', 'Y')
-            ->exists()) {
+            ->exists()
+        ) {
             $roleCodes->push('OFFICER');
         }
 
@@ -72,6 +75,10 @@ class PortalIdentityService
 
     private function roleFromCodes($roleCodes): string
     {
+        if ($roleCodes->contains('ADMIN')) {
+            return 'admin';
+        }
+
         if ($roleCodes->contains('OFFICER')) {
             return 'officer';
         }

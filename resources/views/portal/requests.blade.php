@@ -8,6 +8,7 @@ $description = match ($role) {
     default => 'ติดตามขั้นตอนและประวัติการส่งเอกสารของคำร้องขอรับบริการทั้งหมดของคุณ',
 };
 $detailRoute = $isUser ? 'requests.show' : ($role === 'officer' ? 'officer.show' : 'approver.show');
+$filterFormTypeCodes = collect($formTypeCodes ?? ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06']);
 $completedRequests = $isUser ? $records->filter(fn ($record) => $record['status'] === 'COMPLETED' && filled($record['completion_notification_id'] ?? null)) : collect();
 $pendingOfficerReviews = $role === 'officer' ? $records->where('status', 'UNDER_OFFICER_REVIEW')->count() : 0;
 $pendingApprovals = $role === 'approver' ? $records->where('status', 'PENDING_APPROVAL')->count() : 0;
@@ -26,6 +27,7 @@ $filterStatuses = match ($role) {
 ],
 'approver' => [
 'PENDING_APPROVAL' => 'รออนุมัติ',
+'NOT_ENDORSED' => 'ไม่รับรอง',
 'REJECTED' => 'ไม่อนุมัติ',
 'COURSE_ID_RECORDED' => 'เสร็จสมบูรณ์',
 ],
@@ -57,6 +59,7 @@ default => $statuses,
                 <h2 class="page-heading__title">เอกสารรอการตรวจสอบและลงนาม</h2>
                 <p class="page-heading__description">ตรวจสอบความถูกต้องของเอกสารและคำร้อง</p>
             </div>
+            <x-portal-button :href="route('officer.reports')" variant="secondary"><x-portal-icon name="chart-pie" />ดูรายงาน</x-portal-button>
         </div>
         @endif
         @if($role === 'officer' && ($pendingOfficerReviews || $rosterUpdates))
@@ -73,7 +76,7 @@ default => $statuses,
             <div class="type-filter-menu" data-type-filter-menu>
                 <select class="filter-control type-filter-menu__native" data-type-filter aria-label="กรองประเภทคำร้อง">
                     <option value="">ประเภทคำร้องทั้งหมด</option>
-                    @foreach(['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06'] as $formTypeCode)
+                    @foreach($filterFormTypeCodes as $formTypeCode)
                     <option value="{{ $formTypeCode }}">{{ $formTypeCode }}</option>
                     @endforeach
                 </select>
@@ -82,7 +85,7 @@ default => $statuses,
                 </button>
                 <div id="request-type-filter-options" class="type-filter-menu__options" role="listbox" hidden data-type-filter-options>
                     <button type="button" role="option" aria-selected="true" data-type-filter-option data-value="">ประเภทคำร้องทั้งหมด</button>
-                    @foreach(['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06'] as $formTypeCode)
+                    @foreach($filterFormTypeCodes as $formTypeCode)
                     <button type="button" role="option" aria-selected="false" data-type-filter-option data-value="{{ $formTypeCode }}">{{ $formTypeCode }}</button>
                     @endforeach
                 </div>

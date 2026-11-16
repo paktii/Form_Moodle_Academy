@@ -8,7 +8,7 @@ class DeanPdfSignatureVisibilityTest extends TestCase
 {
     public function test_dean_identity_is_hidden_until_the_request_is_approved(): void
     {
-        foreach ([null, 'REJECTED'] as $decision) {
+        foreach ([null, 'NOT_ENDORSED'] as $decision) {
             $html = view('portal.partials.document-content', [
                 'record' => $this->record($decision),
             ])->render();

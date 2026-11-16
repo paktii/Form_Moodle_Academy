@@ -50,6 +50,10 @@ class WebsiteContactChangeViewTest extends TestCase
             strpos($stepTwo, 'website-certification') < strpos($stepTwo, 'สำนักคอมพิวเตอร์จะทำการเปลี่ยนรหัสผ่านของ Account'),
         );
         $this->assertStringContainsString('name="dean_pers_id"', $stepThree);
+        $this->assertStringContainsString('name="dean_is_acting"', $stepThree);
+        $this->assertStringContainsString('name="acting_dean_buasri_id"', $stepThree);
+        $this->assertStringContainsString('หมายเหตุ:', $stepThree);
+        $this->assertStringContainsString('ited@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('data-searchable-select-show-all-on-focus', $stepThree);
         $this->assertStringContainsString('pakteema@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('CC-ITED-02_000123.pdf', $stepThree);

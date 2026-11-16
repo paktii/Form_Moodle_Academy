@@ -1,4 +1,4 @@
-@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null, 'optionParents' => [], 'dependsOn' => null, 'parentValue' => null, 'dependencyPlaceholder' => 'กรุณาเลือกหน่วยงานหลักก่อน', 'showAllOnFocus' => false])
+@props(['name', 'label', 'options' => [], 'value' => '', 'placeholder' => 'พิมพ์เพื่อค้นหา', 'required' => false, 'id' => null, 'optionParents' => [], 'dependsOn' => null, 'parentValue' => null, 'dependencyPlaceholder' => 'กรุณาเลือกหน่วยงานหลักก่อน', 'showAllOnFocus' => false, 'note' => null])
 @php
     $inputId = $id ?? 'field-'.str_replace(['[', ']'], ['-', ''], $name);
     $listId = $inputId.'-options';
@@ -53,4 +53,7 @@
             <p class="searchable-select__empty" role="status" hidden data-searchable-select-empty>ไม่พบหน่วยงานที่ค้นหา</p>
         </div>
     </div>
+    @if(filled($note))
+        <span class="searchable-select__note"><strong>หมายเหตุ:</strong> {{ $note }}</span>
+    @endif
 </label>

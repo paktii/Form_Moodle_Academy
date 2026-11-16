@@ -7,6 +7,8 @@
 @import './pages/request-detail.css';
 @import './pages/document.css';
 @import './pages/requester-shell.css';
+@import './pages/report.css';
+@import './pages/admin.css';
 
 @font-face {
     font-family: 'Sarabun';

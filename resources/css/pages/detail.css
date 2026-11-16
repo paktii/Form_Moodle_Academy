@@ -111,6 +111,15 @@
         overflow-wrap: anywhere;
     }
 
+    .dean-approval-card .document-row > .portal-icon {
+        align-self: flex-start;
+        margin-top: 4px;
+    }
+
+    .dean-approval-card__summary {
+        line-height: 1.6;
+    }
+
     .detail-field__multiline {
         white-space: pre-wrap;
     }
@@ -145,6 +154,11 @@
 
     .course-result__edit {
         color: #0e2b5c;
+    }
+
+    .course-result .document-row > .portal-icon {
+        align-self: flex-start;
+        margin-top: 4px;
     }
 
     .execution-detail-text {
@@ -415,6 +429,12 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+
+        .detail-page--officer .dean-approval-card .document-row__name {
+            overflow: visible;
+            text-overflow: clip;
+            white-space: normal;
         }
 
         .detail-page--officer .attachment-card .roster-document-row .document-row__name {

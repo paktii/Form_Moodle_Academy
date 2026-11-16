@@ -11,6 +11,7 @@ class DocumentPdfRenderer
 {
     public function render(array $record): string
     {
+        $record['dean_position'] = $this->deanPositionForPdf($record);
         $workingDirectory = storage_path('framework/pdf/'.Str::uuid());
         File::ensureDirectoryExists($workingDirectory);
 
@@ -28,7 +29,7 @@ class DocumentPdfRenderer
             };
             File::put($htmlPath, view($view, compact('record'))->render());
 
-            $process = new Process([
+            $command = [
                 $this->browserPath(),
                 '--headless=new',
                 '--disable-gpu',
@@ -43,6 +44,19 @@ class DocumentPdfRenderer
                 '--user-data-dir='.$profilePath,
                 '--print-to-pdf='.$pdfPath,
                 $this->fileUrl($htmlPath),
+            ];
+
+            if (config('document-pdf.no_sandbox', false)) {
+                array_splice($command, 1, 0, [
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                ]);
+            }
+
+            $process = new Process($command, null, [
+                'HOME' => $workingDirectory,
+                'XDG_CONFIG_HOME' => $workingDirectory.DIRECTORY_SEPARATOR.'xdg-config',
+                'XDG_CACHE_HOME' => $workingDirectory.DIRECTORY_SEPARATOR.'xdg-cache',
             ]);
             $process->setTimeout((float) config('document-pdf.timeout', 60));
             $process->mustRun();
@@ -55,6 +69,18 @@ class DocumentPdfRenderer
         } finally {
             $this->deleteWorkingDirectory($workingDirectory);
         }
+    }
+
+    private function deanPositionForPdf(array $record): ?string
+    {
+        $position = trim((string) ($record['dean_position'] ?? ''));
+        if ($position === '') {
+            return null;
+        }
+
+        return ! empty($record['dean_is_acting']) && ! str_starts_with($position, 'รักษาการแทน')
+            ? 'รักษาการแทน'.$position
+            : $position;
     }
 
     private function deleteWorkingDirectory(string $workingDirectory): void

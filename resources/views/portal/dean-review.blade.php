@@ -60,7 +60,7 @@
     @if(! $linkInvalidated && ! $alreadyProcessed)
         <x-portal-modal id="dean-approve-dialog" title="ยืนยันการรับรองคำร้อง">
             <p class="confirmation-message">คุณต้องการรับรองคำร้องนี้ใช่หรือไม่?<br>ระบบจะส่งต่อคำร้องให้เจ้าหน้าที่ตรวจสอบ</p>
-            <form method="post" action="{{ $decisionUrl }}">
+            <form method="post" action="{{ $decisionUrl }}" data-portal-ajax-action>
                 @csrf
                 <input type="hidden" name="decision" value="approve">
                 <div class="modal-actions">
@@ -70,7 +70,7 @@
             </form>
         </x-portal-modal>
         <x-portal-modal id="dean-reject-dialog" title="ยืนยันไม่รับรองคำร้อง" :auto-open="$errors->has('reason')">
-            <form method="post" action="{{ $decisionUrl }}">
+            <form method="post" action="{{ $decisionUrl }}" data-portal-ajax-action>
                 @csrf
                 <input type="hidden" name="decision" value="reject">
                 <div data-dean-reject-entry>

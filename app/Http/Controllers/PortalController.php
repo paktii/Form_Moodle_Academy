@@ -12,12 +12,16 @@ use App\Models\NotificationOutbox;
 use App\Models\OfficerReview;
 use App\Models\ProjectType;
 use App\Models\RequestStatusHistory;
+use App\Models\ServicePortal\FormOfficerAssignment;
+use App\Models\ServicePortal\FormType;
 use App\Models\ServicePortal\WebsitePlatform;
 use App\Services\DepartmentDirectory;
 use App\Services\DocumentPdfRenderer;
 use App\Services\PersonnelDirectory;
 use App\Services\PortalIdentityService;
+use Carbon\Carbon;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +45,25 @@ class PortalController extends Controller
     ) {
     }
 
+    public function searchPersonnel(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:200'],
+        ]);
+
+        $results = collect($this->personnelDirectory->searchActive($data['q']))
+            ->map(fn (object $person) => [
+                'value' => (string) $person->buasri_id,
+                'name' => $this->personnelDirectory->name($person),
+                'buasri_id' => (string) $person->buasri_id,
+                'department' => trim((string) $person->division),
+                'person_id' => (int) $person->person_id,
+            ])
+            ->values();
+
+        return response()->json(['results' => $results]);
+    }
+
     public function login(Request $request)
     {
         if ($request->session()->has('portal.actor') && ! config('course-workflow.dev_role_switcher')) {
@@ -55,7 +78,7 @@ class PortalController extends Controller
         $credentials = $request->validate([
             'buasri_id' => 'required|string|max:100',
             'password'  => 'required|string|max:255',
-            'login_role' => ['nullable', Rule::in(['user', 'officer'])],
+            'login_role' => ['nullable', Rule::in(['user', 'officer', 'admin'])],
         ]);
 
         $buasriId = Str::lower(Str::before(trim($credentials['buasri_id']), '@'));
@@ -91,7 +114,11 @@ class PortalController extends Controller
             }
 
             $matched['role'] = $requestedRole;
-            $matched['label'] = $requestedRole === 'officer' ? 'เจ้าหน้าที่' : 'ผู้ใช้งาน';
+            $matched['label'] = match ($requestedRole) {
+                'admin' => 'ผู้ดูแลระบบ',
+                'officer' => 'เจ้าหน้าที่',
+                default => 'ผู้ใช้งาน',
+            };
         }
         if (config('course-workflow.dev_role_switcher')) {
             $request->session()->put('portal.available_roles', $matched['available_roles'] ?? [$matched['role']]);
@@ -232,12 +259,12 @@ class PortalController extends Controller
             $deanPersonId = (int) $courseRequest->dean_pers_id;
             abort_unless($deanPersonId > 0, 409);
             $deanActor = $this->personActor($deanPersonId, 'คณบดี');
-            $status = $decision === 'approve' ? 'UNDER_OFFICER_REVIEW' : 'REJECTED';
+            $status = $decision === 'approve' ? 'UNDER_OFFICER_REVIEW' : 'NOT_ENDORSED';
 
             DeanReview::create([
                 'request_id' => $courseRequest->request_id,
                 'dean_pers_id' => $deanPersonId,
-                'decision' => $decision === 'approve' ? 'APPROVED' : 'REJECTED',
+                'decision' => $decision === 'approve' ? 'APPROVED' : 'NOT_ENDORSED',
                 'comment' => $decision === 'approve' ? null : trim($data['reason']),
                 'decided_at' => now(),
             ]);
@@ -262,15 +289,21 @@ class PortalController extends Controller
                 'notification' => $notificationId,
             ],
         );
-        $redirect = redirect()->to($confirmationUrl);
-
         if (! $result['processed']) {
-            return $redirect;
+            return $this->actionResponse(
+                $request,
+                'คำร้องนี้ได้รับการดำเนินการแล้ว',
+                $confirmationUrl,
+            );
         }
 
-        return $redirect->with('success', $decision === 'approve'
-            ? 'รับรองคำร้องเรียบร้อยแล้ว<br>ระบบส่งต่อให้เจ้าหน้าที่ตรวจสอบแล้ว'
-            : 'บันทึกผลไม่รับรองเรียบร้อยแล้ว<br>ระบบแจ้งผู้ยื่นคำร้องแล้ว');
+        return $this->actionResponse(
+            $request,
+            $decision === 'approve'
+                ? 'รับรองคำร้องเรียบร้อยแล้ว<br>ระบบส่งต่อให้เจ้าหน้าที่ตรวจสอบแล้ว'
+                : 'บันทึกผลไม่รับรองเรียบร้อยแล้ว<br>ระบบแจ้งผู้ยื่นคำร้องแล้ว',
+            $confirmationUrl,
+        );
     }
 
     public function home(Request $request)
@@ -287,17 +320,20 @@ class PortalController extends Controller
     public function index(Request $request, string $role = 'user')
     {
         $query = CourseRequest::query()->with($this->recordRelations());
+        $formTypeCodes = ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05', 'CC-ITED-06'];
 
         if ($role === 'user') {
             $query->where('requester_pers_id', $this->actor($request)['pers_id'])
                   ->orderByDesc('created_at');
         } elseif ($role === 'officer') {
-            $query->whereIn('status_code', ['UNDER_OFFICER_REVIEW', 'COMPLETED', 'REJECTED'])
+            $formTypeCodes = $this->officerFormTypeCodes($request);
+            $query->whereIn('form_type_code', $formTypeCodes)
+                  ->whereIn('status_code', ['UNDER_OFFICER_REVIEW', 'COMPLETED', 'REJECTED'])
                   ->orderByRaw("CASE WHEN [status_code] = 'UNDER_OFFICER_REVIEW' THEN 0 WHEN [status_code] = 'REJECTED' THEN 2 ELSE 1 END")
                   ->orderByRaw("CASE WHEN [status_code] = 'UNDER_OFFICER_REVIEW' THEN [created_at] END ASC")
                   ->orderByDesc('created_at');
         } else {
-            $query->whereIn('status_code', ['COMPLETED', 'REJECTED'])
+            $query->whereIn('status_code', ['COMPLETED', 'REJECTED', 'NOT_ENDORSED'])
                   ->orderByDesc('created_at');
         }
 
@@ -306,7 +342,152 @@ class PortalController extends Controller
         $records = $collection->map(fn(CourseRequest $courseRequest) => $this->toRecord($courseRequest));
         $statuses = config('course-workflow.statuses');
 
-        return view('portal.requests', compact('records', 'role', 'statuses'));
+        return view('portal.requests', compact('records', 'role', 'statuses', 'formTypeCodes'));
+    }
+
+    public function officerReport(Request $request)
+    {
+        $formTypes = FormType::query()
+            ->orderBy('sort_order')
+            ->orderBy('form_type_code')
+            ->get(['form_type_code', 'short_name_th']);
+        $decisionOptions = [
+            'approved' => 'อนุมัติแล้ว',
+            'in_progress' => 'กำลังดำเนินการโดยเจ้าหน้าที่',
+            'officer_rejected' => 'ไม่อนุมัติโดยเจ้าหน้าที่',
+            'dean_rejected' => 'ไม่รับรองโดยผู้รับรองของส่วนงาน',
+            'all' => 'ผลการพิจารณาที่สิ้นสุดแล้วทั้งหมด',
+        ];
+        $data = $request->validate([
+            'year' => ['nullable', 'integer', 'between:2000,2100'],
+            'month' => ['nullable', 'integer', 'between:1,12'],
+            'form_type' => ['nullable', 'string', Rule::in($formTypes->pluck('form_type_code')->all())],
+            'decision' => ['nullable', 'string', Rule::in(array_keys($decisionOptions))],
+        ]);
+
+        $selectedYear = (int) ($data['year'] ?? now()->year);
+        $selectedMonth = (int) ($data['month'] ?? now()->month);
+        $selectedFormType = (string) ($data['form_type'] ?? '');
+        $selectedDecision = (string) ($data['decision'] ?? 'approved');
+        $yearStart = Carbon::create($selectedYear, 1, 1)->startOfDay();
+        $yearEnd = $yearStart->copy()->endOfYear();
+        $monthStart = Carbon::create($selectedYear, $selectedMonth, 1)->startOfDay();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+
+        $countsForPeriod = static function (Carbon $start, Carbon $end) use ($selectedFormType, $selectedDecision) {
+            $query = CourseRequest::query()
+                ->select('form_type_code')
+                ->selectRaw('COUNT(*) AS request_count')
+                ->when($selectedFormType !== '', fn ($query) => $query->where('form_type_code', $selectedFormType))
+                ->whereBetween('submitted_at', [$start, $end]);
+
+            match ($selectedDecision) {
+                'in_progress' => $query->where('status_code', 'UNDER_OFFICER_REVIEW'),
+                'officer_rejected' => $query
+                    ->where('status_code', 'REJECTED')
+                    ->whereHas('officerReviews', fn ($reviews) => $reviews->where('decision', 'REJECTED')),
+                'dean_rejected' => $query
+                    ->where('status_code', 'NOT_ENDORSED')
+                    ->whereHas('deanReviews', fn ($reviews) => $reviews->where('decision', 'NOT_ENDORSED')),
+                'all' => $query->whereIn('status_code', ['COMPLETED', 'REJECTED', 'NOT_ENDORSED']),
+                default => $query->where('status_code', 'COMPLETED'),
+            };
+
+            return $query
+                ->groupBy('form_type_code')
+                ->get()
+                ->mapWithKeys(fn (CourseRequest $courseRequest) => [
+                    (string) $courseRequest->form_type_code => (int) $courseRequest->request_count,
+                ]);
+        };
+
+        $yearCounts = $countsForPeriod($yearStart, $yearEnd);
+        $monthCounts = $countsForPeriod($monthStart, $monthEnd);
+        $decisionBreakdownRows = collect();
+        if ($selectedDecision === 'all') {
+            $decisionBreakdownDefinitions = collect([
+                ['key' => 'approved', 'label' => 'อนุมัติแล้ว', 'color' => '#107c41'],
+                ['key' => 'officer_rejected', 'label' => 'ไม่อนุมัติโดยเจ้าหน้าที่', 'color' => '#c2410c'],
+                ['key' => 'dean_rejected', 'label' => 'ไม่รับรองโดยผู้รับรองของส่วนงาน', 'color' => '#b42318'],
+            ]);
+            $decisionCountsForPeriod = static function (Carbon $start, Carbon $end) use ($selectedFormType) {
+                $baseQuery = CourseRequest::query()
+                    ->when($selectedFormType !== '', fn ($query) => $query->where('form_type_code', $selectedFormType))
+                    ->whereBetween('submitted_at', [$start, $end]);
+
+                return collect([
+                    'approved' => (clone $baseQuery)->where('status_code', 'COMPLETED')->count(),
+                    'officer_rejected' => (clone $baseQuery)
+                        ->where('status_code', 'REJECTED')
+                        ->whereHas('officerReviews', fn ($reviews) => $reviews->where('decision', 'REJECTED'))
+                        ->count(),
+                    'dean_rejected' => (clone $baseQuery)
+                        ->where('status_code', 'NOT_ENDORSED')
+                        ->whereHas('deanReviews', fn ($reviews) => $reviews->where('decision', 'NOT_ENDORSED'))
+                        ->count(),
+                ]);
+            };
+            $yearDecisionCounts = $decisionCountsForPeriod($yearStart, $yearEnd);
+            $monthDecisionCounts = $decisionCountsForPeriod($monthStart, $monthEnd);
+            $decisionBreakdownRows = $decisionBreakdownDefinitions->map(fn (array $definition) => [
+                ...$definition,
+                'year_count' => (int) $yearDecisionCounts->get($definition['key'], 0),
+                'month_count' => (int) $monthDecisionCounts->get($definition['key'], 0),
+            ]);
+        }
+        $chartColors = ['#0e2b5c', '#24749b', '#107c41', '#926c00', '#720478'];
+        $reportRows = $formTypes
+            ->map(fn (FormType $formType, int $index) => [
+                'code' => $formType->form_type_code,
+                'name' => $formType->short_name_th,
+                'color' => $chartColors[$index % count($chartColors)],
+                'year_count' => (int) $yearCounts->get($formType->form_type_code, 0),
+                'month_count' => (int) $monthCounts->get($formType->form_type_code, 0),
+            ])
+            ->when($selectedFormType !== '', fn ($rows) => $rows->where('code', $selectedFormType))
+            ->values();
+
+        $earliestSubmittedAt = CourseRequest::query()->whereNotNull('submitted_at')->min('submitted_at');
+        $latestSubmittedAt = CourseRequest::query()->whereNotNull('submitted_at')->max('submitted_at');
+        $earliestYear = $earliestSubmittedAt ? Carbon::parse($earliestSubmittedAt)->year : now()->year;
+        $latestYear = max(now()->year, $latestSubmittedAt ? Carbon::parse($latestSubmittedAt)->year : now()->year);
+        $availableYears = collect(range($latestYear, $earliestYear))
+            ->push($selectedYear)
+            ->unique()
+            ->sortDesc()
+            ->values();
+        $monthNames = collect(range(1, 12))->mapWithKeys(fn (int $month) => [
+            $month => Carbon::create($selectedYear, $month, 1)->locale('th')->translatedFormat('F'),
+        ]);
+        $reportSubject = match ($selectedDecision) {
+            'in_progress' => 'คำร้องที่กำลังดำเนินการโดยเจ้าหน้าที่',
+            'officer_rejected' => 'คำร้องที่เจ้าหน้าที่ไม่อนุมัติ',
+            'dean_rejected' => 'คำร้องที่ผู้รับรองของส่วนงานไม่รับรอง',
+            'all' => 'คำร้องที่สิ้นสุดการพิจารณาแล้ว',
+            default => 'คำร้องที่อนุมัติแล้ว',
+        };
+        $yearTotal = $reportRows->sum('year_count');
+        $monthTotal = $reportRows->sum('month_count');
+        $monthShare = $yearTotal > 0 ? round(($monthTotal / $yearTotal) * 100, 1) : 0.0;
+
+        return view('portal.officer-report', [
+            'selectedYear' => $selectedYear,
+            'selectedMonth' => $selectedMonth,
+            'selectedFormType' => $selectedFormType,
+            'selectedDecision' => $selectedDecision,
+            'selectedYearDisplay' => $selectedYear + 543,
+            'selectedMonthName' => $monthNames[$selectedMonth],
+            'availableYears' => $availableYears,
+            'monthNames' => $monthNames,
+            'formTypes' => $formTypes,
+            'decisionOptions' => $decisionOptions,
+            'reportSubject' => $reportSubject,
+            'decisionBreakdownRows' => $decisionBreakdownRows,
+            'yearTotal' => $yearTotal,
+            'monthTotal' => $monthTotal,
+            'monthShare' => $monthShare,
+            'reportRows' => $reportRows,
+        ]);
     }
 
     public function form(Request $request, int $step = 1)
@@ -397,6 +578,14 @@ class PortalController extends Controller
     {
         abort_unless(in_array($step, [1, 2, 3], true), 404);
 
+        for ($requiredStep = 1; $requiredStep < $step; $requiredStep++) {
+            if (! $request->session()->get("portal.website_contact_change_completed.$requiredStep")) {
+                return redirect()
+                    ->route('website-contact-change-requests.form', $requiredStep)
+                    ->withErrors(['form' => 'ข้อมูลคำร้องในขั้นก่อนหน้าหมดอายุ กรุณากรอกข้อมูลส่วนนี้อีกครั้ง']);
+            }
+        }
+
         $personId = (int) $this->actor($request)['pers_id'];
         $data = $request->session()->get('portal.website_contact_change_draft', []);
         $person = $this->personnelDirectory->findByPersonId($personId);
@@ -442,11 +631,30 @@ class PortalController extends Controller
     {
         abort_unless(in_array($step, [1, 2, 3], true), 404);
 
+        if ($step === 3) {
+            foreach ([1, 2] as $requiredStep) {
+                if (! $request->session()->get("portal.website_contact_change_completed.$requiredStep")) {
+                    return redirect()
+                        ->route('website-contact-change-requests.form', $requiredStep)
+                        ->withErrors(['form' => 'ข้อมูลคำร้องในขั้นก่อนหน้าหมดอายุ กรุณากรอกข้อมูลส่วนนี้อีกครั้ง']);
+                }
+            }
+        }
+
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
+        $isActingDean = $step === 3
+            && ($request->boolean('dean_is_acting') || filled($request->input('acting_dean_buasri_id')));
         $activeDeanPersonIds = $step === 3
-            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_contact_change_draft.target_dept_id', 0))
+            ? $this->validDeanPersonIdsForSubmission(
+                $request,
+                (int) $request->session()->get('portal.website_contact_change_draft.target_dept_id', 0),
+            )
             : [];
         $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
+        $deanRules = [$deanRequired, 'integer'];
+        if (! $isActingDean) {
+            $deanRules[] = Rule::in($activeDeanPersonIds);
+        }
         $rules = match ($step) {
             1 => [
                 'target_dept_id' => [$required, 'integer', Rule::in($this->departmentDirectory->options()->keys()->all())],
@@ -463,9 +671,12 @@ class PortalController extends Controller
                 'new_contact_email' => "$required|email|max:254",
                 'new_contact_phone' => "$required|string|max:50",
             ],
-            3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
+            3 => ['dean_pers_id' => $deanRules],
             default => [],
         };
+        if ($step === 3) {
+            $rules = array_merge($rules, $this->actingDeanRules($required === 'required'));
+        }
         $rules['additional_documents'] = 'nullable|array|max:5';
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
@@ -479,6 +690,9 @@ class PortalController extends Controller
             'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
         ]);
+        if ($step === 3) {
+            $validated = $this->resolveActingDean($validated, $required === 'required');
+        }
 
         if ($step === 2 && $required === 'required') {
             $currentContactName = Str::lower(Str::squish(
@@ -512,7 +726,7 @@ class PortalController extends Controller
 
         $existingDraft = $request->session()->get('portal.website_contact_change_draft', []);
         if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
-            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name'], $existingDraft['dean_is_acting'], $existingDraft['acting_dean_buasri_id'], $existingDraft['acting_dean_pers_id'], $existingDraft['acting_dean_name']);
         }
         $data = array_replace($existingDraft, $validated, ['form_type_code' => 'CC-ITED-02']);
         if (isset($validated['dean_pers_id'])) {
@@ -587,7 +801,7 @@ class PortalController extends Controller
         $keys = match ($step) {
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'domain_url'],
             2 => ['current_contact_first', 'current_contact_last', 'new_contact_first', 'new_contact_last', 'new_contact_position', 'new_contact_email', 'new_contact_phone'],
-            3 => ['dean_pers_id', 'dean_name'],
+            3 => ['dean_pers_id', 'dean_name', 'dean_is_acting', 'acting_dean_buasri_id', 'acting_dean_pers_id', 'acting_dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.website_contact_change_draft', []);
@@ -647,7 +861,10 @@ class PortalController extends Controller
 
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
         $activeDeanPersonIds = $step === 3
-            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.emeeting_draft.target_dept_id', 0))
+            ? $this->validDeanPersonIdsForSubmission(
+                $request,
+                (int) $request->session()->get('portal.emeeting_draft.target_dept_id', 0),
+            )
             : [];
         $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
         $rules = match ($step) {
@@ -672,6 +889,9 @@ class PortalController extends Controller
             3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
             default => [],
         };
+        if ($step === 3) {
+            $rules = array_merge($rules, $this->actingDeanRules($required === 'required'));
+        }
         $rules['additional_documents'] = 'nullable|array|max:5';
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
@@ -687,6 +907,9 @@ class PortalController extends Controller
             'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
         ]);
+        if ($step === 3) {
+            $validated = $this->resolveActingDean($validated, $required === 'required');
+        }
         $removeAdditional = $validated['remove_additional'] ?? [];
         unset($validated['additional_documents'], $validated['remove_additional']);
         if (isset($validated['target_dept_id'])) {
@@ -701,7 +924,7 @@ class PortalController extends Controller
             }
         }
         if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
-            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name'], $existingDraft['dean_is_acting'], $existingDraft['acting_dean_buasri_id'], $existingDraft['acting_dean_pers_id'], $existingDraft['acting_dean_name']);
         }
         if ($step === 1 && ($validated['action_type'] ?? null) === 'NEW_ACCESS') {
             unset($existingDraft['current_contact_first'], $existingDraft['current_contact_last']);
@@ -772,7 +995,7 @@ class PortalController extends Controller
         $keys = match ($step) {
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'action_type', 'current_contact_first', 'current_contact_last'],
             2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
-            3 => ['dean_pers_id', 'dean_name'],
+            3 => ['dean_pers_id', 'dean_name', 'dean_is_acting', 'acting_dean_buasri_id', 'acting_dean_pers_id', 'acting_dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.emeeting_draft', []);
@@ -833,7 +1056,10 @@ class PortalController extends Controller
 
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
         $activeDeanPersonIds = $step === 3
-            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_storage_draft.target_dept_id', 0))
+            ? $this->validDeanPersonIdsForSubmission(
+                $request,
+                (int) $request->session()->get('portal.website_storage_draft.target_dept_id', 0),
+            )
             : [];
         $deanRequired = $required === 'required' && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient()) ? 'required' : 'nullable';
         $rules = match ($step) {
@@ -853,6 +1079,9 @@ class PortalController extends Controller
             3 => ['dean_pers_id' => [$deanRequired, 'integer', Rule::in($activeDeanPersonIds)]],
             default => [],
         };
+        if ($step === 3) {
+            $rules = array_merge($rules, $this->actingDeanRules($required === 'required'));
+        }
         $rules['additional_documents'] = 'nullable|array|max:5';
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
@@ -866,6 +1095,9 @@ class PortalController extends Controller
             'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
         ]);
+        if ($step === 3) {
+            $validated = $this->resolveActingDean($validated, $required === 'required');
+        }
 
         $removeAdditional = $validated['remove_additional'] ?? [];
         unset($validated['additional_documents'], $validated['remove_additional']);
@@ -884,7 +1116,7 @@ class PortalController extends Controller
 
         $existingDraft = $request->session()->get('portal.website_storage_draft', []);
         if ($step === 1 && isset($validated['target_dept_id']) && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
-            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name'], $existingDraft['dean_is_acting'], $existingDraft['acting_dean_buasri_id'], $existingDraft['acting_dean_pers_id'], $existingDraft['acting_dean_name']);
         }
         $data = array_replace($existingDraft, $validated, [
             'form_type_code' => 'CC-ITED-04',
@@ -962,7 +1194,7 @@ class PortalController extends Controller
         $keys = match ($step) {
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'domain_url'],
             2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
-            3 => ['dean_pers_id', 'dean_name'],
+            3 => ['dean_pers_id', 'dean_name', 'dean_is_acting', 'acting_dean_buasri_id', 'acting_dean_pers_id', 'acting_dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.website_storage_draft', []);
@@ -977,7 +1209,10 @@ class PortalController extends Controller
 
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
         $activeDeanPersonIds = $step === 3
-            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.website_draft.target_dept_id', 0))
+            ? $this->validDeanPersonIdsForSubmission(
+                $request,
+                (int) $request->session()->get('portal.website_draft.target_dept_id', 0),
+            )
             : [];
         $deanRequired = $required === 'required'
             && ($activeDeanPersonIds !== [] || $this->usesTestNotificationRecipient())
@@ -1008,6 +1243,9 @@ class PortalController extends Controller
             ],
             default => [],
         };
+        if ($step === 3) {
+            $rules = array_merge($rules, $this->actingDeanRules($required === 'required'));
+        }
         $rules['additional_documents'] = 'nullable|array|max:5';
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
@@ -1024,6 +1262,9 @@ class PortalController extends Controller
             'dean_pers_id.required' => 'กรุณาเลือกคณบดี ผู้อำนวยการ หรือหัวหน้าส่วนงาน',
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงาน',
         ]);
+        if ($step === 3) {
+            $validated = $this->resolveActingDean($validated, $required === 'required');
+        }
 
         $removeAdditional = $validated['remove_additional'] ?? [];
         unset($validated['additional_documents'], $validated['remove_additional']);
@@ -1048,7 +1289,7 @@ class PortalController extends Controller
         if ($step === 1
             && isset($validated['target_dept_id'])
             && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
-            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name'], $existingDraft['dean_is_acting'], $existingDraft['acting_dean_buasri_id'], $existingDraft['acting_dean_pers_id'], $existingDraft['acting_dean_name']);
         }
         $data = array_replace($existingDraft, $validated, ['form_type_code' => 'CC-ITED-01']);
         if ($step <= 2) {
@@ -1158,7 +1399,7 @@ class PortalController extends Controller
         $keys = match ($step) {
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'website_name', 'site_scope_type', 'service_starts_on', 'service_ends_on', 'domain_url', 'platform_code', 'additional_detail'],
             2 => ['contact_first', 'contact_last', 'contact_position', 'contact_email', 'contact_phone'],
-            3 => ['dean_pers_id', 'dean_name'],
+            3 => ['dean_pers_id', 'dean_name', 'dean_is_acting', 'acting_dean_buasri_id', 'acting_dean_pers_id', 'acting_dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.website_draft', []);
@@ -1175,7 +1416,10 @@ class PortalController extends Controller
         abort_unless(in_array($step, [1, 2, 3, 4], true), 404);
         $required = $request->input('navigation') === 'back' ? 'nullable' : 'required';
         $activeDeanPersonIds = $step === 4
-            ? $this->activeWebsiteDeanPersonIds((int) $request->session()->get('portal.draft.target_dept_id', 0))
+            ? $this->validDeanPersonIdsForSubmission(
+                $request,
+                (int) $request->session()->get('portal.draft.target_dept_id', 0),
+            )
             : [];
         $deanRequired = $required === 'required' && $activeDeanPersonIds !== [] ? 'required' : 'nullable';
 
@@ -1222,6 +1466,9 @@ class PortalController extends Controller
             ],
             default => [],
         };
+        if ($step === 4) {
+            $rules = array_merge($rules, $this->actingDeanRules($required === 'required'));
+        }
         $rules['additional_documents'] = 'nullable|array|max:5';
         $rules['additional_documents.*'] = 'file|mimes:pdf,doc,docx,xls,xlsx,csv|max:10240';
         $rules['remove_additional'] = 'nullable|array';
@@ -1237,6 +1484,9 @@ class PortalController extends Controller
             'dean_pers_id.required' => 'กรุณาเลือกหัวหน้าส่วนงาน คณบดี หรือผู้อำนวยการ',
             'dean_pers_id.in' => 'ผู้รับรองที่เลือกไม่ได้อยู่ในรายชื่อปัจจุบันของส่วนงานเป้าหมาย',
         ]);
+        if ($step === 4) {
+            $validated = $this->resolveActingDean($validated, $required === 'required');
+        }
         $removeAdditional = $validated['remove_additional'] ?? [];
         $studentRosterSelection = $validated['student_roster_file'] ?? null;
         unset($validated['additional_documents'], $validated['remove_additional'], $validated['student_roster_file']);
@@ -1264,7 +1514,7 @@ class PortalController extends Controller
         if ($step === 1
             && isset($validated['target_dept_id'])
             && (int) ($existingDraft['target_dept_id'] ?? 0) !== (int) $validated['target_dept_id']) {
-            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name']);
+            unset($existingDraft['dean_pers_id'], $existingDraft['dean_name'], $existingDraft['dean_is_acting'], $existingDraft['acting_dean_buasri_id'], $existingDraft['acting_dean_pers_id'], $existingDraft['acting_dean_name']);
         }
         $data = array_replace($existingDraft, $validated);
         if ($step <= 3) {
@@ -1449,7 +1699,7 @@ class PortalController extends Controller
             1 => ['target_dept_id', 'unit', 'target_subdept_id', 'subunit', 'project_name', 'project_type', 'project_other', 'coordinator_first', 'coordinator_last', 'coordinator_position', 'coordinator_phone', 'coordinator_email'],
             2 => ['course_th', 'course_en', 'instructors', 'category', 'category_other', 'description'],
             3 => ['learning', 'activity_round', 'activity_phase', 'starts_at', 'ends_at', 'enrollment', 'enrollment_other', 'expected_students'],
-            4 => ['dean_pers_id', 'dean_name'],
+            4 => ['dean_pers_id', 'dean_name', 'dean_is_acting', 'acting_dean_buasri_id', 'acting_dean_pers_id', 'acting_dean_name'],
             default => [],
         };
         $draft = $request->session()->get('portal.draft', []);
@@ -1521,11 +1771,12 @@ class PortalController extends Controller
             return true;
         });
 
-        return redirect()->route('requests.show', $id)->with(
-            'success',
+        return $this->actionResponse(
+            $request,
             $queued
                 ? 'ส่งอีเมลแจ้งคณบดีเรียบร้อยแล้ว'
                 : 'อีเมลแจ้งคณบดีอยู่ในคิวส่งแล้ว<br>ระบบจะไม่สร้างรายการส่งซ้ำ',
+            route('requests.show', $id),
         );
     }
 
@@ -1567,8 +1818,11 @@ class PortalController extends Controller
             throw $exception;
         }
 
-        return redirect()->to(route('requests.show', $id) . '#student-roster')
-            ->with('success', $isUpdate ? 'อัปเดตรายชื่อผู้เรียนสำเร็จ<br>แจ้งเจ้าหน้าที่ตรวจสอบไฟล์ใหม่แล้ว' : 'อัปโหลดรายชื่อผู้เรียนสำเร็จ<br>แจ้งเจ้าหน้าที่ตรวจสอบแล้ว');
+        return $this->actionResponse(
+            $request,
+            $isUpdate ? 'อัปเดตรายชื่อผู้เรียนสำเร็จ<br>แจ้งเจ้าหน้าที่ตรวจสอบไฟล์ใหม่แล้ว' : 'อัปโหลดรายชื่อผู้เรียนสำเร็จ<br>แจ้งเจ้าหน้าที่ตรวจสอบแล้ว',
+            route('requests.show', $id) . '#student-roster',
+        );
     }
 
     public function acknowledgeStudentRoster(Request $request, int $id)
@@ -1595,12 +1849,11 @@ class PortalController extends Controller
             $this->queueNotification($courseRequest, 'STUDENT_ROSTER_ACKNOWLEDGED', $this->requesterRecipient($courseRequest), $actor);
         });
 
-        $redirect = $returnToOfficerList
-            ? redirect()->route('officer.reviews')
-            : redirect()->route('officer.show', $id);
-
-        return $redirect
-            ->with('success', 'รับทราบรายชื่อผู้เรียนแล้ว<br>ระบบล็อกการแก้ไขไฟล์ของผู้ยื่นคำร้อง');
+        return $this->actionResponse(
+            $request,
+            'รับทราบรายชื่อผู้เรียนแล้ว<br>ระบบล็อกการแก้ไขไฟล์ของผู้ยื่นคำร้อง',
+            $returnToOfficerList ? route('officer.reviews') : route('officer.show', $id),
+        );
     }
 
     public function requestStudentRosterReopen(Request $request, int $id)
@@ -1638,10 +1891,13 @@ class PortalController extends Controller
             }
         });
 
-        return redirect()->to(route('requests.show', $id) . '#student-roster')
-            ->with('success', $alreadyRequested
+        return $this->actionResponse(
+            $request,
+            $alreadyRequested
                 ? 'ส่งคำขอแก้ไขรายชื่อไปยังเจ้าหน้าที่แล้ว กรุณารอเจ้าหน้าที่เปิดสิทธิ์'
-                : 'ส่งคำขอแก้ไขรายชื่อไปยังเจ้าหน้าที่เรียบร้อยแล้ว');
+                : 'ส่งคำขอแก้ไขรายชื่อไปยังเจ้าหน้าที่เรียบร้อยแล้ว',
+            route('requests.show', $id) . '#student-roster',
+        );
     }
 
     public function reopenStudentRoster(Request $request, int $id)
@@ -1666,8 +1922,11 @@ class PortalController extends Controller
             $this->queueNotification($courseRequest, 'STUDENT_ROSTER_REOPENED', $this->requesterRecipient($courseRequest), $actor);
         });
 
-        return redirect()->route('officer.show', $id)
-            ->with('success', 'อนุญาตให้อัปโหลดรายชื่อใหม่แล้ว<br>แจ้งผู้ยื่นคำร้องเรียบร้อย');
+        return $this->actionResponse(
+            $request,
+            'อนุญาตให้อัปโหลดรายชื่อใหม่แล้ว<br>แจ้งผู้ยื่นคำร้องเรียบร้อย',
+            route('officer.show', $id),
+        );
     }
 
     public function updateResult(Request $request, int $id)
@@ -1747,11 +2006,12 @@ class PortalController extends Controller
             }
         });
 
-        return redirect()->route('officer.show', $id)->with(
-            'success',
+        return $this->actionResponse(
+            $request,
             $request->boolean('notify_requester')
                 ? 'แก้ไขผลการดำเนินการและส่งอีเมลแจ้งผู้ยื่นคำร้องเรียบร้อยแล้ว'
                 : 'แก้ไขผลการดำเนินการเรียบร้อยแล้ว',
+            route('officer.show', $id),
         );
     }
 
@@ -1957,9 +2217,13 @@ class PortalController extends Controller
             }
         });
 
-        return redirect()->route('officer.reviews')->with('success', $data['decision'] === 'pass'
-            ? 'อนุมัติและดำเนินการเรียบร้อย'
-            : 'บันทึกผลไม่อนุมัติและแจ้งผู้ยื่นคำร้องแล้ว');
+        return $this->actionResponse(
+            $request,
+            $data['decision'] === 'pass'
+                ? 'อนุมัติและดำเนินการเรียบร้อย'
+                : 'บันทึกผลไม่อนุมัติและแจ้งผู้ยื่นคำร้องแล้ว',
+            route('officer.reviews'),
+        );
     }
 
     public function approve(Request $request, int $id)
@@ -2423,7 +2687,7 @@ class PortalController extends Controller
         };
         $courseRequest = $this->findAuthorized($request, $id, $this->actor($request)['role']);
         if ($kind === 'signed'
-            && in_array($courseRequest->status, ['COMPLETED', 'REJECTED'], true)
+            && in_array($courseRequest->status, ['COMPLETED', 'REJECTED', 'NOT_ENDORSED'], true)
             && in_array($courseRequest->form_type_code, ['CC-ITED-01', 'CC-ITED-02', 'CC-ITED-04', 'CC-ITED-05'], true)) {
             return $this->generatedPdfResponse(
                 $this->toRecord($courseRequest),
@@ -2475,7 +2739,13 @@ class PortalController extends Controller
 
     private function findAuthorized(Request $request, int $id, string $role): CourseRequest
     {
-        $courseRequest = CourseRequest::query()->with($this->recordRelations())->findOrFail($id);
+        $query = CourseRequest::query()->with($this->recordRelations());
+
+        if ($role === 'officer') {
+            $query->whereIn('form_type_code', $this->officerFormTypeCodes($request));
+        }
+
+        $courseRequest = $query->findOrFail($id);
 
         if ($role === 'user') {
             abort_unless((int) $courseRequest->requester_pers_id === (int) $this->actor($request)['pers_id'], 403);
@@ -2494,10 +2764,21 @@ class PortalController extends Controller
 
             abort_unless(in_array($courseRequest->status, ['UNDER_OFFICER_REVIEW', 'COMPLETED', 'REJECTED'], true) || $canReviewLateRoster, 404);
         } else {
-            abort_unless(in_array($courseRequest->status, ['PENDING_APPROVAL', 'COURSE_ID_RECORDED', 'REJECTED'], true), 404);
+            abort_unless(in_array($courseRequest->status, ['PENDING_APPROVAL', 'COURSE_ID_RECORDED', 'REJECTED', 'NOT_ENDORSED'], true), 404);
         }
 
         return $courseRequest;
+    }
+
+    private function officerFormTypeCodes(Request $request): array
+    {
+        return FormOfficerAssignment::query()
+            ->where('officer_pers_id', (int) $this->actor($request)['pers_id'])
+            ->where('is_active', 'Y')
+            ->orderBy('form_type_code')
+            ->pluck('form_type_code')
+            ->map(fn ($formTypeCode) => (string) $formTypeCode)
+            ->all();
     }
 
     private function documentRecord(Request $request, string $id): array
@@ -2514,7 +2795,9 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_pers_id' => (int) (($data['dean_is_acting'] ?? false) ? $data['acting_dean_pers_id'] : $data['dean_pers_id']),
+            'dean_principal_pers_id' => (int) $data['dean_pers_id'],
+            'dean_is_acting' => (bool) ($data['dean_is_acting'] ?? false),
             'dean_position_name' => $this->deanPositionName(
                 (int) $data['target_dept_id'],
                 (int) $data['dean_pers_id'],
@@ -2566,7 +2849,9 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_pers_id' => (int) (($data['dean_is_acting'] ?? false) ? $data['acting_dean_pers_id'] : $data['dean_pers_id']),
+            'dean_principal_pers_id' => (int) $data['dean_pers_id'],
+            'dean_is_acting' => (bool) ($data['dean_is_acting'] ?? false),
             'dean_position_name' => $this->deanPositionName(
                 (int) $data['target_dept_id'],
                 (int) $data['dean_pers_id'],
@@ -2609,7 +2894,9 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_pers_id' => (int) (($data['dean_is_acting'] ?? false) ? $data['acting_dean_pers_id'] : $data['dean_pers_id']),
+            'dean_principal_pers_id' => (int) $data['dean_pers_id'],
+            'dean_is_acting' => (bool) ($data['dean_is_acting'] ?? false),
             'dean_position_name' => $this->deanPositionName(
                 (int) $data['target_dept_id'],
                 (int) $data['dean_pers_id'],
@@ -2657,7 +2944,9 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_pers_id' => (int) (($data['dean_is_acting'] ?? false) ? $data['acting_dean_pers_id'] : $data['dean_pers_id']),
+            'dean_principal_pers_id' => (int) $data['dean_pers_id'],
+            'dean_is_acting' => (bool) ($data['dean_is_acting'] ?? false),
             'dean_position_name' => $this->deanPositionName(
                 (int) $data['target_dept_id'],
                 (int) $data['dean_pers_id'],
@@ -2707,7 +2996,9 @@ class PortalController extends Controller
             'requester_pers_id' => $requesterId,
             'target_dept_id' => (int) $data['target_dept_id'],
             'target_subdept_id' => isset($data['target_subdept_id']) ? (int) $data['target_subdept_id'] : null,
-            'dean_pers_id' => (int) $data['dean_pers_id'],
+            'dean_pers_id' => (int) (($data['dean_is_acting'] ?? false) ? $data['acting_dean_pers_id'] : $data['dean_pers_id']),
+            'dean_principal_pers_id' => (int) $data['dean_pers_id'],
+            'dean_is_acting' => (bool) ($data['dean_is_acting'] ?? false),
             'dean_position_name' => $this->deanPositionName(
                 (int) $data['target_dept_id'],
                 (int) $data['dean_pers_id'],
@@ -2801,6 +3092,7 @@ class PortalController extends Controller
                 && $notification->created_at?->greaterThanOrEqualTo($studentRoster->uploaded_at)
             );
         $reason = match ($courseRequest->status) {
+            'NOT_ENDORSED' => $latestDeanReview?->comment,
             'REJECTED' => match ($latestStatusHistory?->change_source) {
                 'DEAN' => $latestDeanReview?->comment,
                 'OFFICER' => $latestReview?->rejection_reason,
@@ -2824,8 +3116,11 @@ class PortalController extends Controller
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
             'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_is_acting' => (bool) $courseRequest->dean_is_acting,
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'dean_decided_date' => $this->thaiBuddhistDate($latestDeanReview?->decided_at),
+            'dean_decided_time' => $latestDeanReview?->decided_at?->format('H:i'),
             'form_type_code' => 'CC-ITED-06',
             'project_name' => $courseRequest->project_name,
             'project_type' => $courseRequest->project_type_code,
@@ -2916,6 +3211,7 @@ class PortalController extends Controller
             ->sortByDesc('notification_id')
             ->first();
         $reason = match ($courseRequest->status) {
+            'NOT_ENDORSED' => $latestDeanReview?->comment,
             'REJECTED' => $latestStatusHistory?->change_source === 'OFFICER'
                 ? $latestReview?->rejection_reason
                 : $latestDeanReview?->comment,
@@ -2944,8 +3240,11 @@ class PortalController extends Controller
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
             'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_is_acting' => (bool) $courseRequest->dean_is_acting,
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'dean_decided_date' => $this->thaiBuddhistDate($latestDeanReview?->decided_at),
+            'dean_decided_time' => $latestDeanReview?->decided_at?->format('H:i'),
             'form_type_code' => 'CC-ITED-01',
             'project_name' => $detail?->website_name,
             'website_name' => $detail?->website_name,
@@ -3008,9 +3307,13 @@ class PortalController extends Controller
         $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
         $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
         $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
-        $reason = $courseRequest->status === 'REJECTED'
-            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
-            : null;
+        $reason = match ($courseRequest->status) {
+            'NOT_ENDORSED' => $latestDeanReview?->comment,
+            'REJECTED' => $latestStatusHistory?->change_source === 'OFFICER'
+                ? $latestReview?->rejection_reason
+                : $latestDeanReview?->comment,
+            default => null,
+        };
 
         return [
             'id' => $courseRequest->request_id,
@@ -3026,8 +3329,11 @@ class PortalController extends Controller
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
             'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_is_acting' => (bool) $courseRequest->dean_is_acting,
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'dean_decided_date' => $this->thaiBuddhistDate($latestDeanReview?->decided_at),
+            'dean_decided_time' => $latestDeanReview?->decided_at?->format('H:i'),
             'form_type_code' => 'CC-ITED-04',
             'project_name' => $detail?->website_name,
             'website_name' => $detail?->website_name,
@@ -3087,9 +3393,13 @@ class PortalController extends Controller
         $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
         $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
         $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
-        $reason = $courseRequest->status === 'REJECTED'
-            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
-            : null;
+        $reason = match ($courseRequest->status) {
+            'NOT_ENDORSED' => $latestDeanReview?->comment,
+            'REJECTED' => $latestStatusHistory?->change_source === 'OFFICER'
+                ? $latestReview?->rejection_reason
+                : $latestDeanReview?->comment,
+            default => null,
+        };
 
         return [
             'id' => $courseRequest->request_id,
@@ -3105,8 +3415,11 @@ class PortalController extends Controller
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
             'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_is_acting' => (bool) $courseRequest->dean_is_acting,
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'dean_decided_date' => $this->thaiBuddhistDate($latestDeanReview?->decided_at),
+            'dean_decided_time' => $latestDeanReview?->decided_at?->format('H:i'),
             'form_type_code' => 'CC-ITED-05',
             'project_name' => $detail?->action_type === 'CHANGE_CONTACT'
                 ? 'เปลี่ยนแปลงสิทธิ์ผู้ดูแลกรอบการประชุม SWU e-Meeting'
@@ -3167,9 +3480,13 @@ class PortalController extends Controller
         $latestDeanReview = $courseRequest->deanReviews->sortByDesc('decided_at')->first();
         $latestStatusHistory = $courseRequest->histories->sortByDesc(fn ($history) => sprintf('%s-%020d', $history->changed_at?->format('Y-m-d H:i:s.u'), $history->history_id))->first();
         $completionNotification = $courseRequest->notifications->where('notification_type', 'REQUEST_COMPLETED_REQUESTER')->sortByDesc('notification_id')->first();
-        $reason = $courseRequest->status === 'REJECTED'
-            ? ($latestStatusHistory?->change_source === 'OFFICER' ? $latestReview?->rejection_reason : $latestDeanReview?->comment)
-            : null;
+        $reason = match ($courseRequest->status) {
+            'NOT_ENDORSED' => $latestDeanReview?->comment,
+            'REJECTED' => $latestStatusHistory?->change_source === 'OFFICER'
+                ? $latestReview?->rejection_reason
+                : $latestDeanReview?->comment,
+            default => null,
+        };
 
         return [
             'id' => $courseRequest->request_id,
@@ -3185,8 +3502,11 @@ class PortalController extends Controller
             'dean_pers_id' => $courseRequest->dean_pers_id,
             'dean_name' => $courseRequest->dean_pers_id ? $this->personName((int) $courseRequest->dean_pers_id) : null,
             'dean_position' => $this->requestDeanPosition($courseRequest),
+            'dean_is_acting' => (bool) $courseRequest->dean_is_acting,
             'dean_decision' => $latestDeanReview?->decision,
             'dean_decided_at' => $latestDeanReview?->decided_at?->toDateString(),
+            'dean_decided_date' => $this->thaiBuddhistDate($latestDeanReview?->decided_at),
+            'dean_decided_time' => $latestDeanReview?->decided_at?->format('H:i'),
             'form_type_code' => 'CC-ITED-02',
             'project_name' => $detail?->website_name,
             'website_name' => $detail?->website_name,
@@ -3282,30 +3602,50 @@ class PortalController extends Controller
 
     private function activeDeanPersonIds(int $targetDepartmentId): array
     {
-        if ($targetDepartmentId <= 0) {
-            return [];
-        }
-
-        $personIds = FacultyDean::query()
-            ->where('target_dept_id', $targetDepartmentId)
-            ->where('is_active', 'Y')
-            ->orderBy('faculty_dean_id')
-            ->pluck('dean_pers_id')
-            ->map(fn ($personId) => (int) $personId)
-            ->all();
-
-        if ($personIds === []) {
-            $fallbackPersonId = (int) config('course-workflow.dean.fallback_person_id', 0);
-            if ($fallbackPersonId > 0) {
-                return [$fallbackPersonId];
-            }
-        }
+        $personIds = $this->assignedDeanPersonIds($targetDepartmentId);
 
         return array_values(array_filter($personIds, function (int $personId): bool {
             $person = $this->personnelDirectory->findByPersonId($personId);
 
             return $person !== null && $this->personnelDirectory->email($person) !== null;
         }));
+    }
+
+    private function assignedDeanPersonIds(int $targetDepartmentId): array
+    {
+        if ($targetDepartmentId <= 0) {
+            return [];
+        }
+
+        return FacultyDean::query()
+            ->where('target_dept_id', $targetDepartmentId)
+            ->where('is_active', 'Y')
+            ->orderBy('faculty_dean_id')
+            ->pluck('dean_pers_id')
+            ->map(fn ($personId) => (int) $personId)
+            ->all();
+    }
+
+    private function validDeanPersonIdsForSubmission(Request $request, int $targetDepartmentId): array
+    {
+        $isActing = $request->boolean('dean_is_acting')
+            || filled($request->input('acting_dean_buasri_id'));
+
+        if ($isActing) {
+            $request->merge(['dean_is_acting' => '1']);
+        }
+
+        $personIds = $isActing
+            ? $this->assignedDeanPersonIds($targetDepartmentId)
+            : $this->activeWebsiteDeanPersonIds($targetDepartmentId);
+
+        if ($isActing
+            && $personIds !== []
+            && ! in_array((int) $request->input('dean_pers_id'), $personIds, true)) {
+            $request->merge(['dean_pers_id' => $personIds[0]]);
+        }
+
+        return $personIds;
     }
 
     private function isCurrentDeanReviewLink(CourseRequest $courseRequest, int $notificationId): bool
@@ -3334,46 +3674,12 @@ class PortalController extends Controller
 
     private function activeWebsiteDeanPersonIds(int $targetDepartmentId): array
     {
-        if ($this->usesTestNotificationRecipient()) {
-            $departmentDeanPersonIds = $this->activeDeanPersonIds($targetDepartmentId);
-            $personId = (int) config('course-workflow.notifications.test_recipient_person_id', 0);
-            $expectedEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
-            $person = $personId > 0 ? $this->personnelDirectory->findByPersonId($personId) : null;
-            $actualEmail = $person !== null
-                ? strtolower(trim((string) $this->personnelDirectory->email($person)))
-                : '';
-
-            $departmentDeanPersonIds = array_values(array_filter(
-                $departmentDeanPersonIds,
-                fn (int $departmentDeanPersonId): bool => $departmentDeanPersonId !== $personId,
-            ));
-
-            if ($expectedEmail !== '' && hash_equals($expectedEmail, $actualEmail)) {
-                $departmentDeanPersonIds[] = $personId;
-            }
-
-            return array_values(array_unique($departmentDeanPersonIds));
-        }
-
         return $this->activeDeanPersonIds($targetDepartmentId);
     }
 
     private function websiteDeanOptionsForTargetDepartment(int $targetDepartmentId): array
     {
         $personIds = $this->activeWebsiteDeanPersonIds($targetDepartmentId);
-
-        if ($this->usesTestNotificationRecipient()) {
-            $email = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
-            $testRecipientPersonId = (int) config('course-workflow.notifications.test_recipient_person_id', 0);
-
-            return collect($personIds)
-                ->mapWithKeys(fn (int $personId) => [
-                    $personId => $personId === $testRecipientPersonId
-                        ? trim($this->personName($personId).' ('.$email.')')
-                        : $this->personName($personId),
-                ])
-                ->all();
-        }
 
         return collect($personIds)
             ->mapWithKeys(fn (int $personId) => [$personId => $this->personName($personId)])
@@ -3415,7 +3721,12 @@ class PortalController extends Controller
 
     private function queueRoleNotifications(CourseRequest $courseRequest, string $type, string $roleCode, array $actor): void
     {
-        foreach ($this->roleRecipients($roleCode) as $recipient) {
+        $recipients = $this->notificationRecipients(
+            $courseRequest,
+            fn () => $this->roleRecipients($roleCode),
+        );
+
+        foreach ($recipients as $recipient) {
             $this->queueNotification($courseRequest, $type, $recipient, $actor);
         }
     }
@@ -3426,26 +3737,60 @@ class PortalController extends Controller
         string $responsibility,
         array $actor,
     ): void {
-        foreach ($this->formResponsibilityRecipients($courseRequest, $responsibility) as $recipient) {
+        $recipients = $this->notificationRecipients(
+            $courseRequest,
+            fn () => $this->formResponsibilityRecipients($courseRequest, $responsibility),
+            $responsibility === 'head',
+        );
+
+        foreach ($recipients as $recipient) {
             $this->queueNotification($courseRequest, $type, $recipient, $actor);
         }
     }
 
-    private function formResponsibilityRecipients(CourseRequest $courseRequest, string $responsibility): array
+    private function notificationRecipients(
+        CourseRequest $courseRequest,
+        callable $productionRecipients,
+        bool $preserveAssignedTestRecipients = false,
+    ): array
     {
-        if ($responsibility === 'head' && app()->environment('local', 'uat')) {
-            $testPersonId = (int) config('course-workflow.notifications.test_recipient_person_id');
-            $testEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
-
-            if ($testPersonId <= 0 || ! filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
-                throw ValidationException::withMessages([
-                    'responsibility' => 'กรุณากำหนด COURSE133_TEST_PERSON_ID และ COURSE133_TEST_EMAIL สำหรับผู้รับแจ้งเตือน Head',
-                ]);
-            }
-
-            return [['pers_id' => $testPersonId, 'email' => $testEmail]];
+        if (! $this->usesTestNotificationRecipient()) {
+            return $productionRecipients();
         }
 
+        $requesterPersonId = (int) $courseRequest->requester_pers_id;
+        $testRecipients = (array) config('course-workflow.notifications.test_recipients', []);
+
+        if ($preserveAssignedTestRecipients) {
+            $assignedRecipients = $productionRecipients();
+
+            if ($assignedRecipients === []) {
+                return [];
+            }
+        }
+
+        $recipientPersonId = array_key_exists($requesterPersonId, $testRecipients)
+            ? $requesterPersonId
+            : (int) config('course-workflow.notifications.test_recipient_person_id');
+        $recipientEmail = strtolower(trim((string) (
+            $testRecipients[$recipientPersonId]
+                ?? config('course-workflow.notifications.test_recipient_email')
+        )));
+
+        if ($recipientPersonId <= 0 || ! filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'email' => 'กรุณากำหนดผู้รับอีเมลสำหรับทดสอบระบบให้ถูกต้อง',
+            ]);
+        }
+
+        return [[
+            'pers_id' => $recipientPersonId,
+            'email' => $recipientEmail,
+        ]];
+    }
+
+    private function formResponsibilityRecipients(CourseRequest $courseRequest, string $responsibility): array
+    {
         [$table, $personColumn, $orderColumn, $label] = match ($responsibility) {
             'head' => ['form_head_assignment', 'head_pers_id', 'head_assignment_id', 'หัวหน้าผู้รับผิดชอบ'],
             'officer' => ['form_officer_assignment', 'officer_pers_id', 'officer_assignment_id', 'เจ้าหน้าที่ผู้รับผิดชอบ'],
@@ -3652,6 +3997,7 @@ class PortalController extends Controller
     private function homeRoute(string $role): string
     {
         return match ($role) {
+            'admin' => 'admin.dashboard',
             'officer' => 'officer.reviews',
             default => 'requests.index',
         };
@@ -3685,6 +4031,51 @@ class PortalController extends Controller
         return filled($position)
             ? trim((string) $position)
             : $this->personPosition($personId);
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function actingDeanRules(bool $required): array
+    {
+        return [
+            'dean_is_acting' => ['nullable', 'boolean'],
+            'acting_dean_buasri_id' => [
+                Rule::requiredIf(fn () => $required && request()->boolean('dean_is_acting')),
+                'nullable',
+                'string',
+                'max:200',
+            ],
+        ];
+    }
+
+    /** @param array<string, mixed> $validated @return array<string, mixed> */
+    private function resolveActingDean(array $validated, bool $required): array
+    {
+        $validated['dean_is_acting'] = (bool) ($validated['dean_is_acting'] ?? false);
+        if (! $validated['dean_is_acting']) {
+            $validated['acting_dean_buasri_id'] = null;
+            $validated['acting_dean_pers_id'] = null;
+            $validated['acting_dean_name'] = null;
+
+            return $validated;
+        }
+
+        $buasriId = trim((string) ($validated['acting_dean_buasri_id'] ?? ''));
+        if ($buasriId === '' && ! $required) {
+            return $validated;
+        }
+
+        $person = $this->personnelDirectory->findActiveByBuasriId($buasriId);
+        if ($person === null) {
+            throw ValidationException::withMessages([
+                'acting_dean_buasri_id' => 'กรุณาเลือกผู้รักษาการแทนจากรายการค้นหา',
+            ]);
+        }
+
+        $validated['acting_dean_buasri_id'] = (string) $person->buasri_id;
+        $validated['acting_dean_pers_id'] = (int) $person->person_id;
+        $validated['acting_dean_name'] = $this->personnelDirectory->name($person).' ('.$person->buasri_id.')';
+
+        return $validated;
     }
 
     private function requestDeanPosition(CourseRequest $courseRequest): ?string
@@ -3755,7 +4146,7 @@ class PortalController extends Controller
 
         $scaleX = $pageWidth / 210;
         $scaleY = $pageHeight / 297;
-        $fontCachePath = storage_path('fonts/tcpdf');
+        $fontCachePath = storage_path('fonts/tcpdf').DIRECTORY_SEPARATOR;
         abort_unless(
             is_dir($fontCachePath) || @mkdir($fontCachePath, 0755, true) || is_dir($fontCachePath),
             500,
@@ -3777,7 +4168,7 @@ class PortalController extends Controller
         $overlayPdf->SetAutoPageBreak(false);
         $overlayPdf->setFontSubsetting(true);
         $overlayPdf->AddPage();
-        $overlayPdf->AddFont($fontName, '', $fontCachePath.DIRECTORY_SEPARATOR.$fontName.'.php', true);
+        $overlayPdf->AddFont($fontName, '', $fontCachePath.$fontName.'.php', true);
         $overlayPdf->setCellPaddings(0, 0, 0, 0);
         $overlayPdf->setCellMargins(0, 0, 0, 0);
 
@@ -3834,6 +4225,18 @@ class PortalController extends Controller
         $pdf->setSourceFile(StreamReader::createByString($overlay));
         $overlayTemplate = $pdf->importPage(1);
         $pdf->useTemplate($overlayTemplate, 0, 0, $pageWidth, $pageHeight);
+    }
+
+    private function actionResponse(Request $request, string $message, string $redirectUrl)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => trim(strip_tags(str_ireplace(['<br>', '<br/>', '<br />'], "\n", $message))),
+                'redirect_url' => $redirectUrl,
+            ]);
+        }
+
+        return redirect()->to($redirectUrl)->with('success', $message);
     }
 
     private function recordRelations(): array

@@ -12,7 +12,7 @@ flowchart LR
     form --> submit["ส่งคำร้อง"]
     submit --> pendingDean["PENDING_DEAN_REVIEW"]
     pendingDean -->|"รับรอง"| underOfficer["UNDER_OFFICER_REVIEW"]
-    pendingDean -->|"ไม่รับรองพร้อมเหตุผล"| rejectedByDean["REJECTED"]
+    pendingDean -->|"ไม่รับรองพร้อมเหตุผล"| rejectedByDean["NOT_ENDORSED"]
     underOfficer -->|"อนุมัติพร้อมบันทึกผลดำเนินการ"| completed["COMPLETED"]
     underOfficer -->|"ไม่อนุมัติพร้อมเหตุผล"| rejectedByOfficer["REJECTED"]
     submit --> deanMail["แจ้งผู้รับรอง"]
@@ -28,7 +28,7 @@ flowchart LR
 1. ผู้ยื่นเลือกแบบฟอร์ม `CC-ITED-01`, `02`, `04`, `05` หรือ `06` กรอกข้อมูล เลือกผู้รับรอง และแนบเอกสารเพิ่มเติมได้
 2. เมื่อส่งคำร้อง ระบบสร้าง `service_request`, detail ตามชนิดแบบฟอร์ม, contact, document และประวัติสถานะ จากนั้นเปลี่ยนเป็น `PENDING_DEAN_REVIEW`
 3. ระบบสร้าง `notification_outbox` ชนิด `DEAN_REVIEW_REQUIRED` เพื่อส่งลิงก์ลงนามดิจิทัลให้ผู้รับรองที่อยู่ในคำร้อง
-4. ผู้รับรองรับรอง ระบบบันทึก `dean_review`, เปลี่ยนสถานะเป็น `UNDER_OFFICER_REVIEW` และแจ้งเฉพาะเจ้าหน้าที่ active ใน `form_officer_assignment` ของฟอร์มนั้น หรือไม่รับรอง ระบบเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผลให้ผู้ยื่น
+4. ผู้รับรองรับรอง ระบบบันทึก `dean_review`, เปลี่ยนสถานะเป็น `UNDER_OFFICER_REVIEW` และแจ้งเฉพาะเจ้าหน้าที่ active ใน `form_officer_assignment` ของฟอร์มนั้น หรือไม่รับรอง ระบบเปลี่ยนเป็น `NOT_ENDORSED` พร้อมแจ้งเหตุผลให้ผู้ยื่น
 5. เจ้าหน้าที่ตรวจคำร้องและบันทึกผลตามแบบฟอร์มใน action เดียวกับการอนุมัติ ถ้าอนุมัติระบบบันทึก `officer_review`, กำหนด `completed_at`/`completed_by_pers_id`, เปลี่ยนเป็น `COMPLETED` แล้วแจ้งผู้ยื่นและหัวหน้า active ใน `form_head_assignment` ของฟอร์มนั้น ถ้าไม่อนุมัติจะเปลี่ยนเป็น `REJECTED` พร้อมแจ้งเหตุผล
 6. ทุก transition เพิ่มแถวใน `request_status_history` และทุกอีเมลสร้างเป็น outbox ก่อนให้ worker ส่งภายหลัง
 7. หลัง `COMPLETED` เจ้าหน้าที่แก้ไขผลดำเนินการได้ และเลือกส่ง `REQUEST_RESULT_UPDATED` เพื่อแจ้งผู้ยื่นได้
@@ -39,7 +39,7 @@ flowchart LR
 
 ## 2. ERD — Core Workflow
 
-เส้นทึบคือ Foreign Key จริง ส่วนความสัมพันธ์ `faculty_dean` ไป `service_request` เป็น logical lookup ผ่าน `target_dept_id` และ `dean_pers_id`; ตอนส่งคำร้องระบบ snapshot ตำแหน่งไว้ใน `dean_position_name`
+เส้นทึบคือ Foreign Key จริง ส่วนความสัมพันธ์ `faculty_dean` ไป `service_request` เป็น logical lookup ผ่าน `target_dept_id` และ `dean_principal_pers_id`; ตอนส่งคำร้องระบบ snapshot ตำแหน่งไว้ใน `dean_position_name` และใช้ `dean_pers_id` เป็นผู้รับอีเมล/พิจารณาจริงเมื่อมีผู้รักษาการแทน
 
 ```mermaid
 erDiagram
@@ -94,6 +94,8 @@ erDiagram
         int target_dept_id
         int dean_pers_id
         nvarchar dean_position_name
+        int dean_principal_pers_id
+        bit dean_is_acting
         varchar status_code FK
         datetime2 submitted_at
         datetime2 completed_at
@@ -309,7 +311,7 @@ erDiagram
 | กลุ่ม | ตารางหลัก | หน้าที่ |
 |---|---|---|
 | Master | `form_type`, `request_status`, `contact_role`, `document_type`, `notification_type` | กำหนดชนิดฟอร์ม สถานะ บทบาทผู้ติดต่อ ประเภทเอกสาร และเหตุการณ์แจ้งเตือน |
-| สิทธิ์และผู้รับรอง | `app_role`, `user_role_assignment`, `faculty_dean` | กำหนดสิทธิ์ USER/OFFICER และ mapping ผู้รับรองประจำส่วนงาน |
+| สิทธิ์และผู้รับรอง | `app_role`, `user_role_assignment`, `faculty_dean` | กำหนดสิทธิ์ USER/OFFICER/ADMIN และ mapping ผู้รับรองประจำส่วนงาน |
 | ผู้รับผิดชอบแบบฟอร์ม | `form_head_assignment`, `form_officer_assignment` | กำหนดหัวหน้า 1 คนและเจ้าหน้าที่หลายคนที่ active ต่อแบบฟอร์ม |
 | Transaction กลาง | `service_request` | Header และสถานะปัจจุบันของทุกคำร้อง |
 | ข้อมูลประกอบ | `request_contact`, `request_document` | Snapshot ผู้เกี่ยวข้องและ metadata ไฟล์ใน private storage |

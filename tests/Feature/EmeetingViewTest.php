@@ -68,6 +68,10 @@ class EmeetingViewTest extends TestCase
         $this->assertStringContainsString('name="contact_email"', $stepTwo);
         $this->assertStringContainsString('Framework Administrator', $stepTwo);
         $this->assertStringContainsString('name="dean_pers_id"', $stepThree);
+        $this->assertStringContainsString('name="dean_is_acting"', $stepThree);
+        $this->assertStringContainsString('name="acting_dean_buasri_id"', $stepThree);
+        $this->assertStringContainsString('หมายเหตุ:', $stepThree);
+        $this->assertStringContainsString('ited@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('CC-ITED-05_000125.pdf', $stepThree);
     }
 

@@ -26,7 +26,11 @@ class EnsurePortalRole
         $tabRole = $this->tabRole($request);
         if ($tabRole !== null) {
             $actor['role'] = $tabRole;
-            $actor['label'] = $tabRole === 'officer' ? 'เจ้าหน้าที่' : 'ผู้ใช้งาน';
+            $actor['label'] = match ($tabRole) {
+                'admin' => 'ผู้ดูแลระบบ',
+                'officer' => 'เจ้าหน้าที่',
+                default => 'ผู้ใช้งาน',
+            };
         }
         $request->attributes->set('portal.actor', $actor);
 

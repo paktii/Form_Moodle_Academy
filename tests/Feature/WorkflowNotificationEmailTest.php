@@ -106,8 +106,11 @@ class WorkflowNotificationEmailTest extends TestCase
         $this->assertStringContainsString('เหตุผลที่ไม่อนุมัติ', $html);
         $this->assertStringContainsString('ข้อมูลประกอบคำร้องไม่ครบถ้วน', $html);
         $this->assertStringContainsString('#fef2f2', $html);
-        $this->assertStringContainsString('align="center"', $html);
+        $this->assertStringContainsString('align="left"', $html);
+        $this->assertStringContainsString('text-align:left', $html);
+        $this->assertStringContainsString('table-layout:fixed', $html);
         $this->assertStringContainsString('overflow-wrap:anywhere', $html);
+        $this->assertStringContainsString('word-break:break-all', $html);
     }
 
     public function test_form_head_email_omits_heading_and_places_completion_time_on_a_new_line(): void

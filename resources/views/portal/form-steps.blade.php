@@ -6,7 +6,7 @@ $documentDownloadFilename = $requestCode !== ''
     ? "CC-ITED-06_{$requestCode}.pdf"
     : (($data['project_name'] ?? 'โครงการขออนุมัติ').'.pdf');
 @endphp
-<x-portal-layout :title="$formName.' / สร้างคำร้อง'" :tab-title="'New Request · Step '.$step">
+<x-portal-layout :title="$formName" header-context="สร้างคำร้อง" :highlight-header-context="true" :tab-title="'New Request · Step '.$step">
     <main class="form-layout">
         <form id="course-form" action="{{ route('requests.save-step', $step) }}" method="post" enctype="multipart/form-data">
             @csrf
@@ -74,7 +74,7 @@ $documentDownloadFilename = $requestCode !== ''
                             <x-portal-field name="activity_round" label="วงรอบ/รุ่นที่" :value="$value('activity_round')" placeholder="เช่น รุ่นที่ 1" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') !== 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" />
                             <x-portal-field name="activity_phase" label="เฟส" :value="$value('activity_phase')" placeholder="เช่น เฟส 1/2569" :required="$value('learning') === 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" :disabled="$value('learning') !== 'เปิดแบบตามวงรอบ (Phase/Batch-based)'" />
                         </div>
-                        <fieldset class="radio-fieldset">
+                        <fieldset class="radio-fieldset radio-fieldset--form-grid">
                             <legend>ระยะเวลาดำเนินกิจกรรม:</legend>
                             <div class="form-grid">
                                 <x-portal-field name="starts_at" label="วันที่เริ่มต้น:" type="date" :value="$value('starts_at')" :required="true" min="{{ date('Y-m-d') }}" />
@@ -107,7 +107,8 @@ $documentDownloadFilename = $requestCode !== ''
                             <div class="form-section__header">
                                 <h2>เลือกผู้รับรองของส่วนงานเป้าหมาย</h2>
                             </div>
-                            <x-portal-searchable-select name="dean_pers_id" label="หัวหน้าส่วนงาน / คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" />
+                            <x-portal-searchable-select name="dean_pers_id" label="คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" note="หาก คณบดี / ผู้อำนวยการ ไม่ถูกต้อง กรุณาติดต่อ ited@g.swu.ac.th" />
+                            <x-acting-dean-selector :checked="$value('dean_is_acting')" :buasri-id="$value('acting_dean_buasri_id')" :person-name="$value('acting_dean_name')" />
                             @error('dean_pers_id')
                                 <p class="field-error" role="alert">{{ $message }}</p>
                             @enderror

@@ -216,6 +216,8 @@ CREATE TABLE [service_portal].[service_request]
     [target_dept_id] int NOT NULL,
     [dean_pers_id] int NOT NULL,
     [dean_position_name] nvarchar(300) NULL,
+    [dean_principal_pers_id] int NULL,
+    [dean_is_acting] bit NOT NULL CONSTRAINT [DF_sp_service_request_dean_is_acting] DEFAULT (0),
     [request_title] nvarchar(500) NOT NULL,
     [status_code] varchar(40) NOT NULL CONSTRAINT [DF_sp_request_status] DEFAULT ('DRAFT'),
     [submitted_at] datetime2 NULL,
@@ -280,7 +282,7 @@ CREATE TABLE [service_portal].[dean_review]
     [comment] nvarchar(max) NULL,
     [decided_at] datetime2 NOT NULL CONSTRAINT [DF_sp_dean_review_decided] DEFAULT (SYSDATETIME()),
     CONSTRAINT [PK_sp_dean_review] PRIMARY KEY ([dean_review_id]),
-    CONSTRAINT [CK_sp_dean_decision] CHECK ([decision] IN ('APPROVED', 'REJECTED')),
+    CONSTRAINT [CK_sp_dean_decision] CHECK ([decision] IN ('APPROVED', 'NOT_ENDORSED')),
     CONSTRAINT [CK_sp_dean_comment] CHECK ([decision] = 'APPROVED' OR NULLIF(LTRIM(RTRIM([comment])), N'') IS NOT NULL),
     CONSTRAINT [FK_sp_dean_review_request] FOREIGN KEY ([request_id]) REFERENCES [service_portal].[service_request] ([request_id]) ON DELETE CASCADE
 );
@@ -482,6 +484,7 @@ VALUES
     ('DRAFT', N'แบบร่าง', 'NEUTRAL', 0, 10),
     ('PENDING_DEAN_REVIEW', N'รอผู้รับรอง', 'WARNING', 0, 20),
     ('UNDER_OFFICER_REVIEW', N'รอเจ้าหน้าที่ดำเนินการ', 'INFO', 0, 40),
+    ('NOT_ENDORSED', N'ไม่รับรอง', 'DANGER', 1, 50),
     ('REJECTED', N'ไม่อนุมัติ', 'DANGER', 1, 60),
     ('COMPLETED', N'ดำเนินการเสร็จสิ้น', 'SUCCESS', 1, 70);
 
@@ -526,7 +529,8 @@ INSERT INTO [service_portal].[app_role]
     ([role_code], [role_name_th])
 VALUES
     ('USER', N'ผู้ยื่นคำร้อง'),
-    ('OFFICER', N'เจ้าหน้าที่ดำเนินการ');
+    ('OFFICER', N'เจ้าหน้าที่ดำเนินการ'),
+    ('ADMIN', N'ผู้ดูแลระบบ');
 
 INSERT INTO [service_portal].[project_type]
     ([project_type_code], [project_type_name_th], [requires_detail])

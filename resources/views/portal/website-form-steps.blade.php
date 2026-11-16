@@ -75,7 +75,8 @@ $documentDownloadFilename = $requestCode !== ''
                     @else
                         <section class="dean-selection">
                             <div class="form-section__header"><h2>เลือกผู้รับรองของส่วนงาน</h2></div>
-                            <x-portal-searchable-select name="dean_pers_id" label="คณบดี / ผู้อำนวยการ / หัวหน้าส่วนงาน" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" />
+                            <x-portal-searchable-select name="dean_pers_id" label="คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" note="หาก คณบดี / ผู้อำนวยการ ไม่ถูกต้อง กรุณาติดต่อ ited@g.swu.ac.th" />
+                            <x-acting-dean-selector :checked="$value('dean_is_acting')" :buasri-id="$value('acting_dean_buasri_id')" :person-name="$value('acting_dean_name')" />
                             @error('dean_pers_id')<p class="field-error" role="alert">{{ $message }}</p>@enderror
                         </section>
                         <section class="document-download">

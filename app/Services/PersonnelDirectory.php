@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+
 class PersonnelDirectory
 {
     /** @var array<int, object|null> */
@@ -21,6 +24,115 @@ class PersonnelDirectory
         );
 
         return is_array($person) ? $this->mapPerson($person) : null;
+    }
+
+    public function findActiveByName(string $name): ?object
+    {
+        $normalizedName = $this->normalizedName($name);
+        if ($normalizedName === '') {
+            return null;
+        }
+
+        $people = $this->activePeopleByName($name);
+
+        $exactMatches = $people->filter(function (object $person) use ($normalizedName): bool {
+            $fullName = $this->normalizedName($this->name($person));
+            $nameWithoutTitle = $this->normalizedName(trim($person->person_fname_th.' '.$person->person_lname_th));
+
+            return $fullName === $normalizedName || $nameWithoutTitle === $normalizedName;
+        })->values();
+
+        if ($exactMatches->count() === 1) {
+            return $exactMatches->first();
+        }
+
+        return $people->count() === 1 ? $people->first() : null;
+    }
+
+    /** @return array<int, object> */
+    public function searchActive(string $query, int $limit = 15): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return [];
+        }
+
+        if (! preg_match('/[^\x20-\x7E]/u', $query) && ! str_contains($query, ' ')) {
+            $person = $this->findActiveByBuasriId(strtolower(strtok($query, '@')));
+
+            return $person === null ? [] : [$person];
+        }
+
+        return $this->activePeopleByName($query)
+            ->take(max(1, $limit))
+            ->all();
+    }
+
+    /** @return array<int, object> */
+    public function searchActiveInDepartment(int $departmentId, string $query, int $limit = 15): array
+    {
+        $query = $this->normalizedName($query);
+        if ($departmentId <= 0 || $query === '') {
+            return [];
+        }
+
+        $records = Cache::remember(
+            'swu-mis:officers:faculty:'.$departmentId,
+            now()->addMinutes(10),
+            fn () => $this->api->searchAll(
+                (string) config('swu_mis_api.endpoints.officers', 'Officer'),
+                'facultyid',
+                (string) $departmentId,
+            ),
+        );
+
+        return collect($records)
+            ->filter(fn (array $record) => strtoupper(trim((string) ($record['activeFlag'] ?? ''))) === 'A'
+                && (int) ($record['facultyId'] ?? 0) === $departmentId)
+            ->map(fn (array $record) => $this->mapPerson($record))
+            ->filter(function (object $person) use ($query): bool {
+                $searchable = $this->normalizedName(implode(' ', array_filter([
+                    $this->name($person),
+                    $person->person_fname_th,
+                    $person->person_lname_th,
+                    $person->buasri_id,
+                    $person->division,
+                ])));
+
+                return str_contains($searchable, $query);
+            })
+            ->unique('person_id')
+            ->take(max(1, $limit))
+            ->values()
+            ->all();
+    }
+
+    /** @return Collection<int, object> */
+    private function activePeopleByName(string $name): Collection
+    {
+        $normalizedName = $this->normalizedName($name);
+        $records = $this->api->search(
+            (string) config('swu_mis_api.endpoints.officers', 'Officer'),
+            'fullname',
+            trim($name),
+        );
+
+        if ($records === [] && str_contains($normalizedName, ' ')) {
+            $nameParts = preg_split('/\s+/u', $normalizedName, -1, PREG_SPLIT_NO_EMPTY);
+            $records = $this->api->search(
+                (string) config('swu_mis_api.endpoints.officers', 'Officer'),
+                'fullname',
+                (string) end($nameParts),
+            );
+        }
+
+        $people = collect($records)
+            ->filter(fn (array $record) => strtoupper(trim((string) ($record['activeFlag'] ?? ''))) === 'A')
+            ->map(fn (array $record) => $this->mapPerson($record))
+            ->unique('person_id')
+            ->values();
+
+        return $people;
     }
 
     public function findByPersonId(int $personId): ?object
@@ -118,5 +230,10 @@ class PersonnelDirectory
         $number = (int) $value;
 
         return $number > 0 ? $number : null;
+    }
+
+    private function normalizedName(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)), 'UTF-8');
     }
 }

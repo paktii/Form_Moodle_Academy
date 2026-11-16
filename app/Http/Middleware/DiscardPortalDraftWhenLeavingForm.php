@@ -10,6 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 class DiscardPortalDraftWhenLeavingForm
 {
     private const FORM_ROUTES = [
+        'requests.personnel.search',
         'requests.form',
         'requests.save-step',
         'requests.clear-step',

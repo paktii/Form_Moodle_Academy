@@ -74,6 +74,28 @@ class PortalDraftLifecycleTest extends TestCase
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }
 
+    public function test_personnel_search_preserves_website_contact_change_draft(): void
+    {
+        $session = $this->app['session']->driver();
+        $session->put('portal.actor', $this->requester());
+        $session->put('portal.website_contact_change_draft.target_dept_id', 200);
+        $session->put('portal.website_contact_change_completed.1', true);
+        $session->put('portal.website_contact_change_completed.2', true);
+
+        $request = Request::create('/request/personnel/search?q=someone', 'GET');
+        $request->setLaravelSession($session);
+        $route = new Route(['GET'], '/request/personnel/search', fn () => null);
+        $route->name('requests.personnel.search');
+        $route->bind($request);
+        $request->setRouteResolver(fn () => $route);
+
+        (new DiscardPortalDraftWhenLeavingForm)->handle($request, fn () => response()->json([]));
+
+        $this->assertSame(200, $session->get('portal.website_contact_change_draft.target_dept_id'));
+        $this->assertTrue($session->get('portal.website_contact_change_completed.1'));
+        $this->assertTrue($session->get('portal.website_contact_change_completed.2'));
+    }
+
     private function requester(): array
     {
         return [

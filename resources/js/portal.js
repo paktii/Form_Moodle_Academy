@@ -3,7 +3,7 @@ let pdfJsPromise;
 
 const portalTabRoleKey = 'portal.devTabRole';
 const portalTabRoleParameter = '_portal_role';
-const validPortalTabRoles = ['user', 'officer'];
+const validPortalTabRoles = ['user', 'officer', 'admin'];
 const loginRoleSwitcher = document.querySelector('.login-role-switcher');
 
 loginRoleSwitcher?.closest('form')?.addEventListener('submit', () => {
@@ -246,6 +246,7 @@ document.querySelector('[data-finish-request]')?.addEventListener('click', (even
         return;
     }
 
+    if (form) delete form.dataset.submitting;
     openDialog('finish-dialog', event.currentTarget);
 });
 
@@ -259,6 +260,94 @@ document.querySelectorAll('dialog').forEach((dialog) => {
     });
     if (dialog.hasAttribute('data-auto-open')) openDialog(dialog.id);
 });
+
+const portalActionResultDialog = document.getElementById('portal-action-result-dialog');
+if (portalActionResultDialog) {
+    const resultTitle = portalActionResultDialog.querySelector('.modal-heading h2');
+    const resultContent = portalActionResultDialog.querySelector('[data-portal-action-result-content]');
+    const resultIcon = portalActionResultDialog.querySelector('[data-portal-action-result-icon]');
+    const resultMessage = portalActionResultDialog.querySelector('[data-portal-action-result-message]');
+    let pendingRedirectUrl = null;
+
+    function showPortalActionResult(title, message, trigger, successful) {
+        pendingRedirectUrl = null;
+        portalActionResultDialog.classList.toggle('portal-modal--success', successful);
+        if (resultTitle) resultTitle.textContent = title;
+        if (resultContent) resultContent.className = successful ? 'success-message' : 'confirmation-message';
+        if (resultIcon) resultIcon.hidden = !successful;
+        if (resultMessage) {
+            resultMessage.textContent = message;
+            resultMessage.style.whiteSpace = 'pre-line';
+        }
+        openDialog('portal-action-result-dialog', trigger);
+    }
+
+    document.addEventListener('submit', async (event) => {
+        const form = event.target.closest('form[data-portal-ajax-action]');
+        if (!form || event.defaultPrevented) return;
+
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+
+        const controls = new Set([
+            ...form.querySelectorAll('button'),
+            ...(event.submitter ? [event.submitter] : []),
+        ]);
+        controls.forEach((control) => { control.disabled = true; });
+        form.setAttribute('aria-busy', 'true');
+
+        try {
+            const response = await fetch(addPortalTabRole(form.action), {
+                method: form.method,
+                body: new FormData(form),
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                const validationMessage = Object.values(payload.errors || {}).flat()[0];
+                const fallbackMessage = response.status === 419
+                    ? 'เซสชันหมดอายุ กรุณารีเฟรชหน้าและเข้าสู่ระบบอีกครั้ง'
+                    : 'ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง';
+                throw new Error(validationMessage || payload.message || fallbackMessage);
+            }
+
+            form.closest('dialog')?.close();
+            showPortalActionResult(
+                'ดำเนินการสำเร็จ',
+                payload.message || 'บันทึกข้อมูลเรียบร้อยแล้ว',
+                event.submitter,
+                true,
+            );
+            pendingRedirectUrl = payload.redirect_url
+                ? addPortalTabRole(payload.redirect_url).toString()
+                : null;
+        } catch (error) {
+            showPortalActionResult(
+                'ไม่สามารถดำเนินการได้',
+                error instanceof Error ? error.message : 'ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง',
+                event.submitter,
+                false,
+            );
+        } finally {
+            controls.forEach((control) => {
+                if (control.isConnected) control.disabled = false;
+            });
+            form.removeAttribute('aria-busy');
+        }
+    });
+
+    portalActionResultDialog.addEventListener('close', () => {
+        if (!pendingRedirectUrl) return;
+        const redirectUrl = pendingRedirectUrl;
+        pendingRedirectUrl = null;
+        window.location.assign(redirectUrl);
+    });
+}
 
 document.addEventListener('click', (event) => {
     const rosterConfirmButton = event.target.closest('[data-roster-confirm]');
@@ -729,6 +818,578 @@ document.querySelectorAll('[data-searchable-select]').forEach((field) => {
     dependencyValue?.addEventListener('change', syncDependency);
     syncDependency();
 });
+
+const adminDeanPagination = document.querySelector('[data-admin-dean-pagination]');
+if (adminDeanPagination) {
+    const previous = adminDeanPagination.querySelector('[data-admin-dean-previous]');
+    const next = adminDeanPagination.querySelector('[data-admin-dean-next]');
+    const status = adminDeanPagination.querySelector('[data-admin-dean-page-status]');
+    const mobileViewport = window.matchMedia('(max-width: 760px)');
+    const perPage = 5;
+    let currentPage = 1;
+
+    function renderDeanPage() {
+        const rows = [...document.querySelectorAll('[data-admin-dean-row]')];
+        if (!mobileViewport.matches || rows.length <= perPage) {
+            rows.forEach((row) => { row.hidden = false; });
+            adminDeanPagination.hidden = true;
+            return;
+        }
+
+        const pageCount = Math.ceil(rows.length / perPage);
+        currentPage = Math.min(Math.max(currentPage, 1), pageCount);
+        const firstRow = (currentPage - 1) * perPage;
+        const lastRow = firstRow + perPage;
+
+        rows.forEach((row, index) => {
+            row.hidden = index < firstRow || index >= lastRow;
+        });
+
+        previous.disabled = currentPage === 1;
+        next.disabled = currentPage === pageCount;
+        status.textContent = `หน้า ${currentPage} จาก ${pageCount}`;
+        adminDeanPagination.hidden = false;
+    }
+
+    previous.addEventListener('click', () => {
+        currentPage -= 1;
+        renderDeanPage();
+    });
+
+    next.addEventListener('click', () => {
+        currentPage += 1;
+        renderDeanPage();
+    });
+
+    mobileViewport.addEventListener('change', () => {
+        currentPage = 1;
+        renderDeanPage();
+    });
+
+    document.addEventListener('admin:dean-updated', renderDeanPage);
+
+    renderDeanPage();
+}
+
+document.querySelectorAll('.admin-form-card').forEach((details) => {
+    const summary = details.querySelector(':scope > .admin-form-card__header');
+    const body = details.querySelector(':scope > .admin-form-card__body');
+
+    if (!summary || !body) return;
+
+    let animation = null;
+    let closing = false;
+
+    function clearAnimationStyles() {
+        body.style.removeProperty('height');
+        body.style.removeProperty('overflow');
+        body.style.removeProperty('opacity');
+        body.style.removeProperty('padding-top');
+    }
+
+    function cancelAnimation() {
+        if (!animation) return;
+
+        animation.cancel();
+        animation = null;
+        clearAnimationStyles();
+    }
+
+    function openDetails() {
+        closing = false;
+        details.open = true;
+
+        const expandedHeight = body.scrollHeight;
+        const expandedPadding = getComputedStyle(body).paddingTop;
+        body.style.overflow = 'hidden';
+
+        animation = body.animate(
+            [
+                { height: '0px', opacity: 0, paddingTop: '0px' },
+                { height: `${expandedHeight}px`, opacity: 1, paddingTop: expandedPadding },
+            ],
+            { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+        );
+
+        animation.addEventListener('finish', () => {
+            animation = null;
+            clearAnimationStyles();
+        }, { once: true });
+    }
+
+    function closeDetails() {
+        closing = true;
+        const currentHeight = body.getBoundingClientRect().height;
+        const currentPadding = getComputedStyle(body).paddingTop;
+        body.style.overflow = 'hidden';
+
+        animation = body.animate(
+            [
+                { height: `${currentHeight}px`, opacity: 1, paddingTop: currentPadding },
+                { height: '0px', opacity: 0, paddingTop: '0px' },
+            ],
+            { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+        );
+
+        animation.addEventListener('finish', () => {
+            animation = null;
+            closing = false;
+            details.open = false;
+            clearAnimationStyles();
+        }, { once: true });
+    }
+
+    summary.addEventListener('click', (event) => {
+        event.preventDefault();
+        const wasClosing = closing;
+        cancelAnimation();
+
+        if (wasClosing || !details.open) {
+            openDetails();
+        } else {
+            closeDetails();
+        }
+    });
+});
+
+document.querySelectorAll('[data-admin-person-search]').forEach((field) => {
+    const input = field.querySelector('[data-admin-person-input]');
+    const value = field.querySelector('[data-admin-person-value]');
+    const menu = field.querySelector('[data-admin-person-menu]');
+    const status = field.querySelector('[data-admin-person-status]');
+    const arrow = field.querySelector('[data-admin-person-arrow]');
+    const clear = field.querySelector('[data-admin-person-clear]');
+    const form = field.closest('form');
+    const dependencyName = field.dataset.adminPersonDependsOn;
+    const dependency = dependencyName ? form?.querySelector(`[name="${dependencyName}"]`) : null;
+    const defaultPlaceholder = input.dataset.defaultPlaceholder || input.placeholder;
+    const dependencyPlaceholder = input.dataset.dependencyPlaceholder || defaultPlaceholder;
+    let debounceTimer;
+    let requestNumber = 0;
+    let activeIndex = -1;
+
+    function options() {
+        return [...menu.querySelectorAll('[data-admin-person-option]')];
+    }
+
+    function updateControls() {
+        const hasText = input.value.trim() !== '';
+        arrow.hidden = hasText;
+        clear.hidden = !hasText;
+    }
+
+    function openMenu() {
+        if (input.disabled) return;
+        menu.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeMenu() {
+        menu.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+        setActive(-1);
+    }
+
+    function setActive(index) {
+        const items = options();
+        activeIndex = index;
+        items.forEach((option) => option.classList.remove('is-active'));
+        if (items[index]) {
+            items[index].classList.add('is-active');
+            items[index].scrollIntoView({ block: 'nearest' });
+            input.setAttribute('aria-activedescendant', items[index].id);
+        } else {
+            input.removeAttribute('aria-activedescendant');
+        }
+    }
+
+    function selectPerson(option) {
+        input.value = option.dataset.personLabel;
+        value.value = option.dataset.value;
+        input.setCustomValidity('');
+        updateControls();
+        closeMenu();
+        input.focus();
+    }
+
+    function makeOption(person, index) {
+        const option = document.createElement('button');
+        const name = document.createElement('strong');
+        const detail = document.createElement('small');
+        option.type = 'button';
+        option.id = `${input.id}-person-${person.person_id || index}`;
+        option.className = 'searchable-select__option admin-person-search__option';
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', 'false');
+        option.dataset.adminPersonOption = '';
+        option.dataset.value = person.value;
+        option.dataset.personLabel = `${person.name} (${person.buasri_id})`;
+        name.textContent = person.name;
+        detail.textContent = [person.buasri_id, person.department].filter(Boolean).join(' • ');
+        option.append(name, detail);
+        option.addEventListener('click', () => selectPerson(option));
+        return option;
+    }
+
+    function renderResults(results) {
+        menu.querySelectorAll('[data-admin-person-option]').forEach((option) => option.remove());
+        results.forEach((person, index) => menu.append(makeOption(person, index)));
+        status.textContent = results.length === 0
+            ? 'ไม่พบบุคลากรที่ค้นหา กรุณาลองระบุชื่อเต็มหรือ Buasri ID'
+            : '';
+        status.hidden = results.length > 0;
+        setActive(-1);
+        openMenu();
+    }
+
+    async function searchPeople(query) {
+        if (dependency && dependency.value === '') return;
+        const currentRequest = ++requestNumber;
+        status.hidden = false;
+        status.textContent = 'กำลังค้นหา...';
+        menu.querySelectorAll('[data-admin-person-option]').forEach((option) => option.remove());
+        openMenu();
+
+        try {
+            const url = addPortalTabRole(field.dataset.searchUrl);
+            url.searchParams.set('q', query);
+            if (dependency) url.searchParams.set('target_dept_id', dependency.value);
+            const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+            if (!response.ok) throw new Error(`Personnel search failed with status ${response.status}`);
+            const payload = await response.json();
+            if (currentRequest === requestNumber) renderResults(Array.isArray(payload.results) ? payload.results : []);
+        } catch {
+            if (currentRequest !== requestNumber) return;
+            status.hidden = false;
+            status.textContent = 'ไม่สามารถค้นหาบุคลากรได้ กรุณาลองใหม่';
+            openMenu();
+        }
+    }
+
+    input.addEventListener('input', () => {
+        value.value = '';
+        input.setCustomValidity('');
+        updateControls();
+        clearTimeout(debounceTimer);
+        const query = input.value.trim();
+        if (query.length < 2) {
+            requestNumber += 1;
+            status.hidden = false;
+            status.textContent = 'พิมพ์อย่างน้อย 2 ตัวอักษรแล้วเลือกบุคลากรจากรายการ';
+            menu.querySelectorAll('[data-admin-person-option]').forEach((option) => option.remove());
+            query === '' ? closeMenu() : openMenu();
+            return;
+        }
+        debounceTimer = setTimeout(() => searchPeople(query), 300);
+    });
+
+    input.addEventListener('focus', () => {
+        if (input.value.trim().length >= 2 && value.value === '') searchPeople(input.value.trim());
+    });
+
+    input.addEventListener('keydown', (event) => {
+        const items = options();
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            openMenu();
+            setActive(Math.min(activeIndex + 1, items.length - 1));
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActive(Math.max(activeIndex - 1, 0));
+        } else if (event.key === 'Enter' && activeIndex >= 0) {
+            event.preventDefault();
+            selectPerson(items[activeIndex]);
+        } else if (event.key === 'Escape') {
+            closeMenu();
+        }
+    });
+
+    clear.addEventListener('click', () => {
+        input.value = '';
+        value.value = '';
+        input.setCustomValidity('');
+        updateControls();
+        closeMenu();
+        input.focus();
+    });
+
+    function syncDependency(clearSelection = false) {
+        if (!dependency) return;
+        const enabled = dependency.value !== '';
+        if (clearSelection) {
+            input.value = '';
+            value.value = '';
+            input.setCustomValidity('');
+            menu.querySelectorAll('[data-admin-person-option]').forEach((option) => option.remove());
+            closeMenu();
+        }
+        input.disabled = !enabled;
+        input.placeholder = enabled ? defaultPlaceholder : dependencyPlaceholder;
+        updateControls();
+    }
+
+    dependency?.addEventListener('change', () => syncDependency(true));
+
+    form?.addEventListener('submit', (event) => {
+        if (!input.required || input.disabled || value.value !== '') return;
+        event.preventDefault();
+        input.setCustomValidity('กรุณาเลือกบุคลากรจากรายการค้นหา');
+        input.reportValidity();
+        input.focus();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!field.contains(event.target)) closeMenu();
+    });
+
+    syncDependency(false);
+    updateControls();
+});
+
+document.querySelectorAll('[data-acting-dean]').forEach((field) => {
+    const toggle = field.querySelector('[data-acting-dean-toggle]');
+    const search = field.querySelector('[data-acting-dean-search]');
+    const input = search?.querySelector('[data-admin-person-input]');
+    const principalField = field.closest('.dean-selection')?.querySelector('[data-searchable-select]');
+    const principalInput = principalField?.querySelector('[data-searchable-select-input]');
+    const principalValue = principalField?.querySelector('[data-searchable-select-value]');
+    const principalMenu = principalField?.querySelector('[data-searchable-select-menu]');
+    const principalArrow = principalField?.querySelector('[data-searchable-select-arrow]');
+    const principalClear = principalField?.querySelector('[data-searchable-select-clear]');
+    const principalWasRequired = principalInput?.required ?? false;
+
+    if (!toggle || !search || !input) return;
+
+    function syncActingDean() {
+        search.hidden = !toggle.checked;
+        input.required = toggle.checked;
+        if (principalInput) {
+            principalInput.required = principalWasRequired && !toggle.checked;
+            principalInput.disabled = toggle.checked;
+            principalInput.setAttribute('aria-disabled', toggle.checked ? 'true' : 'false');
+            if (toggle.checked) {
+                principalInput.setCustomValidity('');
+                principalInput.blur();
+                principalInput.setAttribute('aria-expanded', 'false');
+                if (principalMenu) principalMenu.hidden = true;
+                if (principalArrow) principalArrow.hidden = true;
+                if (principalClear) principalClear.hidden = true;
+            } else {
+                const hasPrincipalText = principalInput.value.trim() !== '';
+                if (principalArrow) principalArrow.hidden = hasPrincipalText;
+                if (principalClear) principalClear.hidden = !hasPrincipalText;
+                if (principalWasRequired && hasPrincipalText && principalValue?.value === '') {
+                    principalInput.setCustomValidity('กรุณาเลือกผู้รับรองจากรายการ');
+                }
+            }
+        }
+        if (toggle.checked) return;
+
+        const clear = search.querySelector('[data-admin-person-clear]');
+        if (input.value !== '') clear?.click();
+    }
+
+    toggle.addEventListener('change', () => {
+        syncActingDean();
+        if (toggle.checked) input.focus();
+    });
+    syncActingDean();
+});
+
+const adminAssignmentConfirmDialog = document.getElementById('admin-assignment-confirm-dialog');
+if (adminAssignmentConfirmDialog) {
+    const dialogTitle = adminAssignmentConfirmDialog.querySelector('.modal-heading h2');
+    const message = adminAssignmentConfirmDialog.querySelector('[data-admin-assignment-confirm-message]');
+    const confirmAction = adminAssignmentConfirmDialog.querySelector('[data-admin-assignment-confirm-action]');
+    const resultDialog = document.getElementById('admin-assignment-result-dialog');
+    const resultTitle = resultDialog?.querySelector('.modal-heading h2');
+    const resultContent = resultDialog?.querySelector('[data-admin-assignment-result-content]');
+    const resultIcon = resultDialog?.querySelector('[data-admin-assignment-result-icon]');
+    const resultMessage = resultDialog?.querySelector('[data-admin-assignment-result-message]');
+    let pendingForm = null;
+
+    function resetAdminPersonSearch(form) {
+        const input = form.querySelector('[data-admin-person-input]');
+        const value = form.querySelector('[data-admin-person-value]');
+        if (!input || !value) return;
+
+        input.value = '';
+        value.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function showAssignmentResult(title, text, trigger, successful) {
+        if (!resultDialog || !resultTitle || !resultContent || !resultIcon || !resultMessage) return;
+        resultDialog.classList.toggle('portal-modal--success', successful);
+        resultContent.className = successful ? 'success-message' : 'confirmation-message';
+        resultIcon.hidden = !successful;
+        resultTitle.textContent = title;
+        resultMessage.textContent = text;
+        openDialog('admin-assignment-result-dialog', trigger);
+    }
+
+    function updateAssignmentSection(form, payload) {
+        const responsibility = form.closest('[data-admin-responsibility]');
+        const list = responsibility?.querySelector('.admin-assignment-list');
+        if (!responsibility || !list) return;
+
+        const removing = form.dataset.confirmMode === 'remove';
+        const kind = form.dataset.adminAssignmentKind;
+
+        if (removing) {
+            form.closest('.admin-assignment')?.remove();
+        } else if (payload.row_html) {
+            const template = document.createElement('template');
+            template.innerHTML = payload.row_html.trim();
+            const row = template.content.firstElementChild;
+            const assignmentId = row?.dataset.adminAssignmentId;
+            const existingRow = assignmentId
+                ? list.querySelector(`[data-admin-assignment-id="${CSS.escape(assignmentId)}"]`)
+                : null;
+
+            list.querySelector('.admin-assignment-list__empty')?.remove();
+            if (row && existingRow) existingRow.replaceWith(row);
+            else if (row) list.append(row);
+            resetAdminPersonSearch(form);
+        }
+
+        if (!list.querySelector('.admin-assignment')) {
+            const empty = document.createElement('p');
+            empty.className = 'admin-assignment-list__empty';
+            empty.textContent = kind === 'head'
+                ? 'ยังไม่ได้กำหนดหัวหน้าผู้รับผิดชอบ'
+                : 'ยังไม่ได้กำหนดเจ้าหน้าที่ผู้รับผิดชอบ';
+            list.append(empty);
+        }
+
+        if (kind === 'head') {
+            const notice = responsibility.querySelector('[data-admin-head-notice]');
+            const addForm = responsibility.querySelector('form[data-confirm-mode="add"]');
+            const hasHead = Boolean(list.querySelector('.admin-assignment'));
+            if (notice) notice.hidden = !hasHead;
+            if (addForm) addForm.hidden = hasHead;
+        }
+    }
+
+    function updateDeanSection(form, payload) {
+        const rows = document.querySelector('[data-admin-dean-rows]');
+        if (!rows || !payload.row_html) return;
+
+        const template = document.createElement('template');
+        template.innerHTML = payload.row_html.trim();
+        const row = template.content.firstElementChild;
+        const departmentId = row?.dataset.adminDepartmentId;
+        const existingRow = departmentId
+            ? rows.querySelector(`[data-admin-department-id="${CSS.escape(departmentId)}"]`)
+            : null;
+
+        rows.querySelector('.empty-state')?.closest('tr')?.remove();
+        if (row && existingRow) existingRow.replaceWith(row);
+        else if (row) rows.append(row);
+
+        form.reset();
+        form.querySelector('[name="target_dept_id"]')?.dispatchEvent(new Event('change', { bubbles: true }));
+        resetAdminPersonSearch(form);
+        document.dispatchEvent(new Event('admin:dean-updated'));
+    }
+
+    async function submitAssignmentForm(form) {
+        const submitButton = form.querySelector('[type="submit"]');
+        if (submitButton) submitButton.disabled = true;
+
+        try {
+            const response = await fetch(addPortalTabRole(form.action), {
+                method: form.method,
+                body: new FormData(form),
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                const validationMessage = Object.values(payload.errors || {}).flat()[0];
+                throw new Error(validationMessage || payload.message || 'ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง');
+            }
+
+            if (form.dataset.confirmMode === 'dean') updateDeanSection(form, payload);
+            else updateAssignmentSection(form, payload);
+            const resultTrigger = form.closest('.admin-form-card')?.querySelector('summary') || submitButton;
+            showAssignmentResult('ดำเนินการสำเร็จ', payload.message || 'บันทึกข้อมูลเรียบร้อยแล้ว', resultTrigger, true);
+        } catch (error) {
+            showAssignmentResult('ไม่สามารถดำเนินการได้', error.message, submitButton, false);
+        } finally {
+            if (submitButton?.isConnected) submitButton.disabled = false;
+        }
+    }
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target.closest('form[data-admin-assignment-confirm]');
+        if (!form) return;
+
+        if (form.dataset.assignmentConfirmed === 'true') {
+            delete form.dataset.assignmentConfirmed;
+            if (form.matches('[data-admin-assignment-ajax]')) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                submitAssignmentForm(form);
+            }
+            return;
+        }
+
+        const selectedPerson = form.querySelector('[data-admin-person-value]');
+        if (selectedPerson && selectedPerson.value === '') return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        pendingForm = form;
+
+        const confirmMode = form.dataset.confirmMode;
+        const removing = confirmMode === 'remove';
+        const person = form.dataset.confirmPerson
+            || form.querySelector('[data-admin-person-input]')?.value.trim()
+            || 'บุคลากรที่เลือก';
+        const role = form.dataset.confirmRole;
+        const formCode = form.dataset.confirmForm;
+
+        if (confirmMode === 'dean') {
+            const departmentSelect = form.querySelector('[name="target_dept_id"]');
+            const department = departmentSelect.options[departmentSelect.selectedIndex]?.text.trim();
+            const position = form.querySelector('[name="position_name"]')?.value.trim();
+            dialogTitle.textContent = 'ยืนยันการเปลี่ยนผู้รับรอง';
+            message.textContent = `คุณต้องการกำหนด ${person} เป็น ${position} ของ ${department} ใช่หรือไม่? ผู้รับรองคนเดิมจะถูกปิดใช้งาน`;
+            confirmAction.textContent = 'ยืนยันบันทึกผู้รับรอง';
+            confirmAction.className = 'portal-button portal-button--primary';
+        } else {
+            dialogTitle.textContent = removing ? 'ยืนยันการยกเลิกสิทธิ์' : 'ยืนยันการเพิ่มสิทธิ์';
+            message.textContent = removing
+                ? `คุณต้องการยกเลิกสิทธิ์ ${role} ของ ${person} สำหรับแบบฟอร์ม ${formCode} ใช่หรือไม่?`
+                : `คุณต้องการเพิ่มสิทธิ์ ${role} ให้ ${person} สำหรับแบบฟอร์ม ${formCode} ใช่หรือไม่?`;
+            confirmAction.textContent = removing ? 'ยืนยันยกเลิกสิทธิ์' : 'ยืนยันเพิ่มสิทธิ์';
+            confirmAction.className = removing
+                ? 'portal-button portal-button--danger'
+                : 'portal-button portal-button--primary';
+        }
+
+        openDialog('admin-assignment-confirm-dialog', form.querySelector('[type="submit"]'));
+    }, true);
+
+    confirmAction.addEventListener('click', () => {
+        if (!pendingForm) return;
+
+        const form = pendingForm;
+        pendingForm = null;
+        form.dataset.assignmentConfirmed = 'true';
+        adminAssignmentConfirmDialog.close();
+        form.requestSubmit();
+    });
+
+    adminAssignmentConfirmDialog.addEventListener('close', () => {
+        pendingForm = null;
+    });
+}
 
 const instructorList = document.querySelector('[data-instructor-list]');
 function renumberInstructors() {
@@ -1645,6 +2306,7 @@ courseForm?.addEventListener('keydown', (event) => {
 
 document.querySelectorAll('form').forEach((form) => {
     form.addEventListener('submit', (event) => {
+        if (event.defaultPrevented) return;
         if (form.dataset.submitting) { event.preventDefault(); return; }
         form.dataset.submitting = 'true';
         event.submitter?.setAttribute('aria-busy', 'true');
@@ -1790,3 +2452,9 @@ if (deanRejectDialog) {
 
     deanRejectDialog.addEventListener('close', showDeanRejectEntry);
 }
+
+document.querySelectorAll('[data-report-filter]').forEach((form) => {
+    form.querySelectorAll('select').forEach((select) => {
+        select.addEventListener('change', () => form.requestSubmit());
+    });
+});

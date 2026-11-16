@@ -5,7 +5,7 @@ $requestCode = \Illuminate\Support\Str::afterLast($requestNumber, '-');
 $documentDownloadFilename = $requestCode !== '' ? "CC-ITED-02_{$requestCode}.pdf" : (($data['website_name'] ?? 'คำขอเปลี่ยนแปลงผู้ดูแลเว็บไซต์').'.pdf');
 @endphp
 <x-portal-layout :title="$formName" header-context="สร้างคำร้อง" :highlight-header-context="true" :tab-title="'Website Contact Change · Step '.$step">
-    <main class="form-layout">
+    <main class="form-layout website-contact-change-form-layout">
         <form id="course-form" action="{{ route('website-contact-change-requests.save-step', $step) }}" method="post" enctype="multipart/form-data" data-request-form>
             @csrf
             <section class="form-card">
@@ -42,7 +42,7 @@ $documentDownloadFilename = $requestCode !== '' ? "CC-ITED-02_{$requestCode}.pdf
                         </section>
                         <p class="muted">** สำนักคอมพิวเตอร์จะทำการเปลี่ยนรหัสผ่านของ Account และยกเลิกผู้ดูแลเว็บไซต์เดิมของส่วนงานท่าน</p>
                     @else
-                        <section class="dean-selection"><div class="form-section__header"><h2>เลือกผู้รับรองของส่วนงาน</h2></div><x-portal-searchable-select name="dean_pers_id" label="คณบดี / ผู้อำนวยการ / หัวหน้าส่วนงาน" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" />@error('dean_pers_id')<p class="field-error" role="alert">{{ $message }}</p>@enderror</section>
+                        <section class="dean-selection"><div class="form-section__header"><h2>เลือกผู้รับรองของส่วนงาน</h2></div><x-portal-searchable-select name="dean_pers_id" label="คณบดี / ผู้อำนวยการ" :options="$deanOptions" :value="$value('dean_pers_id')" placeholder="พิมพ์ชื่อผู้รับรองที่ต้องการส่งคำร้องให้" :required="!empty($deanOptions)" :show-all-on-focus="true" note="หาก คณบดี / ผู้อำนวยการ ไม่ถูกต้อง กรุณาติดต่อ ited@g.swu.ac.th" /><x-acting-dean-selector :checked="$value('dean_is_acting')" :buasri-id="$value('acting_dean_buasri_id')" :person-name="$value('acting_dean_name')" />@error('dean_pers_id')<p class="field-error" role="alert">{{ $message }}</p>@enderror</section>
                         <section class="document-download"><div class="form-section__header"><h2>ตรวจสอบเอกสารคำร้อง</h2><span class="muted">ทั้งหมด 1 ไฟล์</span></div><div class="document-row"><x-portal-icon name="download" /><div class="document-row__name">{{ $documentDownloadFilename }}</div><div class="document-row__actions"><x-portal-button variant="secondary" class="document-row__icon-button" data-open-dialog="pdf-preview-dialog" aria-label="Preview เอกสาร" title="Preview เอกสาร"><x-portal-icon name="eye" /></x-portal-button><x-portal-button :href="route('website-contact-change-requests.document.download', 'draft')" variant="secondary" class="document-row__icon-button" :download="$documentDownloadFilename" aria-label="ดาวน์โหลดเอกสาร" title="ดาวน์โหลดเอกสาร"><x-portal-icon name="download" /></x-portal-button></div></div></section>
                         <section class="document-attachments"><h2>เอกสารเพิ่มเติมที่แนบมา</h2><div class="document-attachments__content" data-additional-documents-content><p class="muted document-attachments__empty" data-additional-document-empty>ไม่มีเอกสารเพิ่มเติมที่แนบมา</p><div data-additional-document-list></div></div></section>
                     @endif

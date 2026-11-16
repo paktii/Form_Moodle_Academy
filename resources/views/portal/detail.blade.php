@@ -8,6 +8,9 @@ $tabTitle = $role === 'officer' ? 'Officer Review' : ($role === 'approver' ? 'Ap
 $canReview = $role === 'officer' && $record['status'] === 'UNDER_OFFICER_REVIEW';
 $canEditResult = $role === 'officer' && $record['status'] === 'COMPLETED';
 $canApprove = $role === 'approver' && $record['status'] === 'PENDING_APPROVAL';
+$isNotEndorsed = $record['status'] === 'NOT_ENDORSED'
+    || (($record['decision_source'] ?? null) === 'DEAN' && ($record['dean_decision'] ?? null) === 'NOT_ENDORSED');
+$reasonLabel = $isNotEndorsed ? 'เหตุผลที่ไม่รับรอง' : 'เหตุผลที่ไม่อนุมัติ';
 $formTypeCode = $record['form_type_code'] ?? 'CC-ITED-06';
 $isWebsiteRequest = $formTypeCode === 'CC-ITED-01';
 $isWebsiteContactChangeRequest = $formTypeCode === 'CC-ITED-02';
@@ -34,9 +37,9 @@ $documentDownloadRoute = match ($formTypeCode) {
         @if($record['reason'] ?? null)<section class="reason-banner reason-banner--message">
             <div>
                 @if($role === 'officer')
-                <h3 class="reason-banner__inline">เหตุผลที่ไม่อนุมัติ: {{ $record['reason'] }}</h3>
+                <h3 class="reason-banner__inline">{{ $reasonLabel }}: {{ $record['reason'] }}</h3>
                 @else
-                <h3>เหตุผลที่ไม่อนุมัติ</h3>
+                <h3>{{ $reasonLabel }}</h3>
                 <p>{{ $record['reason'] }}</p>
                 @endif
             </div>
@@ -121,6 +124,14 @@ $documentDownloadRoute = match ($formTypeCode) {
             @endif
         </section>
         @endif
+        @if($role === 'officer' && ($record['dean_decision'] ?? null) === 'APPROVED')
+        <x-portal-detail-card title="ข้อมูลการอนุมัติจากผู้รับรอง" class="dean-approval-card">
+            <div class="document-row">
+                <x-portal-icon name="calendar-check" />
+                <span class="document-row__name dean-approval-card__summary">ผู้อนุมัติ: {{ $record['dean_name'] ?? '—' }}<br>ตำแหน่ง: {{ $record['dean_position'] ?? '—' }}<br>วันที่อนุมัติ: {{ $record['dean_decided_date'] ?? '—' }}<br>เวลาที่อนุมัติ: {{ filled($record['dean_decided_time'] ?? null) ? $record['dean_decided_time'].' น.' : '—' }}</span>
+            </div>
+        </x-portal-detail-card>
+        @endif
         @if(!$isWebsiteRequest && !$isWebsiteContactChangeRequest && !$isWebsiteStorageRequest && !$isEmeetingRequest && (($record['course_id'] ?? null) || ($record['execution_detail'] ?? null)))<x-portal-detail-card title="ผลการสร้างรายวิชา" class="course-result">
             <div class="document-row execution-detail-row"><x-portal-icon name="globe-code" /><span class="document-row__name">Course ID: @if($record['course_id'] ?? null)<a class="course-link" href="{{ rtrim(config('course-workflow.moodle_url'), '/').'/course/view.php?id='.rawurlencode($record['course_id']) }}" target="_blank" rel="noopener noreferrer" aria-label="เปิด Course ID {{ $record['course_id'] }} ใน SWU Moodle Academy (แท็บใหม่)">{{ $record['course_id'] }}</a>@else<span class="muted">—</span>@endif<br>รายละเอียดการดำเนินการ: <span class="execution-detail-text">{{ $record['execution_detail'] ?? '—' }}</span></span>@if($canEditResult)<x-portal-button variant="secondary" class="detail-card__action course-result__edit" data-open-dialog="edit-result-dialog"><x-portal-icon name="pen-line" /><span class="course-result__edit-label">แก้ไขผล</span></x-portal-button>@endif</div>
         </x-portal-detail-card>@endif
@@ -157,7 +168,7 @@ $documentDownloadRoute = match ($formTypeCode) {
     </main>
     @if($canEditResult)
     <x-portal-modal id="edit-result-dialog" title="แก้ไขผลการดำเนินการ" :auto-open="$errors->hasAny(['course_id', 'allocated_domain', 'execution_detail', 'granted_space_gb', 'notify_requester'])">
-        <form action="{{ route('officer.result.update', $record['id']) }}" method="post" data-edit-result-form>@csrf
+        <form action="{{ route('officer.result.update', $record['id']) }}" method="post" data-edit-result-form data-portal-ajax-action>@csrf
             <div data-edit-result-entry>
             @if($isWebsiteRequest)
             <label class="form-label" for="edit-result-allocated-domain">ข้อมูลการจัดสรรพื้นที่เว็บไซต์<span class="required-indicator" aria-hidden="true">*</span>
@@ -203,17 +214,17 @@ $documentDownloadRoute = match ($formTypeCode) {
     @if($role === 'officer' && $record['has_student_roster'] && $record['student_roster_needs_officer_attention'])
     <x-portal-modal id="acknowledge-roster-dialog" title="ยืนยันการรับทราบรายชื่อ">
         <p class="confirmation-message">คุณตรวจสอบรายชื่อผู้เรียน<br class="roster-confirmation__mobile-break">เวอร์ชันล่าสุดแล้วใช่หรือไม่?<br>เมื่อยืนยัน ระบบจะล็อกไม่ให้ผู้ยื่นคำร้องแก้ไขไฟล์</p>
-        <form action="{{ route('officer.student-roster.acknowledge', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">ยืนยันรับทราบ</x-portal-button></div></form>
+        <form action="{{ route('officer.student-roster.acknowledge', $record['id']) }}" method="post" data-portal-ajax-action>@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">ยืนยันรับทราบ</x-portal-button></div></form>
     </x-portal-modal>
     @elseif($role === 'officer' && $record['has_student_roster'] && $record['student_roster_acknowledged'])
     <x-portal-modal id="reopen-roster-dialog" title="ตรวจสอบคำขอแก้ไขรายชื่อ">
         <p class="confirmation-message">ต้องการอนุญาตให้ผู้ยื่นคำร้องอัปโหลดรายชื่อเวอร์ชันใหม่ใช่หรือไม่?<br>ระบบจะแจ้งผู้ยื่นคำร้องให้ทราบ</p>
-        <form action="{{ route('officer.student-roster.reopen', $record['id']) }}" method="post">@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">อนุญาตให้อัปโหลดใหม่</x-portal-button></div></form>
+        <form action="{{ route('officer.student-roster.reopen', $record['id']) }}" method="post" data-portal-ajax-action>@csrf<div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>ยกเลิก</x-portal-button><x-portal-button type="submit">อนุญาตให้อัปโหลดใหม่</x-portal-button></div></form>
     </x-portal-modal>
     @endif
     @if($canReview)
     <x-portal-modal id="review-dialog" title="ยืนยันอนุมัติคำร้อง">
-        <form action="{{ route('officer.review', $record['id']) }}" method="post" data-officer-approval-form>@csrf<input type="hidden" name="decision" value="pass">
+        <form action="{{ route('officer.review', $record['id']) }}" method="post" data-officer-approval-form data-portal-ajax-action>@csrf<input type="hidden" name="decision" value="pass">
             <div data-officer-approval-entry>
                 @if($isWebsiteRequest)
                 <label class="form-label" for="officer-allocated-domain">ข้อมูลการจัดสรรพื้นที่เว็บไซต์<span class="required-indicator" aria-hidden="true">*</span>
@@ -255,7 +266,7 @@ $documentDownloadRoute = match ($formTypeCode) {
         </form>
     </x-portal-modal>
     <x-portal-modal id="officer-reject-dialog" title="ระบุเหตุผลที่ไม่อนุมัติ">
-        <form action="{{ route('officer.review', $record['id']) }}" method="post" id="officer-reject-form">@csrf<input type="hidden" name="decision" value="reject">
+        <form action="{{ route('officer.review', $record['id']) }}" method="post" id="officer-reject-form" data-portal-ajax-action>@csrf<input type="hidden" name="decision" value="reject">
             <div data-officer-reject-entry>
                 <label class="form-label" for="officer-reject-reason">เหตุผลที่ไม่อนุมัติ (ส่งให้ผู้ยื่นคำร้อง)<textarea id="officer-reject-reason" name="reason" class="form-field form-field--textarea" required maxlength="3000">{{ old('reason') }}</textarea></label>
                 <div class="modal-actions"><x-portal-button type="button" variant="secondary" data-officer-reject-cancel>ยกเลิก</x-portal-button><x-portal-button type="button" variant="danger" data-officer-reject-send>ไม่อนุมัติ</x-portal-button></div>

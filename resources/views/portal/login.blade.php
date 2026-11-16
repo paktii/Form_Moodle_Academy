@@ -14,7 +14,7 @@
                 <fieldset class="login-role-switcher">
                     <legend>บทบาทสำหรับทดสอบ</legend>
                     <div class="login-role-switcher__options">
-                        <label><input type="radio" name="login_role" value="" @checked(old('login_role', '') === '')><span>อัตโนมัติ</span></label>
+                        <label><input type="radio" name="login_role" value="admin" @checked(old('login_role', 'admin') === 'admin')><span>ผู้ดูแลระบบ</span></label>
                         <label><input type="radio" name="login_role" value="user" @checked(old('login_role') === 'user')><span>ผู้ใช้งาน</span></label>
                         <label><input type="radio" name="login_role" value="officer" @checked(old('login_role') === 'officer')><span>เจ้าหน้าที่</span></label>
                     </div>

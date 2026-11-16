@@ -21,14 +21,26 @@ class SwuMisApiClient
     /** @return array<int, array<string, mixed>> */
     public function all(string $endpoint): array
     {
+        return $this->paginated($endpoint, 'loadalldata', 'all');
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function searchAll(string $endpoint, string $search, string $value): array
+    {
+        return $this->paginated($endpoint, $search, $value);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function paginated(string $endpoint, string $search, string $value): array
+    {
         $page = 1;
         $pageSize = max(1, (int) config('swu_mis_api.page_size', 100));
         $records = [];
 
         do {
             $payload = $this->request($endpoint, [
-                'psearch' => 'loadalldata',
-                'pvalue' => 'all',
+                'psearch' => $search,
+                'pvalue' => $value,
                 'pagination' => [
                     'pageNumber' => $page,
                     'pageSize' => $pageSize,

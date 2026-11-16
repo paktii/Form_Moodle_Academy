@@ -28,8 +28,7 @@
             <x-requester-page-header :title="$title" :context-title="$headerContext" :highlight-context="$highlightHeaderContext" :description="$description" />
             @if(count($globalErrors) > 0)
             <div class="error-summary" role="alert" tabindex="-1">
-                <strong>กรุณาตรวจสอบข้อมูล</strong>
-                <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
+                <p><strong>กรุณาตรวจสอบข้อมูล:</strong> {{ implode(' ', $globalErrors) }}</p>
             </div>
             @endif
             {{ $slot }}
@@ -41,8 +40,7 @@
         @endunless
         @if(count($globalErrors) > 0 && !$login)
         <div class="error-summary" role="alert" tabindex="-1">
-            <strong>กรุณาตรวจสอบข้อมูล</strong>
-            <ul>@foreach($globalErrors as $error)<li>{{ $error }}</li>@endforeach</ul>
+            <p><strong>กรุณาตรวจสอบข้อมูล:</strong> {{ implode(' ', $globalErrors) }}</p>
         </div>
         @endif
         {{ $slot }}
@@ -58,6 +56,13 @@
                 <x-portal-button type="submit">ยืนยันออกจากระบบ</x-portal-button>
             </div>
         </form>
+    </x-portal-modal>
+    <x-portal-modal id="portal-action-result-dialog" title="ดำเนินการสำเร็จ" class="portal-modal--success">
+        <div class="success-message" data-portal-action-result-content>
+            <span class="success-icon" data-portal-action-result-icon><x-portal-icon name="check" /></span>
+            <p data-portal-action-result-message></p>
+        </div>
+        <div class="modal-actions"><x-portal-button variant="secondary" data-close-dialog>เสร็จสิ้น</x-portal-button></div>
     </x-portal-modal>
     @endunless
     @if(session('success'))

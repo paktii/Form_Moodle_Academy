@@ -18,6 +18,8 @@ class ServiceRequest extends ServicePortalModel
         'requester_pers_id' => 'integer',
         'target_dept_id' => 'integer',
         'dean_pers_id' => 'integer',
+        'dean_principal_pers_id' => 'integer',
+        'dean_is_acting' => 'boolean',
         'submitted_at' => 'datetime',
         'completed_at' => 'datetime',
         'completed_by_pers_id' => 'integer',

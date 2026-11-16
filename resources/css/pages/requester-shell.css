@@ -236,6 +236,24 @@
         object-fit: contain;
     }
 
+    .requester-page-header__home-logo {
+        display: inline-flex;
+        flex: none;
+        border-radius: 6px;
+    }
+
+    .requester-page-header__home-title {
+        border-radius: 3px;
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .requester-page-header__home-logo:focus-visible,
+    .requester-page-header__home-title:focus-visible {
+        outline: 2px solid var(--portal-navy);
+        outline-offset: 3px;
+    }
+
     .requester-page-header > .portal-account,
     .requester-page-header > .portal-header__officer-account {
         margin-left: auto;
@@ -304,7 +322,7 @@
         font-weight: 500;
     }
 
-    .requester-page-header--active-context h1 > span:first-child {
+    .requester-page-header--active-context h1 > :first-child {
         color: #667085;
         font-weight: 500;
     }
@@ -370,7 +388,7 @@
         display: none;
     }
 
-    @media (max-width: 1120px) and (min-width: 901px) {
+    @media (max-width: 1120px) and (min-width: 1025px) {
         .requester-shell {
             --requester-sidebar-width: 280px;
         }
@@ -399,7 +417,8 @@
         }
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 1024px),
+        (min-width: 1025px) and (max-width: 1400px) and (hover: none) and (pointer: coarse) {
         html.has-requester-sidebar {
             overflow: hidden;
         }
@@ -507,7 +526,7 @@
             line-height: 1.5;
         }
 
-        .requester-page-header--with-context h1 > span:first-child {
+        .requester-page-header--with-context h1 > :first-child {
             font-size: inherit;
             line-height: inherit;
         }

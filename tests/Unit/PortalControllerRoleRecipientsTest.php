@@ -15,24 +15,34 @@ use Tests\TestCase;
 
 class PortalControllerRoleRecipientsTest extends TestCase
 {
-    public function test_local_form_head_uses_the_configured_test_recipient_without_an_assignment(): void
+    public function test_local_form_head_uses_the_active_admin_assignment(): void
     {
         $this->app->detectEnvironment(fn () => 'local');
-        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
-        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
-        DB::shouldReceive('connection')->never();
+
+        $query = Mockery::mock();
+        $query->shouldReceive('table')->once()->with('service_portal.form_head_assignment')->andReturnSelf();
+        $query->shouldReceive('where')->once()->with('form_type_code', 'CC-ITED-01')->andReturnSelf();
+        $query->shouldReceive('where')->once()->with('is_active', 'Y')->andReturnSelf();
+        $query->shouldReceive('orderBy')->once()->with('head_assignment_id')->andReturnSelf();
+        $query->shouldReceive('pluck')->once()->with('head_pers_id')->andReturn(collect([701341]));
+        DB::shouldReceive('connection')->once()->with('course133')->andReturn($query);
+
+        $person = (object) ['person_id' => 701341];
+        $directory = Mockery::mock(PersonnelDirectory::class);
+        $directory->shouldReceive('findByPersonId')->once()->with(701341)->andReturn($person);
+        $directory->shouldReceive('email')->once()->with($person)->andReturn('suwimon@g.swu.ac.th');
 
         $controller = new PortalController(
             Mockery::mock(DepartmentDirectory::class),
             Mockery::mock(DocumentPdfRenderer::class),
-            Mockery::mock(PersonnelDirectory::class),
+            $directory,
             Mockery::mock(PortalIdentityService::class),
         );
         $method = new ReflectionMethod($controller, 'formResponsibilityRecipients');
         $request = new CourseRequest(['form_type_code' => 'CC-ITED-01']);
 
         $this->assertSame([
-            ['pers_id' => 713796, 'email' => 'pakteema@g.swu.ac.th'],
+            ['pers_id' => 701341, 'email' => 'suwimon@g.swu.ac.th'],
         ], $method->invoke($controller, $request, 'head'));
     }
 
@@ -98,5 +108,170 @@ class PortalControllerRoleRecipientsTest extends TestCase
         $this->assertSame([
             ['pers_id' => 202, 'email' => 'officer202@g.swu.ac.th'],
         ], $method->invoke($controller, $request, 'officer'));
+    }
+
+    public function test_uat_notification_recipients_collapse_to_the_requesters_test_recipient(): void
+    {
+        $this->app->detectEnvironment(fn () => 'uat');
+        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
+        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
+        config()->set('course-workflow.notifications.test_recipients', [
+            713796 => 'pakteema@g.swu.ac.th',
+            701341 => 'suwimon@g.swu.ac.th',
+        ]);
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $request = new CourseRequest(['requester_pers_id' => 701341]);
+
+        $this->assertSame([[
+            'pers_id' => 701341,
+            'email' => 'suwimon@g.swu.ac.th',
+        ]], $method->invoke($controller, $request, fn () => [
+            ['pers_id' => 713796, 'email' => 'pakteema@g.swu.ac.th'],
+            ['pers_id' => 701341, 'email' => 'suwimon@g.swu.ac.th'],
+        ]));
+    }
+
+    public function test_uat_form_head_notification_uses_the_requesting_tester_when_a_head_is_assigned(): void
+    {
+        $this->app->detectEnvironment(fn () => 'uat');
+        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
+        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
+        config()->set('course-workflow.notifications.test_recipients', [
+            713796 => 'pakteema@g.swu.ac.th',
+            701341 => 'suwimon@g.swu.ac.th',
+        ]);
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $request = new CourseRequest(['requester_pers_id' => 713796]);
+
+        $this->assertSame([[
+            'pers_id' => 713796,
+            'email' => 'pakteema@g.swu.ac.th',
+        ]], $method->invoke($controller, $request, fn () => [
+            ['pers_id' => 701341, 'email' => 'directory-email@g.swu.ac.th'],
+        ], true));
+    }
+
+    public function test_uat_form_head_notification_switches_recipient_by_requesting_tester(): void
+    {
+        $this->app->detectEnvironment(fn () => 'uat');
+        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
+        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
+        config()->set('course-workflow.notifications.test_recipients', [
+            713796 => 'pakteema@g.swu.ac.th',
+            701341 => 'suwimon@g.swu.ac.th',
+        ]);
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $assignedHead = fn () => [
+            ['pers_id' => 999999, 'email' => 'production-head@g.swu.ac.th'],
+        ];
+
+        $this->assertSame([[
+            'pers_id' => 713796,
+            'email' => 'pakteema@g.swu.ac.th',
+        ]], $method->invoke(
+            $controller,
+            new CourseRequest(['requester_pers_id' => 713796]),
+            $assignedHead,
+            true,
+        ));
+        $this->assertSame([[
+            'pers_id' => 701341,
+            'email' => 'suwimon@g.swu.ac.th',
+        ]], $method->invoke(
+            $controller,
+            new CourseRequest(['requester_pers_id' => 701341]),
+            $assignedHead,
+            true,
+        ));
+    }
+
+    public function test_uat_form_head_notification_has_no_recipient_when_admin_has_no_assignment(): void
+    {
+        $this->app->detectEnvironment(fn () => 'uat');
+        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
+        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
+        config()->set('course-workflow.notifications.test_recipients', [
+            713796 => 'pakteema@g.swu.ac.th',
+            701341 => 'suwimon@g.swu.ac.th',
+        ]);
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $request = new CourseRequest(['requester_pers_id' => 713796]);
+
+        $this->assertSame([], $method->invoke($controller, $request, fn () => [], true));
+    }
+
+    public function test_uat_form_head_notification_redirects_a_real_assignment_to_the_requesting_tester(): void
+    {
+        $this->app->detectEnvironment(fn () => 'uat');
+        config()->set('course-workflow.notifications.test_recipient_person_id', 713796);
+        config()->set('course-workflow.notifications.test_recipient_email', 'pakteema@g.swu.ac.th');
+        config()->set('course-workflow.notifications.test_recipients', [
+            713796 => 'pakteema@g.swu.ac.th',
+            701341 => 'suwimon@g.swu.ac.th',
+        ]);
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $request = new CourseRequest(['requester_pers_id' => 713796]);
+
+        $this->assertSame([[
+            'pers_id' => 713796,
+            'email' => 'pakteema@g.swu.ac.th',
+        ]], $method->invoke($controller, $request, fn () => [
+            ['pers_id' => 999999, 'email' => 'real-head@g.swu.ac.th'],
+        ], true));
+    }
+
+    public function test_production_notification_recipients_are_not_collapsed(): void
+    {
+        $this->app->detectEnvironment(fn () => 'production');
+        $recipients = [
+            ['pers_id' => 101, 'email' => 'officer101@g.swu.ac.th'],
+            ['pers_id' => 202, 'email' => 'officer202@g.swu.ac.th'],
+        ];
+
+        $controller = new PortalController(
+            Mockery::mock(DepartmentDirectory::class),
+            Mockery::mock(DocumentPdfRenderer::class),
+            Mockery::mock(PersonnelDirectory::class),
+            Mockery::mock(PortalIdentityService::class),
+        );
+        $method = new ReflectionMethod($controller, 'notificationRecipients');
+        $request = new CourseRequest(['requester_pers_id' => 701341]);
+
+        $this->assertSame($recipients, $method->invoke($controller, $request, fn () => $recipients));
     }
 }

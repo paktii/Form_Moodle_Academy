@@ -37,7 +37,7 @@ class SendCourseNotifications extends Command
             try {
                 $request = CourseRequest::query()->with('instructors', 'websiteDetail.platform', 'websiteContact', 'websiteContactChangeDetail', 'websiteStorageDetail', 'emeetingDetail', 'currentWebsiteContact', 'newWebsiteContact', 'currentEmeetingContact', 'emeetingContact', 'coordinatorContact')->findOrFail($notification->request_id);
                 [$subject, $body, $html] = $this->messageFor($notification->notification_type, $request, $notification);
-                $recipientEmail = $this->recipientEmailFor($notification);
+                $recipientEmail = $this->recipientEmailFor($notification, $request);
 
                 $configureMessage = function ($message) use ($recipientEmail, $subject, $notification): void {
                     $message->to($recipientEmail)->subject($subject);
@@ -379,7 +379,7 @@ class SendCourseNotifications extends Command
         if ($type === 'DEAN_REVIEW_REQUIRED') {
             $subject = "[รออนุมัติ] คำร้อง {$requestLabel} ของ {$departmentName}";
             $heading = null;
-            $greeting = $request->dean_position_name ?: 'คณบดี/ผู้อำนวยการ';
+            $greeting = $this->deanGreeting($request);
             $scopeText = $request->form_type_code === 'CC-ITED-01'
                 ? match ($request->websiteDetail?->site_scope_type) {
                     'DEPARTMENT' => 'ส่วนงาน',
@@ -509,6 +509,15 @@ class SendCourseNotifications extends Command
         return [$subject, $body, $html];
     }
 
+    private function deanGreeting(CourseRequest $request): string
+    {
+        $deanPosition = $request->dean_position_name ?: 'คณบดี/ผู้อำนวยการ';
+
+        return $request->dean_is_acting
+            ? "ผู้รักษาการแทน {$deanPosition}"
+            : $deanPosition;
+    }
+
     private function workflowEmailContext(CourseRequest $request): array
     {
         $departmentDirectory = app(DepartmentDirectory::class);
@@ -632,14 +641,25 @@ class SendCourseNotifications extends Command
         return $person ? $directory->name($person) : $fallback;
     }
 
-    private function recipientEmailFor(NotificationOutbox $notification): string
+    private function recipientEmailFor(NotificationOutbox $notification, CourseRequest $request): string
     {
-        $testEmail = (string) config('course-workflow.notifications.test_recipient_email', '');
         $recipientEmail = $notification->recipient_email;
 
-        if (app()->environment('local', 'uat')
-            && filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
-            $recipientEmail = $testEmail;
+        if (app()->environment('local', 'uat')) {
+            $testRecipients = (array) config('course-workflow.notifications.test_recipients', []);
+            $assignedHeadEmail = $notification->notification_type_code === 'REQUEST_COMPLETED_FORM_HEAD'
+                ? ($testRecipients[(int) $notification->recipient_pers_id] ?? null)
+                : null;
+            $requesterEmail = $testRecipients[(int) $request->requester_pers_id] ?? null;
+            $fallbackEmail = (string) config('course-workflow.notifications.test_recipient_email', '');
+
+            if (is_string($assignedHeadEmail) && filter_var($assignedHeadEmail, FILTER_VALIDATE_EMAIL)) {
+                $recipientEmail = $assignedHeadEmail;
+            } elseif (is_string($requesterEmail) && filter_var($requesterEmail, FILTER_VALIDATE_EMAIL)) {
+                $recipientEmail = $requesterEmail;
+            } elseif (filter_var($fallbackEmail, FILTER_VALIDATE_EMAIL)) {
+                $recipientEmail = $fallbackEmail;
+            }
         }
 
         $recipientEmail = strtolower(trim($recipientEmail));

@@ -4,6 +4,11 @@ $actor = request()->attributes->get('portal.actor', session('portal.actor', conf
 $name = $actor['name'] ?? 'ผู้ใช้งาน';
 $roleLabel = $actor['label'] ?? '';
 $buasriId = $actor['buasri_id'] ?? '';
+$homeUrl = match ($role) {
+    'admin' => route('admin.dashboard'),
+    'officer' => route('officer.reviews'),
+    default => null,
+};
 @endphp
 <header @class([
     'requester-page-header',
@@ -17,11 +22,21 @@ $buasriId = $actor['buasri_id'] ?? '';
     </button>
     @endif
     @if($showLogo)
+    @if($homeUrl)
+    <a href="{{ $homeUrl }}" class="requester-page-header__home-logo" aria-label="กลับหน้าหลัก">
+        <img src="{{ asset('img/logo.png') }}" alt="มหาวิทยาลัยศรีนครินทรวิโรฒ" class="requester-page-header__logo">
+    </a>
+    @else
     <img src="{{ asset('img/logo.png') }}" alt="มหาวิทยาลัยศรีนครินทรวิโรฒ" class="requester-page-header__logo">
+    @endif
     @endif
     <div class="requester-page-header__copy">
         <h1>
+            @if($homeUrl)
+            <a href="{{ $homeUrl }}" class="requester-page-header__home-title">{{ $title }}</a>
+            @else
             <span>{{ $title }}</span>
+            @endif
             @if($contextTitle)
             <span class="requester-page-header__separator" aria-hidden="true">/</span>
             <span class="requester-page-header__context">{{ $contextTitle }}</span>
@@ -30,7 +45,7 @@ $buasriId = $actor['buasri_id'] ?? '';
         @if($description)<p>{{ $description }}</p>@endif
     </div>
     @if($showAccount)
-        @if($role === 'officer')
+        @if(in_array($role, ['officer', 'admin'], true))
         <div class="portal-header__officer-account">
             <div class="portal-user portal-user--static" title="{{ $name }} ({{ $roleLabel }})">
                 <span><span class="portal-user__name">{{ $name }} ({{ $roleLabel }})</span><span class="portal-user__id">{{ $buasriId }}</span></span>

@@ -33,6 +33,65 @@ class RequesterDeanEmailResendTest extends TestCase
         $this->assertStringNotContainsString('id="resend-dean-email-dialog"', $html);
     }
 
+    public function test_officer_detail_shows_dean_approval_date_and_time_after_approval(): void
+    {
+        $record = array_merge($this->requestRecord('UNDER_OFFICER_REVIEW'), [
+            'dean_decision' => 'APPROVED',
+            'dean_name' => 'ผู้รับรองทดสอบ',
+            'dean_position' => 'คณบดีคณะทดสอบ',
+            'dean_decided_date' => '10 พฤศจิกายน 2569',
+            'dean_decided_time' => '14:35',
+        ]);
+
+        $html = view('portal.detail', ['record' => $record, 'role' => 'officer'])->render();
+
+        $this->assertStringContainsString('ข้อมูลการอนุมัติจากผู้รับรอง', $html);
+        $this->assertStringContainsString('ผู้รับรองทดสอบ', $html);
+        $this->assertStringContainsString('คณบดีคณะทดสอบ', $html);
+        $this->assertStringContainsString('10 พฤศจิกายน 2569', $html);
+        $this->assertStringContainsString('14:35 น.', $html);
+        $this->assertStringContainsString('ผู้อนุมัติ:', $html);
+        $this->assertStringContainsString('ตำแหน่ง:', $html);
+        $this->assertStringContainsString('วันที่อนุมัติ:', $html);
+        $this->assertStringContainsString('เวลาที่อนุมัติ:', $html);
+
+        $record = $this->requestRecord('PENDING_DEAN_REVIEW');
+        $html = view('portal.detail', ['record' => $record, 'role' => 'officer'])->render();
+
+        $this->assertStringNotContainsString('ข้อมูลการอนุมัติจากผู้รับรอง', $html);
+    }
+
+    public function test_request_progress_shows_dean_approval_date_and_time_after_approval(): void
+    {
+        $record = array_merge($this->requestRecord('UNDER_OFFICER_REVIEW'), [
+            'dean_decision' => 'APPROVED',
+            'dean_decided_date' => '10 พฤศจิกายน 2569',
+            'dean_decided_time' => '08:50',
+        ]);
+
+        $html = view('portal.request-detail', compact('record'))->render();
+
+        $this->assertStringContainsString('รับรองโดยส่วนงาน', $html);
+        $this->assertStringContainsString('อนุมัติเมื่อ 10 พฤศจิกายน 2569 เวลา 08:50 น.', $html);
+    }
+
+    public function test_not_endorsed_status_uses_dean_wording_on_detail_pages(): void
+    {
+        $record = array_merge($this->requestRecord('NOT_ENDORSED'), [
+            'dean_decision' => 'NOT_ENDORSED',
+            'decision_source' => 'DEAN',
+            'reason' => 'ข้อมูลคำร้องไม่ครบถ้วน',
+        ]);
+
+        $officerHtml = view('portal.detail', ['record' => $record, 'role' => 'officer'])->render();
+        $requesterHtml = view('portal.request-detail', compact('record'))->render();
+
+        $this->assertStringContainsString('เหตุผลที่ไม่รับรอง: ข้อมูลคำร้องไม่ครบถ้วน', $officerHtml);
+        $this->assertStringNotContainsString('เหตุผลที่ไม่อนุมัติ', $officerHtml);
+        $this->assertStringContainsString('ไม่รับรองโดยผู้รับรองของส่วนงาน', $requesterHtml);
+        $this->assertStringContainsString('ผู้รับรองของส่วนงานไม่รับรองคำร้อง', $requesterHtml);
+    }
+
     public function test_resend_queues_one_dean_email_and_does_not_duplicate_a_pending_email(): void
     {
         config()->set('database.connections.course133', [

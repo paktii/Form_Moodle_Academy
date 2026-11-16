@@ -20,6 +20,9 @@ class CourseRequest extends Course133Model
     public $timestamps = true;
 
     protected $casts = [
+        'dean_pers_id' => 'integer',
+        'dean_principal_pers_id' => 'integer',
+        'dean_is_acting' => 'boolean',
         'submitted_at' => 'datetime',
         'completed_at' => 'datetime',
         'created_at' => 'datetime',

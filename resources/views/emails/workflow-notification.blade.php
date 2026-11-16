@@ -33,9 +33,9 @@
                             <p style="margin:0 0 24px;color:#374151;line-height:1.75;">{!! nl2br(e($intro)) !!}</p>
 
                             @if($resultText)
-                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:{{ ($resultTone ?? 'info') === 'danger' ? '#fef2f2' : '#f0f7ff' }};border:1px solid {{ ($resultTone ?? 'info') === 'danger' ? '#fecaca' : '#bfdbfe' }};border-radius:6px;">
+                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;table-layout:fixed;margin:0 0 24px;background:{{ ($resultTone ?? 'info') === 'danger' ? '#fef2f2' : '#f0f7ff' }};border:1px solid {{ ($resultTone ?? 'info') === 'danger' ? '#fecaca' : '#bfdbfe' }};border-radius:6px;">
                                     <tr>
-                                        <td align="{{ ($resultTone ?? 'info') === 'danger' ? 'center' : 'left' }}" style="padding:16px 18px;line-height:1.75;text-align:{{ ($resultTone ?? 'info') === 'danger' ? 'center' : 'left' }};overflow-wrap:anywhere;word-break:break-word;">
+                                        <td align="left" style="padding:16px 18px;line-height:1.75;text-align:left;overflow-wrap:anywhere;word-break:break-all;">
                                             <strong style="display:block;margin-bottom:6px;color:{{ ($resultTone ?? 'info') === 'danger' ? '#991b1b' : '#123365' }};">{{ $resultTitle ?? 'ผลการดำเนินการ' }}</strong>
                                             {!! nl2br(e($resultText)) !!}
                                         </td>

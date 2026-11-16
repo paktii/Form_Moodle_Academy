@@ -59,6 +59,10 @@ class WebsiteFormViewTest extends TestCase
         $this->assertStringContainsString('ไม่ใช้บริการนี้เพื่อผลประโยชน์ทางการค้าทั้งเพื่อตนเอง หรือเพื่อบุคคลอื่นใดทั้งสิ้น', $stepTwo);
         $this->assertStringContainsString('ข้าพเจ้าจะรับผิดชอบในการนำแฟ้มข้อมูลต่างๆ ไปเก็บบน Web Server', $stepTwo);
         $this->assertStringContainsString('name="dean_pers_id"', $stepThree);
+        $this->assertStringContainsString('name="dean_is_acting"', $stepThree);
+        $this->assertStringContainsString('name="acting_dean_buasri_id"', $stepThree);
+        $this->assertStringContainsString('หมายเหตุ:', $stepThree);
+        $this->assertStringContainsString('ited@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('data-searchable-select-show-all-on-focus', $stepThree);
         $this->assertStringContainsString('pakteema@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('CC-ITED-01_000123.pdf', $stepThree);

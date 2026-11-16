@@ -51,6 +51,10 @@ class WebsiteStorageViewTest extends TestCase
         $this->assertMatchesRegularExpression('/name="contact_email"[^>]*value="requester@g\.swu\.ac\.th"/', $stepTwo);
         $this->assertDoesNotMatchRegularExpression('/name="contact_(?:first|email)"[^>]*(?:readonly|disabled)/', $stepTwo);
         $this->assertStringContainsString('name="dean_pers_id"', $stepThree);
+        $this->assertStringContainsString('name="dean_is_acting"', $stepThree);
+        $this->assertStringContainsString('name="acting_dean_buasri_id"', $stepThree);
+        $this->assertStringContainsString('หมายเหตุ:', $stepThree);
+        $this->assertStringContainsString('ited@g.swu.ac.th', $stepThree);
         $this->assertStringContainsString('CC-ITED-04_000123.pdf', $stepThree);
     }
 

@@ -58,11 +58,11 @@ class ServiceRequestWorkflowService
             DeanReview::query()->create([
                 'request_id' => $request->request_id,
                 'dean_pers_id' => $deanPersId,
-                'decision' => 'REJECTED',
+                'decision' => 'NOT_ENDORSED',
                 'comment' => $comment,
             ]);
 
-            $this->transition($request, 'REJECTED', $deanPersId, 'DEAN', $comment);
+            $this->transition($request, 'NOT_ENDORSED', $deanPersId, 'DEAN', $comment);
             $this->queueNotifications($request, 'DEAN_REJECTED', [$requester]);
 
             return $request;

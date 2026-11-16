@@ -412,6 +412,43 @@ SQL);
         ], 'course133');
     }
 
+    public function test_dean_rejection_uses_not_endorsed_status_and_notifies_the_requester(): void
+    {
+        DB::connection('course133')
+            ->table('service_portal.service_request')
+            ->where('request_id', 1)
+            ->update(['status_code' => 'PENDING_DEAN_REVIEW']);
+
+        $resolver = Mockery::mock(ServicePortalRecipientResolver::class);
+        $resolver->shouldReceive('requester')->once()->andReturn([
+            'pers_id' => 1001,
+            'email' => 'requester@g.swu.ac.th',
+            'name' => 'Requester',
+        ]);
+
+        $request = (new ServiceRequestWorkflowService($resolver))
+            ->rejectByDean(1, 3001, 'ข้อมูลคำร้องไม่ครบถ้วน');
+
+        $this->assertSame('NOT_ENDORSED', $request->status_code);
+        $this->assertDatabaseHas('service_portal.dean_review', [
+            'request_id' => 1,
+            'dean_pers_id' => 3001,
+            'decision' => 'NOT_ENDORSED',
+            'comment' => 'ข้อมูลคำร้องไม่ครบถ้วน',
+        ], 'course133');
+        $this->assertDatabaseHas('service_portal.request_status_history', [
+            'request_id' => 1,
+            'from_status_code' => 'PENDING_DEAN_REVIEW',
+            'to_status_code' => 'NOT_ENDORSED',
+            'change_source' => 'DEAN',
+        ], 'course133');
+        $this->assertDatabaseHas('service_portal.notification_outbox', [
+            'request_id' => 1,
+            'notification_type_code' => 'DEAN_REJECTED',
+            'recipient_email' => 'requester@g.swu.ac.th',
+        ], 'course133');
+    }
+
     private function recipientResolver(): ServicePortalRecipientResolver
     {
         $resolver = Mockery::mock(ServicePortalRecipientResolver::class);

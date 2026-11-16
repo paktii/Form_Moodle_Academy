@@ -15,6 +15,8 @@ class PortalAuthenticationTest extends TestCase
     {
         $this->get('/')->assertRedirect('/login');
         $this->get('/officer/reviews')->assertRedirect('/login');
+        $this->get('/officer/reports')->assertRedirect('/login');
+        $this->get('/admin')->assertRedirect('/login');
     }
 
     public function test_officer_email_link_is_remembered_when_login_is_required(): void
@@ -73,6 +75,7 @@ class PortalAuthenticationTest extends TestCase
     {
         return [
             'officer' => ['officer', '/officer/reviews'],
+            'admin' => ['admin', '/admin'],
         ];
     }
 
@@ -106,6 +109,7 @@ class PortalAuthenticationTest extends TestCase
         return [
             'requester' => ['user', '/'],
             'officer' => ['officer', '/officer/reviews'],
+            'admin' => ['admin', '/admin'],
         ];
     }
 
@@ -243,6 +247,16 @@ class PortalAuthenticationTest extends TestCase
             ->assertSee('บทบาทสำหรับทดสอบ');
     }
 
+    public function test_development_login_defaults_to_admin_role(): void
+    {
+        config()->set('course-workflow.dev_role_switcher', true);
+
+        $this->get('/login')
+            ->assertOk()
+            ->assertSee('value="admin" checked', false)
+            ->assertSee('ผู้ดูแลระบบ');
+    }
+
     public function test_development_role_switcher_rejects_unassigned_role(): void
     {
         config()->set('course-workflow.dev_role_switcher', true);
@@ -294,6 +308,26 @@ class PortalAuthenticationTest extends TestCase
             'label' => 'บุคลากร',
             'role' => 'user',
         ]])->get('/officer/reviews')->assertForbidden();
+
+        $this->withSession(['portal.actor' => [
+            'pers_id' => 100,
+            'dept_id' => 200,
+            'buasri_id' => 'someone',
+            'name' => 'ผู้ใช้งานทดสอบ',
+            'email' => 'someone@g.swu.ac.th',
+            'label' => 'บุคลากร',
+            'role' => 'user',
+        ]])->get('/officer/reports')->assertForbidden();
+
+        $this->withSession(['portal.actor' => [
+            'pers_id' => 100,
+            'dept_id' => 200,
+            'buasri_id' => 'someone',
+            'name' => 'ผู้ใช้งานทดสอบ',
+            'email' => 'someone@g.swu.ac.th',
+            'label' => 'บุคลากร',
+            'role' => 'user',
+        ]])->get('/admin')->assertForbidden();
     }
 
     public function test_unknown_login_role_is_not_found(): void

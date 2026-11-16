@@ -13,6 +13,10 @@
         flex-direction: column;
     }
 
+    .requester-workspace:has(> .website-contact-change-form-layout) > .error-summary {
+        max-width: 1376px;
+    }
+
     .form-card {
         flex: 1;
         overflow: hidden;
@@ -35,7 +39,7 @@
 
     .form-card__body {
         display: grid;
-        gap: 20px;
+        gap: 0;
         padding: 24px;
     }
 
@@ -47,6 +51,15 @@
     .searchable-select__input {
         margin-top: 0;
         padding-right: 44px;
+    }
+
+    .searchable-select__note {
+        display: block;
+        margin-top: 6px;
+        color: var(--portal-red);
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
     }
 
     .searchable-select__input::-webkit-search-cancel-button {
@@ -165,7 +178,7 @@
 
     .instructors-section {
         border-top: 1px solid #e5e7eb;
-        padding-top: 16px;
+        padding: 16px 0 20px;
     }
 
     .instructor-row {
@@ -313,6 +326,10 @@
         margin-top: 24px;
         border-top: 1px solid #e5e7eb;
         padding-top: 20px;
+    }
+
+    .dean-selection + .document-download {
+        margin-top: 24px;
     }
 
     .document-attachments h2 {
@@ -479,7 +496,7 @@
     }
 
     .expected-students {
-        padding-bottom: 28px;
+        padding-bottom: 0;
     }
 
     .expected-students .form-label {
@@ -519,6 +536,18 @@
         font-weight: 600;
     }
 
+    .form-card__body > .website-contact-change-subheading {
+        margin-bottom: 20px;
+    }
+
+    .website-certification + .muted {
+        margin-top: 20px;
+    }
+
+    .radio-fieldset--form-grid {
+        padding-bottom: 0;
+    }
+
     .emeeting-service-type {
         padding-bottom: 0;
     }
@@ -552,6 +581,11 @@
     }
 
     @media (max-width: 1100px) {
+        .requester-workspace:has(> .website-contact-change-form-layout) > .error-summary {
+            max-width: none;
+            margin-inline: 24px;
+        }
+
         .form-layout {
             padding: 32px 24px;
             gap: 24px;
@@ -576,6 +610,10 @@
     }
 
     @media (max-width: 900px) {
+        .requester-workspace:has(> .website-contact-change-form-layout) > .error-summary {
+            margin-inline: clamp(16px, 4vw, 24px);
+        }
+
         .form-layout {
             width: 100%;
             grid-template-columns: minmax(0, 1fr);
@@ -596,6 +634,10 @@
     }
 
     @media (max-width: 760px) {
+        .requester-workspace:has(> .website-contact-change-form-layout) > .error-summary {
+            margin-inline: clamp(12px, 4vw, 16px);
+        }
+
         .form-card__body--step-one {
             gap: 0;
         }
@@ -619,6 +661,12 @@
 
         .enrollment-fieldset .radio-options {
             align-items: stretch;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .emeeting-service-type .radio-options {
+            align-items: flex-start;
             flex-direction: column;
             gap: 12px;
         }
@@ -721,4 +769,63 @@
             white-space: normal;
         }
     }
+}
+
+.acting-dean {
+    display: grid;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
+.acting-dean__toggle {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 8px;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.acting-dean__toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--color-primary, #123466);
+}
+
+.acting-dean__search {
+    display: none;
+    gap: 6px;
+}
+
+.acting-dean__toggle:has(input[type="checkbox"]:checked) + .acting-dean__search {
+    display: grid;
+}
+
+.acting-dean__search > .form-label {
+    display: grid;
+    gap: 0;
+    padding-bottom: 0;
+}
+
+.acting-dean__search[hidden] {
+    display: none;
+}
+
+.acting-dean__search .admin-person-search__option {
+    display: grid;
+    gap: 2px;
+    text-align: left;
+}
+
+.acting-dean__search .admin-person-search__option strong,
+.acting-dean__search .admin-person-search__option small {
+    display: block;
+}
+
+.acting-dean__hint {
+    margin: 0;
+    color: var(--color-text-muted, #667085);
+    font-size: 12px;
+    line-height: 1.5;
 }

@@ -44,26 +44,29 @@ class ServicePortalRecipientResolver
     /** @return array<int, array{pers_id: int, email: string, name: string}> */
     public function formHeadRecipients(ServiceRequest $request): array
     {
-        if (app()->environment('local', 'uat')) {
-            $testPersonId = (int) config('course-workflow.notifications.test_recipient_person_id');
-            $testEmail = strtolower(trim((string) config('course-workflow.notifications.test_recipient_email')));
-
-            if ($testPersonId <= 0 || ! filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
-                throw new RuntimeException('A valid COURSE133_TEST_PERSON_ID and COURSE133_TEST_EMAIL are required for the test form head.');
-            }
-
-            return [[
-                'pers_id' => $testPersonId,
-                'email' => $testEmail,
-                'name' => 'ผู้รับแจ้งเตือน Head สำหรับทดสอบ',
-            ]];
-        }
-
-        return $this->assignmentRecipients(
+        $recipients = $this->assignmentRecipients(
             'service_portal.form_head_assignment',
             'head_pers_id',
             $request->form_type_code,
         );
+
+        if (! app()->environment('local', 'uat') || $recipients === []) {
+            return $recipients;
+        }
+
+        $testRecipients = (array) config('course-workflow.notifications.test_recipients', []);
+        $requesterPersonId = (int) $request->requester_pers_id;
+        $preferredPersonId = array_key_exists($requesterPersonId, $testRecipients)
+            ? $requesterPersonId
+            : (int) config('course-workflow.notifications.test_recipient_person_id');
+        $preferredRecipient = collect($recipients)
+            ->first(fn (array $recipient) => (int) $recipient['pers_id'] === $preferredPersonId);
+
+        if ($preferredRecipient !== null) {
+            return [$preferredRecipient];
+        }
+
+        return [$this->personRecipient($preferredPersonId)];
     }
 
     /** @return array<int, array{pers_id: int|null, email: string, name: string|null}> */
